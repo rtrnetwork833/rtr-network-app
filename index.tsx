@@ -234,4 +234,5 @@ export default function App() {
     </div>
   );
 }
-```
+```const root = Jack.createRoot(document.getElementById('root'));
+root.render(<App />);
