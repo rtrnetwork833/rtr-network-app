@@ -1,0 +1,13 @@
+{
+  "name": "RTR NETWORK",
+  "short_name": "RTR Network",
+  "description": "Secure mobile-first node platform dashboard.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07090d",
+  "theme_color": "#07090d",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
