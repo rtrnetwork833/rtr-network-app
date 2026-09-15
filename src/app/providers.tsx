@@ -27,9 +27,6 @@ const wagmiConfig = defaultWagmiConfig({
 createWeb3Modal({
   wagmiConfig,
   projectId: walletConnectProjectId,
-  chains: [base],
-  enableEmail: true,
-  enableSocials: ["google", "apple", "discord", "github", "x"],
   enableAnalytics: false,
 });
 
