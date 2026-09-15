@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
+  <title id="title">RTR Network shield</title>
+  <desc id="desc">A metallic R inside a shield on a midnight blue circle</desc>
+  <defs>
+    <radialGradient id="backing" cx="35%" cy="25%" r="80%">
+      <stop offset="0" stop-color="#193a64" />
+      <stop offset="1" stop-color="#07172d" />
+    </radialGradient>
+    <linearGradient id="metal" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0" stop-color="#ffffff" />
+      <stop offset=".28" stop-color="#9eacbd" />
+      <stop offset=".5" stop-color="#f5f8fc" />
+      <stop offset=".72" stop-color="#687a90" />
+      <stop offset="1" stop-color="#d9e1ea" />
+    </linearGradient>
+  </defs>
+  <circle cx="48" cy="48" r="46" fill="url(#backing)" stroke="#315274" stroke-width="2" />
+  <path d="M48 14 75 24v23c0 17-11 27-27 35C32 74 21 64 21 47V24l27-10Z" fill="#102b4b" stroke="#8295aa" stroke-width="2" />
+  <path d="M34 64V31h15c10 0 15 5 15 12 0 5-3 9-8 11l10 10H56L47 56h-4v8h-9Zm9-16h5c4 0 7-2 7-5s-3-5-7-5h-5v10Z" fill="url(#metal)" />
+</svg>

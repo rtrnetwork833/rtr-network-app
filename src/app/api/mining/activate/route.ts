@@ -7,6 +7,6 @@ export async function POST(request: Request) {
   }
 
   // Production integration point: authenticate the session, validate payment,
-  // and persist the 30-day server timestamp in the database here.
+  // and persist the tier's server timestamp and 24-hour free-node reset here.
   return NextResponse.json({ ok: true, status: "activation_pending", tier: body.tier });
 }

@@ -25,10 +25,9 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useWeb3Modal } from "@web3modal/wagmi/react";
-import { useAccount, useDisconnect } from "wagmi";
 
 type View = "dashboard" | "upgrades" | "trading" | "game" | "wallet";
+const BOOSTER_CYCLE_SECONDS = 24 * 60 * 60;
 
 const tiers = [
   ["Free Node Booster", "Free", "0.16", "Base Level", "Manual 24-hour verification"],
@@ -66,16 +65,13 @@ function formatTime(seconds: number) {
 }
 
 export default function Home() {
-  const { address, isConnected } = useAccount();
-  const { disconnect } = useDisconnect();
-  const { open } = useWeb3Modal();
   const [view, setView] = useState<View>("dashboard");
   const [profileOpen, setProfileOpen] = useState(false);
   const [modal, setModal] = useState<"upload" | "language" | "tasks" | null>(null);
   const [language, setLanguage] = useState("English");
   const [avatar, setAvatar] = useState<string | null>(null);
   const [active, setActive] = useState(false);
-  const [remaining, setRemaining] = useState(30 * 86400);
+  const [remaining, setRemaining] = useState(BOOSTER_CYCLE_SECONDS);
   const [balance, setBalance] = useState(128.42);
   const [fileName, setFileName] = useState("No file selected");
   const fileInput = useRef<HTMLInputElement>(null);
@@ -85,23 +81,24 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!active || remaining <= 0) return;
+    if (!active) return;
     const timer = window.setInterval(() => {
-      setRemaining((current) => Math.max(0, current - 1));
+      setRemaining((current) => current <= 1 ? BOOSTER_CYCLE_SECONDS : current - 1);
       setBalance((current) => current + 0.16 / 86400);
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [active, remaining]);
+  }, [active]);
 
-  const progress = useMemo(() => (remaining / (30 * 86400)) * 100, [remaining]);
+  const progress = useMemo(() => (remaining / BOOSTER_CYCLE_SECONDS) * 100, [remaining]);
 
   function startCollection() {
+    if (remaining <= 0) setRemaining(BOOSTER_CYCLE_SECONDS);
     setActive(true);
   }
 
   function purchase(tier: (typeof tiers)[number]) {
     setActive(true);
-    setRemaining(30 * 86400);
+    setRemaining(BOOSTER_CYCLE_SECONDS);
     setModal(null);
     setView("dashboard");
     void fetch("/api/mining/activate", { method: "POST", body: JSON.stringify({ tier: tier[0] }) });
@@ -119,13 +116,10 @@ export default function Home() {
     <main className="app-shell">
       <header className="topbar">
         <div className="brand-lockup">
-          <div className="shield-mark"><ShieldCheck size={19} /></div>
+          <img className="shield-mark" src="/rtr-shield.svg" alt="RTR Network shield" />
           <div><strong>RTR NETWORK</strong><span>SECURE NODE PLATFORM</span></div>
         </div>
         <div className="header-actions">
-          <button className="wallet-button" onClick={() => isConnected ? disconnect() : open()}>
-            <Wallet size={15} /> {isConnected && address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Connect wallet"}
-          </button>
           <button className="icon-button" aria-label="Notifications"><Bell size={18} /></button>
           <button className="avatar-button" aria-label="Open profile menu" onClick={() => setProfileOpen(!profileOpen)}>
             {avatar ? <img src={avatar} alt="Profile" /> : <UserRound size={20} />}
