@@ -1,5 +1,11 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Supabase setup
+
+The app uses Supabase Auth for email/password sign-up and login. Local credentials are read from `.env.local` using `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`; configure the same variables in the deployment environment.
+
+Before testing activations, run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. It creates the `booster_activations` table and row-level security policies. The free node is persisted for 24 hours; every paid tier is persisted for 30 days, with the countdown derived from the database `expires_at` timestamp after refresh.
+
 ## Getting Started
 
 First, run the development server:

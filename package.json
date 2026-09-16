@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@coinbase/onchainkit": "latest",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.116.0",
     "@tanstack/react-query": "latest",
     "@wagmi/connectors": "^6.2.0",
     "@walletconnect/ethereum-provider": "^2.25.0",

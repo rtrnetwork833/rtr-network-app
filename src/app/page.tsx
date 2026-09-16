@@ -25,9 +25,12 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
+import { createClient } from "@/lib/supabase/client";
 
 type View = "dashboard" | "upgrades" | "trading" | "game" | "wallet";
-const BOOSTER_CYCLE_SECONDS = 24 * 60 * 60;
+type Activation = { tier: string; activated_at: string; expires_at: string };
+const supabase = createClient();
 
 const tiers = [
   ["Free Node Booster", "Free", "0.16", "Base Level", "Manual 24-hour verification"],
@@ -65,14 +68,18 @@ function formatTime(seconds: number) {
 }
 
 export default function Home() {
+  const [user, setUser] = useState<{ email?: string } | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [view, setView] = useState<View>("dashboard");
   const [profileOpen, setProfileOpen] = useState(false);
   const [modal, setModal] = useState<"upload" | "language" | "tasks" | null>(null);
   const [language, setLanguage] = useState("English");
   const [avatar, setAvatar] = useState<string | null>(null);
   const [active, setActive] = useState(false);
-  const [remaining, setRemaining] = useState(BOOSTER_CYCLE_SECONDS);
+  const [activation, setActivation] = useState<Activation | null>(null);
+  const [remaining, setRemaining] = useState(0);
   const [balance, setBalance] = useState(128.42);
+  const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState("No file selected");
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -80,28 +87,74 @@ export default function Home() {
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
   }, []);
 
-  useEffect(() => {
-    if (!active) return;
-    const timer = window.setInterval(() => {
-      setRemaining((current) => current <= 1 ? BOOSTER_CYCLE_SECONDS : current - 1);
-      setBalance((current) => current + 0.16 / 86400);
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [active]);
-
-  const progress = useMemo(() => (remaining / BOOSTER_CYCLE_SECONDS) * 100, [remaining]);
-
-  function startCollection() {
-    if (remaining <= 0) setRemaining(BOOSTER_CYCLE_SECONDS);
-    setActive(true);
+  async function loadActivation() {
+    const response = await fetch("/api/mining/activate");
+    if (!response.ok) return;
+    const body = await response.json() as { activation: Activation | null };
+    setActivation(body.activation);
   }
 
-  function purchase(tier: (typeof tiers)[number]) {
-    setActive(true);
-    setRemaining(BOOSTER_CYCLE_SECONDS);
-    setModal(null);
-    setView("dashboard");
-    void fetch("/api/mining/activate", { method: "POST", body: JSON.stringify({ tier: tier[0] }) });
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      setUser(data.user);
+      setAuthLoading(false);
+      if (data.user) void loadActivation();
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setAuthLoading(false);
+      if (session?.user) void loadActivation();
+      else {
+        setActivation(null);
+        setActive(false);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!activation) return;
+    const updateRemaining = () => {
+      const seconds = Math.max(0, Math.floor((new Date(activation.expires_at).getTime() - Date.now()) / 1000));
+      setRemaining(seconds);
+      setActive(seconds > 0);
+    };
+    updateRemaining();
+    const timer = window.setInterval(() => {
+      updateRemaining();
+      if (new Date(activation.expires_at).getTime() > Date.now()) setBalance((current) => current + 0.16 / 86400);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [activation]);
+
+  const cycleSeconds = activation ? cycleSecondsForTier(activation.tier) ?? FREE_CYCLE_SECONDS : FREE_CYCLE_SECONDS;
+  const progress = useMemo(() => (remaining / cycleSeconds) * 100, [cycleSeconds, remaining]);
+
+  async function activateTier(tier: string) {
+    setError(null);
+    const response = await fetch("/api/mining/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier }),
+    });
+    const body = await response.json() as { activation?: Activation; error?: string };
+    if (!response.ok || !body.activation) {
+      setError(body.error ?? "Unable to activate this tier.");
+      return false;
+    }
+    setActivation(body.activation);
+    return true;
+  }
+
+  function startCollection() {
+    if (!active) void activateTier(FREE_TIER);
+  }
+
+  async function purchase(tier: (typeof tiers)[number]) {
+    if (await activateTier(tier[0])) {
+      setModal(null);
+      setView("dashboard");
+    }
   }
 
   function selectAvatar(event: React.ChangeEvent<HTMLInputElement>) {
@@ -111,6 +164,9 @@ export default function Home() {
     setAvatar(URL.createObjectURL(file));
     void fetch("/api/profile/avatar", { method: "POST", body: file });
   }
+
+  if (authLoading) return <main className="app-shell auth-loading">Checking secure session...</main>;
+  if (!user) return <AuthOverlay />;
 
   return (
     <main className="app-shell">
@@ -134,12 +190,13 @@ export default function Home() {
       </header>
 
       <section className="identity-row">
-        <div><span className="eyebrow">WELCOME BACK</span><h1>Alex Morgan</h1></div>
+        <div><span className="eyebrow">WELCOME BACK</span><h1>{user.email}</h1></div>
         <div className="status-pill"><span /> Node online</div>
       </section>
 
       <section className="content-scroll">
-        {view === "dashboard" && <Dashboard balance={balance} active={active} progress={progress} remaining={remaining} onStart={startCollection} />}
+        {error && <div className="error-banner" role="alert">{error}</div>}
+        {view === "dashboard" && <Dashboard balance={balance} active={active} tier={activation?.tier} progress={progress} remaining={remaining} onStart={startCollection} />}
         {view === "upgrades" && <Upgrades onPurchase={purchase} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
         {view === "game" && <PlaceholderView icon={<Gamepad2 />} title="Node quests" text="Complete community missions to unlock bonus points." />}
@@ -172,12 +229,12 @@ export default function Home() {
   );
 }
 
-function Dashboard({ balance, active, progress, remaining, onStart }: { balance: number; active: boolean; progress: number; remaining: number; onStart: () => void }) {
+function Dashboard({ balance, active, tier, progress, remaining, onStart }: { balance: number; active: boolean; tier?: string; progress: number; remaining: number; onStart: () => void }) {
   return <div className="dashboard-view">
     <div className="balance-card"><div><span className="eyebrow">TOTAL ACCRUED</span><strong>${balance.toFixed(4)} <small>RTR</small></strong><span className="delta"><ArrowUpRight size={14} /> +0.16 RTR / day</span></div><div className="balance-icon"><Zap size={21} /></div></div>
-    <div className="section-heading"><div><span className="eyebrow">ACTIVE NODE</span><h2>Collection protocol</h2></div><span className="live-dot">{active ? "LIVE" : "PAUSED"}</span></div>
+    <div className="section-heading"><div><span className="eyebrow">ACTIVE NODE</span><h2>{tier ?? "Collection protocol"}</h2></div><span className="live-dot">{active ? "LIVE" : "PAUSED"}</span></div>
     <div className="ring-wrap"><div className="progress-ring" style={{ "--progress": `${progress * 3.6}deg` } as React.CSSProperties}><div className="ring-inner"><Sparkles size={17} /><strong>{formatTime(remaining)}</strong><span>{active ? "Accumulating" : "Ready to collect"}</span></div></div></div>
-    <button className="collect-button" onClick={onStart}><span className="pulse" />{active ? "Collection active" : "Start Active Collection"}<ChevronRight size={18} /></button>
+    <button className="collect-button" onClick={onStart}><span className="pulse" />{active ? "Collection active" : "Start 24-hour free node"}<ChevronRight size={18} /></button>
     <div className="metric-grid"><div><span>Network</span><strong>Base Mainnet</strong></div><div><span>Protocol</span><strong>v2.4.8</strong></div><div><span>Multiplier</span><strong>1.0x</strong></div></div>
   </div>;
 }
@@ -187,7 +244,29 @@ function Upgrades({ onPurchase }: { onPurchase: (tier: (typeof tiers)[number]) =
 }
 
 function ProfileMenu({ onSelect }: { onSelect: (item: string) => void }) {
-  return <div className="profile-menu"><div className="menu-profile"><div className="mini-avatar"><UserRound size={17} /></div><div><strong>Alex Morgan</strong><span>alex@rtr.network</span></div></div><button className="menu-option" onClick={() => onSelect("Upload Profile Picture")}><Upload size={16} /> Upload Profile Picture</button>{menuItems.map(([label, Icon]) => <button className="menu-option" key={label} onClick={() => onSelect(label)}><Icon size={16} /> {label}<ChevronRight className="menu-chevron" size={14} /></button>)}<button className="menu-option logout"><LogOut size={16} /> Sign out</button></div>;
+  return <div className="profile-menu"><div className="menu-profile"><div className="mini-avatar"><UserRound size={17} /></div><div><strong>RTR member</strong><span>Authenticated session</span></div></div><button className="menu-option" onClick={() => onSelect("Upload Profile Picture")}><Upload size={16} /> Upload Profile Picture</button>{menuItems.map(([label, Icon]) => <button className="menu-option" key={label} onClick={() => onSelect(label)}><Icon size={16} /> {label}<ChevronRight className="menu-chevron" size={14} /></button>)}<button className="menu-option logout" onClick={() => void supabase.auth.signOut()}><LogOut size={16} /> Sign out</button></div>;
+}
+
+function AuthOverlay() {
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    const result = mode === "login"
+      ? await supabase.auth.signInWithPassword({ email, password })
+      : await supabase.auth.signUp({ email, password });
+    setBusy(false);
+    if (result.error) setMessage(result.error.message);
+    else if (mode === "signup") setMessage("Account created. Check your email if confirmation is enabled.");
+  }
+
+  return <main className="app-shell auth-shell"><div className="auth-panel"><img className="shield-mark" src="/rtr-shield.svg" alt="RTR Network shield" /><span className="eyebrow">SECURE NODE PLATFORM</span><h1>{mode === "login" ? "Welcome back" : "Create your account"}</h1><p>Sign in to access your persistent node dashboard and activation history.</p><form onSubmit={submit}><label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={6} autoComplete={mode === "login" ? "current-password" : "new-password"} /></label>{message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={busy}>{busy ? "Securing account..." : mode === "login" ? "Log in" : "Sign up"}</button></form><button className="auth-switch" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setMessage(null); }}>{mode === "login" ? "Need an account? Sign up" : "Already registered? Log in"}</button></div></main>;
 }
 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
