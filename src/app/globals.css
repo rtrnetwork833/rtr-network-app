@@ -48,6 +48,12 @@ button { font: inherit; }
 .auth-panel label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; }
 .auth-panel input { width: 100%; padding: 12px 13px; color: var(--foreground); background: #081a2d; border: 1px solid var(--line); border-radius: 9px; outline: none; }
 .auth-panel input:focus { border-color: rgba(197, 255, 82, .7); }
+.date-input-wrap { position: relative; }
+.date-input-wrap input { padding-right: 42px; }
+.info-button { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); width: 24px; height: 24px; display: grid; place-items: center; color: var(--green); background: transparent; border: 0; cursor: pointer; }
+.dob-tooltip { position: absolute; z-index: 3; bottom: calc(100% + 9px); left: 0; width: min(100%, 355px); display: grid; gap: 8px; padding: 13px; color: var(--foreground); background: #17283d; border: 1px solid rgba(197,255,82,.35); border-radius: 10px; box-shadow: 0 16px 35px #0009; font-size: 10px; line-height: 1.45; }
+.dob-tooltip strong { color: var(--green); font-size: 11px; }
+.pin-error { color: var(--orange); font-size: 10px; margin-top: -8px; }
 .auth-submit { width: 100%; justify-content: center; margin-top: 4px; }
 .auth-submit:disabled { cursor: wait; opacity: .65; }
 .auth-switch { width: 100%; margin-top: 17px; padding: 0; color: var(--green); background: transparent; border: 0; font-size: 11px; cursor: pointer; }

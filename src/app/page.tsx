@@ -11,6 +11,7 @@ import {
   Crown,
   Gamepad2,
   Globe2,
+  Info,
   KeyRound,
   Languages,
   LayoutDashboard,
@@ -248,25 +249,51 @@ function ProfileMenu({ onSelect }: { onSelect: (item: string) => void }) {
 }
 
 function AuthOverlay() {
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [mode, setMode] = useState<"login" | "signup" | "recovery">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [showDobInfo, setShowDobInfo] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const pinIsValid = /^\d{6}$/.test(password);
+  const pinsMatch = pinIsValid && password === confirmPin;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
     setMessage(null);
+    if (mode === "recovery") {
+      const response = await fetch("/api/auth/recover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, dateOfBirth }) });
+      const body = await response.json() as { error?: string; message?: string };
+      setBusy(false);
+      setMessage(response.ok ? body.message ?? "Recovery instructions sent." : body.error ?? "Invalid credentials provided.");
+      return;
+    }
     const result = mode === "login"
       ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password });
+      : await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName, date_of_birth: dateOfBirth } } });
     setBusy(false);
     if (result.error) setMessage(result.error.message);
     else if (mode === "signup") setMessage("Account created. Check your email if confirmation is enabled.");
   }
 
-  return <main className="app-shell auth-shell"><div className="auth-panel"><img className="shield-mark" src="/rtr-shield.svg" alt="RTR Network shield" /><span className="eyebrow">SECURE NODE PLATFORM</span><h1>{mode === "login" ? "Welcome back" : "Create your account"}</h1><p>Sign in to access your persistent node dashboard and activation history.</p><form onSubmit={submit}><label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={6} autoComplete={mode === "login" ? "current-password" : "new-password"} /></label>{message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={busy}>{busy ? "Securing account..." : mode === "login" ? "Log in" : "Sign up"}</button></form><button className="auth-switch" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setMessage(null); }}>{mode === "login" ? "Need an account? Sign up" : "Already registered? Log in"}</button></div></main>;
+  const isSignup = mode === "signup";
+  const isRecovery = mode === "recovery";
+  const canSubmit = !busy && (mode === "login" || (isSignup ? Boolean(fullName && email && dateOfBirth && pinsMatch) : Boolean(email && dateOfBirth)));
+
+  return <main className="app-shell auth-shell"><div className="auth-panel"><img className="shield-mark" src="/rtr-shield.svg" alt="RTR Network shield" /><span className="eyebrow">SECURE NODE PLATFORM</span><h1>{isRecovery ? "Recover your account" : mode === "login" ? "Welcome back" : "Create your account"}</h1><p>{isRecovery ? "Verify your registered details to receive a secure password reset code." : "Sign in to access your persistent node dashboard and activation history."}</p><form onSubmit={submit}>
+    {isSignup && <label>Full name<input type="text" value={fullName} onChange={(event) => setFullName(event.target.value)} required autoComplete="name" /></label>}
+    <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" /></label>
+    {(isSignup || isRecovery) && <label className="date-field">Date of birth<div className="date-input-wrap"><input type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} required /><button type="button" className="info-button" aria-label="Why we need your date of birth" aria-expanded={showDobInfo} onClick={() => setShowDobInfo(!showDobInfo)}><Info size={15} /></button>{showDobInfo && <div className="dob-tooltip" role="tooltip"><strong>🔒 Why we need your Date of Birth:</strong><span>- Account Recovery: If you ever lose access to your password, you must verify your exact date of birth to reset it.</span><span>- Anti-Hack Protection: This stops hackers from trying to steal your funds via fake password reset requests.</span><span>- Security Lock: For your safety, this information cannot be changed after registration. Please ensure it matches your official records.</span></div>}</div></label>}
+    {isSignup && <><label>Create 6-digit PIN<input type="password" value={password} onChange={(event) => setPassword(event.target.value.replace(/\D/g, "").slice(0, 6))} required inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" /></label><label>Confirm 6-digit PIN<input type="password" value={confirmPin} onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))} required inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" /></label>{confirmPin && !pinsMatch && <div className="pin-error" role="alert">PINs must match and contain exactly 6 digits.</div>}</>}
+    {mode === "login" && <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={6} autoComplete="current-password" /></label>}
+    {message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={!canSubmit}>{busy ? "Securing account..." : isRecovery ? "Send recovery code" : mode === "login" ? "Log in" : "Register"}</button></form>
+    {mode === "login" && <button className="auth-switch" onClick={() => { setMode("recovery"); setMessage(null); }}>Forgot password?</button>}
+    <button className="auth-switch" onClick={() => { setMode(isRecovery || mode === "signup" ? "login" : "signup"); setMessage(null); setShowDobInfo(false); }}>{isRecovery || mode === "signup" ? "Back to log in" : "Need an account? Sign up"}</button>
+  </div></main>;
 }
 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
