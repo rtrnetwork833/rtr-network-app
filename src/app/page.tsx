@@ -85,7 +85,7 @@ export default function Home() {
   const [activation, setActivation] = useState<Activation | null>(null);
   const [remaining, setRemaining] = useState(0);
   const [balance, setBalance] = useState(128.42);
-  const [balanceVisible, setBalanceVisible] = useState(true);
+  const [isBalanceHidden, setIsBalanceHidden] = useState(false);
   const [visibilityReady, setVisibilityReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState("No file selected");
@@ -98,14 +98,14 @@ export default function Home() {
   useEffect(() => {
     window.setTimeout(() => {
       const storedVisibility = window.localStorage.getItem("rtr-balance-visible");
-      if (storedVisibility !== null) setBalanceVisible(storedVisibility === "true");
+      if (storedVisibility !== null) setIsBalanceHidden(storedVisibility === "false");
       setVisibilityReady(true);
     }, 0);
   }, []);
 
   useEffect(() => {
-    if (visibilityReady) window.localStorage.setItem("rtr-balance-visible", String(balanceVisible));
-  }, [balanceVisible, visibilityReady]);
+    if (visibilityReady) window.localStorage.setItem("rtr-balance-visible", String(!isBalanceHidden));
+  }, [isBalanceHidden, visibilityReady]);
 
   async function loadActivation() {
     try {
@@ -145,7 +145,7 @@ export default function Home() {
     let cancelled = false;
     async function loadProfile() {
       try {
-        const { data, error } = await supabase.from("profiles").select("full_name").eq("id", userId).maybeSingle<Profile>();
+        const { data, error } = await supabase.from("profiles").select("full_name").eq("id", userId).single<Profile>();
         if (error) throw error;
         if (!cancelled) {
           setProfileName(data?.full_name?.trim() || null);
@@ -154,7 +154,6 @@ export default function Home() {
       } catch {
         if (!cancelled) {
           setProfileName(null);
-          setProfileLoading(false);
         }
       }
     }
@@ -252,14 +251,14 @@ export default function Home() {
 
       <section className="identity-row">
         <div className="greeting" aria-live="polite">
-          {profileLoading ? <span className="greeting-skeleton" aria-label="Loading profile name" /> : <h1>Hello, {profileName ?? "Profile member"} 👋</h1>}
+          {profileLoading || !profileName ? <span className="greeting-skeleton" aria-label="Loading profile name" /> : <h1>Hello, {profileName}</h1>}
         </div>
         <div className="status-pill"><span /> Node online</div>
       </section>
 
       <section className="content-scroll">
         {error && <div className="error-banner" role="alert">{error}</div>}
-        {view === "dashboard" && <Dashboard balance={balance} balanceVisible={balanceVisible} onToggleBalance={() => setBalanceVisible((visible) => !visible)} active={active} tier={activation?.tier} progress={progress} remaining={remaining} onStart={startCollection} />}
+        {view === "dashboard" && <Dashboard balance={balance} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} active={active} tier={activation?.tier} progress={progress} remaining={remaining} onStart={startCollection} />}
         {view === "upgrades" && <Upgrades onPurchase={purchase} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
         {view === "game" && <PlaceholderView icon={<Gamepad2 />} title="Node quests" text="Complete community missions to unlock bonus points." />}
@@ -292,10 +291,10 @@ export default function Home() {
   );
 }
 
-function Dashboard({ balance, balanceVisible, onToggleBalance, active, tier, progress, remaining, onStart }: { balance: number; balanceVisible: boolean; onToggleBalance: () => void; active: boolean; tier?: string; progress: number; remaining: number; onStart: () => void }) {
-  const displayBalance = balanceVisible ? `$${balance.toFixed(4)}` : "••••••";
+function Dashboard({ balance, isBalanceHidden, onToggleBalance, active, tier, progress, remaining, onStart }: { balance: number; isBalanceHidden: boolean; onToggleBalance: () => void; active: boolean; tier?: string; progress: number; remaining: number; onStart: () => void }) {
+  const displayBalance = isBalanceHidden ? "••••••" : `$${balance.toFixed(4)}`;
   return <div className="dashboard-view">
-    <div className="balance-card"><div><div className="balance-label"><span className="eyebrow">TOTAL ACCRUED</span><button className="balance-toggle" type="button" onClick={onToggleBalance} aria-label={balanceVisible ? "Hide balance" : "Show balance"}>{balanceVisible ? <Eye size={16} /> : <EyeOff size={16} />}</button></div><strong>{displayBalance} <small>RTR</small></strong><span className="delta"><ArrowUpRight size={14} /> {balanceVisible ? "+0.16 RTR / day" : "•••••• / day"}</span></div><div className="balance-icon"><Zap size={21} /></div></div>
+    <div className="balance-card"><div><div className="balance-label"><span className="eyebrow">TOTAL ACCRUED</span><button className="balance-toggle" type="button" onClick={onToggleBalance} aria-label={isBalanceHidden ? "Show balance" : "Hide balance"}>{isBalanceHidden ? <EyeOff size={16} /> : <Eye size={16} />}</button></div><strong>{displayBalance} <small>RTR</small></strong><span className="delta"><ArrowUpRight size={14} /> {isBalanceHidden ? "•••••• / day" : "+0.16 RTR / day"}</span></div><div className="balance-icon"><Zap size={21} /></div></div>
     <div className="section-heading"><div><span className="eyebrow">ACTIVE NODE</span><h2>{tier ?? "Collection protocol"}</h2></div><span className="live-dot">{active ? "LIVE" : "PAUSED"}</span></div>
     <div className="ring-wrap"><div className="progress-ring" style={{ "--progress": `${progress * 3.6}deg` } as React.CSSProperties}><div className="ring-inner"><Sparkles size={17} /><strong>{formatTime(remaining)}</strong><span>{active ? "Accumulating" : "Ready to collect"}</span></div></div></div>
     <button className="collect-button" onClick={onStart}><span className="pulse" />{active ? "Collection active" : "Start 24-hour free node"}<ChevronRight size={18} /></button>
