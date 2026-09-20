@@ -9,6 +9,8 @@ import {
   ChevronRight,
   CircleHelp,
   Crown,
+  Eye,
+  EyeOff,
   Gamepad2,
   Globe2,
   Info,
@@ -31,6 +33,7 @@ import { createClient } from "@/lib/supabase/client";
 
 type View = "dashboard" | "upgrades" | "trading" | "game" | "wallet";
 type Activation = { tier: string; activated_at: string; expires_at: string };
+type Profile = { full_name: string | null };
 const supabase = createClient();
 
 const tiers = [
@@ -69,7 +72,8 @@ function formatTime(seconds: number) {
 }
 
 export default function Home() {
-  const [user, setUser] = useState<{ email?: string } | null>(null);
+  const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
+  const [profileName, setProfileName] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [view, setView] = useState<View>("dashboard");
   const [profileOpen, setProfileOpen] = useState(false);
@@ -80,6 +84,8 @@ export default function Home() {
   const [activation, setActivation] = useState<Activation | null>(null);
   const [remaining, setRemaining] = useState(0);
   const [balance, setBalance] = useState(128.42);
+  const [balanceVisible, setBalanceVisible] = useState(true);
+  const [visibilityReady, setVisibilityReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState("No file selected");
   const fileInput = useRef<HTMLInputElement>(null);
@@ -88,11 +94,27 @@ export default function Home() {
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
   }, []);
 
+  useEffect(() => {
+    window.setTimeout(() => {
+      const storedVisibility = window.localStorage.getItem("rtr-balance-visible");
+      if (storedVisibility !== null) setBalanceVisible(storedVisibility === "true");
+      setVisibilityReady(true);
+    }, 0);
+  }, []);
+
+  useEffect(() => {
+    if (visibilityReady) window.localStorage.setItem("rtr-balance-visible", String(balanceVisible));
+  }, [balanceVisible, visibilityReady]);
+
   async function loadActivation() {
-    const response = await fetch("/api/mining/activate");
-    if (!response.ok) return;
-    const body = await response.json() as { activation: Activation | null };
-    setActivation(body.activation);
+    try {
+      const response = await fetch("/api/mining/activate");
+      if (!response.ok) return;
+      const body = await response.json() as { activation: Activation | null };
+      setActivation(body.activation);
+    } catch {
+      setActivation(null);
+    }
   }
 
   useEffect(() => {
@@ -103,6 +125,7 @@ export default function Home() {
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      if (!session?.user) setProfileName(null);
       setAuthLoading(false);
       if (session?.user) void loadActivation();
       else {
@@ -112,6 +135,17 @@ export default function Home() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    void supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle<Profile>().then(({ data }) => {
+      if (!cancelled) setProfileName(data?.full_name?.trim() || null);
+    }).catch(() => {
+      if (!cancelled) setProfileName(null);
+    });
+    return () => { cancelled = true; };
+  }, [user]);
 
   useEffect(() => {
     if (!activation) return;
@@ -133,12 +167,23 @@ export default function Home() {
 
   async function activateTier(tier: string) {
     setError(null);
-    const response = await fetch("/api/mining/activate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tier }),
-    });
-    const body = await response.json() as { activation?: Activation; error?: string };
+    let response: Response;
+    let body: { activation?: Activation; error?: string; standard?: boolean };
+    try {
+      response = await fetch("/api/mining/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tier }),
+      });
+      body = await response.json() as { activation?: Activation; error?: string; standard?: boolean };
+    } catch {
+      setActivation(null);
+      return false;
+    }
+    if (body.standard) {
+      setActivation(null);
+      return false;
+    }
     if (!response.ok || !body.activation) {
       setError(body.error ?? "Unable to activate this tier.");
       return false;
@@ -191,13 +236,13 @@ export default function Home() {
       </header>
 
       <section className="identity-row">
-        <div><span className="eyebrow">WELCOME BACK</span><h1>{user.email}</h1></div>
+        <div><h1>Hello, {profileName ?? "Miner ⚡"}{profileName && " 👋"}</h1></div>
         <div className="status-pill"><span /> Node online</div>
       </section>
 
       <section className="content-scroll">
         {error && <div className="error-banner" role="alert">{error}</div>}
-        {view === "dashboard" && <Dashboard balance={balance} active={active} tier={activation?.tier} progress={progress} remaining={remaining} onStart={startCollection} />}
+        {view === "dashboard" && <Dashboard balance={balance} balanceVisible={balanceVisible} onToggleBalance={() => setBalanceVisible((visible) => !visible)} active={active} tier={activation?.tier} progress={progress} remaining={remaining} onStart={startCollection} />}
         {view === "upgrades" && <Upgrades onPurchase={purchase} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
         {view === "game" && <PlaceholderView icon={<Gamepad2 />} title="Node quests" text="Complete community missions to unlock bonus points." />}
@@ -230,13 +275,14 @@ export default function Home() {
   );
 }
 
-function Dashboard({ balance, active, tier, progress, remaining, onStart }: { balance: number; active: boolean; tier?: string; progress: number; remaining: number; onStart: () => void }) {
+function Dashboard({ balance, balanceVisible, onToggleBalance, active, tier, progress, remaining, onStart }: { balance: number; balanceVisible: boolean; onToggleBalance: () => void; active: boolean; tier?: string; progress: number; remaining: number; onStart: () => void }) {
+  const displayBalance = balanceVisible ? `$${balance.toFixed(4)}` : "••••••";
   return <div className="dashboard-view">
-    <div className="balance-card"><div><span className="eyebrow">TOTAL ACCRUED</span><strong>${balance.toFixed(4)} <small>RTR</small></strong><span className="delta"><ArrowUpRight size={14} /> +0.16 RTR / day</span></div><div className="balance-icon"><Zap size={21} /></div></div>
+    <div className="balance-card"><div><div className="balance-label"><span className="eyebrow">TOTAL ACCRUED</span><button className="balance-toggle" type="button" onClick={onToggleBalance} aria-label={balanceVisible ? "Hide balance" : "Show balance"}>{balanceVisible ? <Eye size={16} /> : <EyeOff size={16} />}</button></div><strong>{displayBalance} <small>RTR</small></strong><span className="delta"><ArrowUpRight size={14} /> {balanceVisible ? "+0.16 RTR / day" : "•••••• / day"}</span></div><div className="balance-icon"><Zap size={21} /></div></div>
     <div className="section-heading"><div><span className="eyebrow">ACTIVE NODE</span><h2>{tier ?? "Collection protocol"}</h2></div><span className="live-dot">{active ? "LIVE" : "PAUSED"}</span></div>
     <div className="ring-wrap"><div className="progress-ring" style={{ "--progress": `${progress * 3.6}deg` } as React.CSSProperties}><div className="ring-inner"><Sparkles size={17} /><strong>{formatTime(remaining)}</strong><span>{active ? "Accumulating" : "Ready to collect"}</span></div></div></div>
     <button className="collect-button" onClick={onStart}><span className="pulse" />{active ? "Collection active" : "Start 24-hour free node"}<ChevronRight size={18} /></button>
-    <div className="metric-grid"><div><span>Network</span><strong>Base Mainnet</strong></div><div><span>Protocol</span><strong>v2.4.8</strong></div><div><span>Multiplier</span><strong>1.0x</strong></div></div>
+    <div className="metric-grid"><div><span>Network</span><strong>Base Mainnet</strong></div><div><span>Protocol</span><strong>v2.4.8</strong></div><div><span>Multiplier</span><strong>1.0x</strong><small>Standard Hashrate Protocol</small></div></div>
   </div>;
 }
 

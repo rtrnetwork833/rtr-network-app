@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { cycleSecondsForTier } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/server";
 
+function isMissingActivationTable(error: { code?: string; message?: string }) {
+  return error.code === "42P01" || error.code === "PGRST205" || error.message?.includes("booster_activations") === true;
+}
+
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   if (!body.tier || typeof body.tier !== "string" || cycleSecondsForTier(body.tier) === null) {
@@ -20,7 +24,10 @@ export async function POST(request: Request) {
     .select("tier, activated_at, expires_at")
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (isMissingActivationTable(error)) return NextResponse.json({ activation: null, standard: true });
+    return NextResponse.json({ error: "Unable to save the node activation." }, { status: 500 });
+  }
   return NextResponse.json({ ok: true, activation: data });
 }
 
@@ -37,6 +44,9 @@ export async function GET() {
     .limit(1)
     .maybeSingle();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (isMissingActivationTable(error)) return NextResponse.json({ activation: null, standard: true });
+    return NextResponse.json({ error: "Unable to load the node activation." }, { status: 500 });
+  }
   return NextResponse.json({ activation: data });
 }
