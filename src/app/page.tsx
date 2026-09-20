@@ -72,8 +72,9 @@ function formatTime(seconds: number) {
 }
 
 export default function Home() {
-  const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
+  const [user, setUser] = useState<{ id: string } | null>(null);
   const [profileName, setProfileName] = useState<string | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(true);
   const [view, setView] = useState<View>("dashboard");
   const [profileOpen, setProfileOpen] = useState(false);
@@ -120,11 +121,13 @@ export default function Home() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user);
+      setProfileLoading(Boolean(data.user));
       setAuthLoading(false);
       if (data.user) void loadActivation();
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      setProfileLoading(Boolean(session?.user));
       if (!session?.user) setProfileName(null);
       setAuthLoading(false);
       if (session?.user) void loadActivation();
@@ -140,9 +143,15 @@ export default function Home() {
     if (!user) return;
     let cancelled = false;
     void supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle<Profile>().then(({ data }) => {
-      if (!cancelled) setProfileName(data?.full_name?.trim() || null);
+      if (!cancelled) {
+        setProfileName(data?.full_name?.trim() || null);
+        setProfileLoading(false);
+      }
     }).catch(() => {
-      if (!cancelled) setProfileName(null);
+      if (!cancelled) {
+        setProfileName(null);
+        setProfileLoading(false);
+      }
     });
     return () => { cancelled = true; };
   }, [user]);
@@ -236,7 +245,9 @@ export default function Home() {
       </header>
 
       <section className="identity-row">
-        <div><h1>Hello, {profileName ?? "Miner ⚡"}{profileName && " 👋"}</h1></div>
+        <div className="greeting" aria-live="polite">
+          {profileLoading ? <span className="greeting-skeleton" aria-label="Loading profile name" /> : <h1>Hello, {profileName ?? "Profile member"} 👋</h1>}
+        </div>
         <div className="status-pill"><span /> Node online</div>
       </section>
 
