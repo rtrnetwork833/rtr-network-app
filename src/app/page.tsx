@@ -34,6 +34,7 @@ import { createClient } from "@/lib/supabase/client";
 type View = "dashboard" | "upgrades" | "trading" | "game" | "wallet";
 type Activation = { tier: string; activated_at: string; expires_at: string };
 type Profile = { full_name: string | null };
+type WalletBalance = { balance: number | string | null };
 const supabase = createClient();
 
 const tiers = [
@@ -84,7 +85,7 @@ export default function Home() {
   const [active, setActive] = useState(false);
   const [activation, setActivation] = useState<Activation | null>(null);
   const [remaining, setRemaining] = useState(0);
-  const [balance, setBalance] = useState(128.42);
+  const [balance, setBalance] = useState(0);
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
   const [visibilityReady, setVisibilityReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -154,10 +155,29 @@ export default function Home() {
       } catch {
         if (!cancelled) {
           setProfileName(null);
+          setProfileLoading(false);
         }
       }
     }
     void loadProfile();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const userId = user.id;
+    let cancelled = false;
+    async function loadBalance() {
+      try {
+        const { data, error } = await supabase.from("wallet_balances").select("balance").eq("user_id", userId).maybeSingle<WalletBalance>();
+        if (error) throw error;
+        const nextBalance = Number(data?.balance ?? 0);
+        if (!cancelled) setBalance(Number.isFinite(nextBalance) ? nextBalance : 0);
+      } catch {
+        if (!cancelled) setBalance(0);
+      }
+    }
+    void loadBalance();
     return () => { cancelled = true; };
   }, [user]);
 
@@ -171,7 +191,6 @@ export default function Home() {
     updateRemaining();
     const timer = window.setInterval(() => {
       updateRemaining();
-      if (new Date(activation.expires_at).getTime() > Date.now()) setBalance((current) => current + 0.16 / 86400);
     }, 1000);
     return () => window.clearInterval(timer);
   }, [activation]);
@@ -285,7 +304,7 @@ export default function Home() {
         <div className="language-grid">{[["English", "en"], ["Spanish", "es"], ["French", "fr"], ["Chinese", "zh-CN"], ["Arabic", "ar"], ["Hindi", "hi"], ["Portuguese", "pt"], ["German", "de"]].map(([item, code]) => <button key={item} className={language === item ? "language-option selected" : "language-option"} onClick={() => { setLanguage(item); const selector = document.querySelector<HTMLSelectElement>(".goog-te-combo"); if (selector) { selector.value = code; selector.dispatchEvent(new Event("change")); } setModal(null); }}>{item}{language === item && <Check size={15} />}</button>)}</div>
       </Modal>}
       {modal === "tasks" && <Modal title="Community tasks" onClose={() => setModal(null)}>
-        {["Join Official Telegram", "Follow on Warpcast", "Share the RTR Network update"].map((task) => <div className="task-row" key={task}><span>{task}</span><button className="small-button" onClick={() => setBalance((current) => current + 0.25)}>Watch Ad to Verify</button></div>)}
+          {["Join Official Telegram", "Follow on Warpcast", "Share the RTR Network update"].map((task) => <div className="task-row" key={task}><span>{task}</span><span className="task-status">Verification pending</span></div>)}
       </Modal>}
     </main>
   );

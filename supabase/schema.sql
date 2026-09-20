@@ -8,6 +8,18 @@ create table if not exists public.profiles (
 
 alter table public.profiles enable row level security;
 
+create table if not exists public.wallet_balances (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  balance numeric(20, 8) not null default 0 check (balance >= 0),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.wallet_balances enable row level security;
+
+create policy "Users can read their own wallet balance"
+  on public.wallet_balances for select
+  using (auth.uid() = user_id);
+
 create policy "Users can read their own profile"
   on public.profiles for select
   using (auth.uid() = id);
@@ -43,6 +55,9 @@ begin
     coalesce(new.raw_user_meta_data ->> 'full_name', ''),
     (new.raw_user_meta_data ->> 'date_of_birth')::date
   );
+  insert into public.wallet_balances (user_id, balance)
+  values (new.id, 0)
+  on conflict (user_id) do nothing;
   return new;
 end;
 $$;
