@@ -255,11 +255,22 @@ function AuthOverlay() {
   const [fullName, setFullName] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
+  const [signupVerification, setSignupVerification] = useState(false);
+  const [enteredToken, setEnteredToken] = useState("");
   const [showDobInfo, setShowDobInfo] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const pinIsValid = /^\d{6}$/.test(password);
   const pinsMatch = pinIsValid && password === confirmPin;
+
+  async function verifySignupCode(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    const result = await supabase.auth.verifyOtp({ email, token: enteredToken, type: "signup" });
+    setBusy(false);
+    if (result.error) setMessage(result.error.message);
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -277,12 +288,14 @@ function AuthOverlay() {
       : await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName, date_of_birth: dateOfBirth } } });
     setBusy(false);
     if (result.error) setMessage(result.error.message);
-    else if (mode === "signup") setMessage("Account created. Check your email if confirmation is enabled.");
+    else if (mode === "signup") setSignupVerification(true);
   }
 
   const isSignup = mode === "signup";
   const isRecovery = mode === "recovery";
   const canSubmit = !busy && (mode === "login" || (isSignup ? Boolean(fullName && email && dateOfBirth && pinsMatch) : Boolean(email && dateOfBirth)));
+
+  if (signupVerification) return <main className="app-shell auth-shell"><div className="auth-panel otp-panel"><img className="shield-mark" src="/rtr-shield.svg" alt="RTR Network shield" /><span className="eyebrow">REGISTRATION ACTIVATION</span><h1>Verify Your Account</h1><p>We sent a 6-digit secure security verification token to your email inbox. Please type it in below to authorize your registration activation script.</p><form onSubmit={verifySignupCode}><label className="otp-label">Security token<input className="otp-input" type="text" inputMode="numeric" maxLength={6} pattern="[0-9]*" value={enteredToken} onChange={(event) => setEnteredToken(event.target.value.replace(/\D/g, "").slice(0, 6))} required autoComplete="one-time-code" /></label>{message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={busy || enteredToken.length !== 6}>{busy ? <><span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>Authenticating token...</> : "Verify Code"}</button></form></div></main>;
 
   return <main className="app-shell auth-shell"><div className="auth-panel"><img className="shield-mark" src="/rtr-shield.svg" alt="RTR Network shield" /><span className="eyebrow">SECURE NODE PLATFORM</span><h1>{isRecovery ? "Recover your account" : mode === "login" ? "Welcome back" : "Create your account"}</h1><p>{isRecovery ? "Verify your registered details to receive a secure password reset code." : "Sign in to access your persistent node dashboard and activation history."}</p><form onSubmit={submit}>
     {isSignup && <label>Full name<input type="text" value={fullName} onChange={(event) => setFullName(event.target.value)} required autoComplete="name" /></label>}
