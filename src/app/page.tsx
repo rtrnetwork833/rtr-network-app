@@ -141,18 +141,24 @@ export default function Home() {
 
   useEffect(() => {
     if (!user) return;
+    const userId = user.id;
     let cancelled = false;
-    void supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle<Profile>().then(({ data }) => {
-      if (!cancelled) {
-        setProfileName(data?.full_name?.trim() || null);
-        setProfileLoading(false);
+    async function loadProfile() {
+      try {
+        const { data, error } = await supabase.from("profiles").select("full_name").eq("id", userId).maybeSingle<Profile>();
+        if (error) throw error;
+        if (!cancelled) {
+          setProfileName(data?.full_name?.trim() || null);
+          setProfileLoading(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setProfileName(null);
+          setProfileLoading(false);
+        }
       }
-    }).catch(() => {
-      if (!cancelled) {
-        setProfileName(null);
-        setProfileLoading(false);
-      }
-    });
+    }
+    void loadProfile();
     return () => { cancelled = true; };
   }, [user]);
 
