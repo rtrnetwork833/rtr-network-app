@@ -30,8 +30,7 @@ import {
   Zap,
 } from "lucide-react";
 import { formatUnits, type Address } from "viem";
-import { useAccount, useBalance, useReadContract } from "wagmi";
-import { useWeb3Modal } from "@web3modal/wagmi/react";
+import { useAccount, useBalance, useConnect, useConnectors, useReadContract } from "wagmi";
 import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/client";
 
@@ -80,7 +79,7 @@ function formatTime(seconds: number) {
 }
 
 export default function Home() {
-  const [user, setUser] = useState<{ id: string } | null>(null);
+  const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
   const [profileName, setProfileName] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(true);
@@ -99,6 +98,10 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState("No file selected");
   const fileInput = useRef<HTMLInputElement>(null);
+  const walletProvisionedFor = useRef("");
+  const { address } = useAccount();
+  const { connectAsync } = useConnect();
+  const connectors = useConnectors();
 
   useEffect(() => {
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
@@ -186,6 +189,25 @@ export default function Home() {
     void loadProfile();
     return () => { cancelled = true; };
   }, [user]);
+
+  useEffect(() => {
+    const email = user?.email?.trim().toLowerCase();
+    const coinbaseConnector = connectors.find((connector) => connector.id === "coinbaseWalletSDK");
+    if (!email) {
+      walletProvisionedFor.current = "";
+      return;
+    }
+    if (!coinbaseConnector || address || walletProvisionedFor.current === email) return;
+    walletProvisionedFor.current = email;
+    void (async () => {
+      try {
+        const provider = await coinbaseConnector.getProvider() as { request: (args: { method: string; params: unknown[] }) => Promise<unknown> };
+        await provider.request({ method: "eth_requestAccounts", params: [{ onboarding: "instant", email }] });
+      } catch {
+      }
+      await connectAsync({ connector: coinbaseConnector }).catch(() => undefined);
+    })();
+  }, [address, connectAsync, connectors, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -305,7 +327,7 @@ export default function Home() {
         <div className="greeting" aria-live="polite">
           {profileLoading || !profileName ? <span className="greeting-skeleton" aria-label="Loading profile name" /> : <h1>Hello, {profileName}</h1>}
         </div>
-        <div className="status-pill"><span /> Node online</div>
+        <div className="status-pill">{profileName && <strong>{profileName}</strong>}<span /> Node online</div>
       </section>
 
       <section className="content-scroll">
@@ -434,6 +456,7 @@ function AuthOverlay() {
       : await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName, date_of_birth: dateOfBirth } } });
     setBusy(false);
     if (result.error) setMessage(result.error.message);
+    else if (mode === "login") setPassword("");
     else if (mode === "signup") setSignupVerification(true);
   }
 
@@ -447,6 +470,8 @@ function AuthOverlay() {
       setPassword("");
       setMessage("Incorrect PIN. Try again.");
       window.requestAnimationFrame(() => pinInput.current?.focus());
+    } else {
+      setPassword("");
     }
   }
 
@@ -481,8 +506,7 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
 }
 
 function WalletView() {
-  const { address, isConnected } = useAccount();
-  const { open } = useWeb3Modal();
+  const { address } = useAccount();
   const { data: nativeBalance } = useBalance({ address });
   const tokenAddress = process.env.NEXT_PUBLIC_RTR_TOKEN_ADDRESS as Address | undefined;
   const { data: rtrBalance } = useReadContract({
@@ -520,7 +544,7 @@ function WalletView() {
     return () => { cancelled = true; };
   }, []);
 
-  const shortenedAddress = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Wallet not connected";
+  const shortenedAddress = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Creating secure wallet...";
   const rtrAmount = typeof rtrBalance === "bigint" ? Number(formatUnits(rtrBalance, 18)) : 0;
   const ethAmount = nativeBalance ? Number(formatUnits(nativeBalance.value, nativeBalance.decimals)) : 0;
   const usdcAmount = typeof usdcBalance === "bigint" ? Number(formatUnits(usdcBalance, 6)) : 0;
@@ -536,10 +560,9 @@ function WalletView() {
     <div className="page-intro"><span className="eyebrow">BASE NETWORK</span><h2>Embedded wallet</h2><p>Read-only balances for your connected Base account.</p></div>
     <div className="wallet-card">
       <div className="wallet-card-top"><div><span className="eyebrow">LIVE ADDRESS</span><strong className="wallet-address">{shortenedAddress}</strong></div><Wallet size={20} /></div>
-      {address ? <div className="wallet-actions"><button className="secondary-button" onClick={() => void navigator.clipboard.writeText(address)}>Copy address</button><a className="secondary-button" href={`https://basescan.org/address/${address}`} target="_blank" rel="noreferrer">View on BaseScan <ArrowUpRight size={14} /></a></div> : <button className="primary-button wallet-connect" onClick={() => void open()}>Connect Base wallet</button>}
+      {address && <div className="wallet-actions"><button className="secondary-button" onClick={() => void navigator.clipboard.writeText(address)}>Copy address</button><a className="secondary-button" href={`https://basescan.org/address/${address}`} target="_blank" rel="noreferrer">View on BaseScan <ArrowUpRight size={14} /></a></div>}
       <div className="portfolio-list" aria-label="Wallet portfolio">{sortedPortfolio.map((asset) => <div className="portfolio-row" key={asset.symbol}><div className="asset-identity"><span className={`asset-logo asset-${asset.symbol.toLowerCase()}`}>{asset.symbol.slice(0, 1)}</span><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div><div className="asset-value"><strong>{asset.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} {asset.symbol}</strong><small>{asset.price === null ? "Price unavailable" : `$${asset.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</small></div></div>)}</div>
     </div>
-    {!isConnected && <p className="wallet-note">Connect a wallet to display its live on-chain address and balances.</p>}
   </div>;
 }
 
@@ -550,17 +573,30 @@ function MarketView() {
     let cancelled = false;
     type GeckoToken = { attributes?: { symbol?: string; name?: string; price_usd?: string; price_change_percentage?: { h24?: string }; volume_usd?: { h24?: string } } };
     type GeckoResponse = { data?: GeckoToken[] };
-    Promise.all([1, 2, 3].map((page) => fetch(`https://api.geckoterminal.com/api/v2/networks/base/tokens?page=${page}`).then((response) => response.ok ? response.json() as Promise<GeckoResponse> : Promise.reject(new Error("market unavailable")))))
-      .then((responses) => {
+    type DexPair = { chainId?: string; baseToken?: { symbol?: string; name?: string }; priceUsd?: string; priceChange?: { h24?: number }; volume?: { h24?: number } };
+    type DexResponse = { pairs?: DexPair[] };
+    const geckoPages = Promise.allSettled([1, 2, 3].map((page) => fetch(`https://api.geckoterminal.com/api/v2/networks/base/tokens?page=${page}`).then((response) => response.ok ? response.json() as Promise<GeckoResponse> : Promise.reject(new Error("market unavailable")))));
+    const rtrSearch = fetch("https://api.dexscreener.com/latest/dex/search?q=RTR%20Network").then((response) => response.ok ? response.json() as Promise<DexResponse> : Promise.reject(new Error("RTR market unavailable"))).catch(() => ({ pairs: [] }));
+    Promise.all([geckoPages, rtrSearch])
+      .then(([pageResults, dexResponse]) => {
         if (cancelled) return;
-        const fetched = responses.flatMap((response) => response.data ?? []).map(({ attributes }) => ({
+        const fetched = pageResults.flatMap((result) => result.status === "fulfilled" ? result.value.data ?? [] : []).map(({ attributes }) => ({
           symbol: attributes?.symbol?.trim() || "--",
           name: attributes?.name?.trim() || "Unknown token",
           price: attributes?.price_usd ? Number(attributes.price_usd) : null,
           change: attributes?.price_change_percentage?.h24 ? Number(attributes.price_change_percentage.h24) : null,
           volume: attributes?.volume_usd?.h24 ? Number(attributes.volume_usd.h24) : 0,
-        })).filter((asset) => asset.symbol !== "--" && asset.symbol.toUpperCase() !== "RTR").sort((left, right) => (right.volume ?? 0) - (left.volume ?? 0)).slice(0, 49);
-        setMarket([{ symbol: "RTR", name: "RTR Network", price: null, change: null, volume: null }, ...fetched]);
+        })).filter((asset) => asset.symbol !== "--" && asset.symbol.toUpperCase() !== "RTR");
+        const rtrPair = dexResponse.pairs?.find((pair) => pair.chainId === "base" && pair.baseToken?.symbol?.toUpperCase() === "RTR") ?? dexResponse.pairs?.find((pair) => pair.chainId === "base");
+        const rtrAsset: MarketAsset = {
+          symbol: "RTR",
+          name: rtrPair?.baseToken?.name || "RTR Network",
+          price: rtrPair?.priceUsd ? Number(rtrPair.priceUsd) : null,
+          change: typeof rtrPair?.priceChange?.h24 === "number" ? rtrPair.priceChange.h24 : null,
+          volume: typeof rtrPair?.volume?.h24 === "number" ? rtrPair.volume.h24 : null,
+        };
+        const uniqueAssets = new Map(fetched.map((asset) => [`${asset.symbol.toUpperCase()}-${asset.name}`, asset]));
+        setMarket([rtrAsset, ...Array.from(uniqueAssets.values()).sort((left, right) => (right.volume ?? 0) - (left.volume ?? 0)).slice(0, 49)]);
       })
       .catch(() => setMarket([{ symbol: "RTR", name: "RTR Network", price: null, change: null, volume: null }]));
     return () => { cancelled = true; };
