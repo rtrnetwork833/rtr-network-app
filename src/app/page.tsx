@@ -276,8 +276,7 @@ export default function Home() {
     localStorage.clear();
     sessionStorage.clear();
     await supabase.auth.signOut();
-    // Force an absolute hard refresh of the window to destroy lingering state variables in browser memory
-    window.location.href = "/login";
+    window.location.replace("/login");
   }
 
   if (authLoading) return <main className="app-shell auth-loading">Checking secure session...</main>;
@@ -361,6 +360,7 @@ function AuthOverlay() {
   const [showDobInfo, setShowDobInfo] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [isUserTyping, setIsUserTyping] = useState(false);
   const pinInput = useRef<HTMLInputElement>(null);
   const pinIsValid = /^\d{6}$/.test(pinState);
   const pinsMatch = pinIsValid && pinState === confirmPin;
@@ -384,6 +384,7 @@ function AuthOverlay() {
       setMessage(null);
       setProfilePreview(null);
       setBusy(false);
+      setIsUserTyping(false);
     };
     window.addEventListener("rtr-auth-reset", resetAuthForm);
     return () => window.removeEventListener("rtr-auth-reset", resetAuthForm);
@@ -460,7 +461,7 @@ function AuthOverlay() {
 
   if (mode === "login") return <main className="app-shell auth-shell"><div className="auth-panel login-panel"><div className="auth-identity"><div className="auth-avatar">{profilePreview?.avatar_url ? <img src={profilePreview.avatar_url} alt="Profile" /> : <UserRound size={34} strokeWidth={1.5} />}</div><strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong><span>Secure node access</span></div><span className="eyebrow">SECURE NODE PLATFORM</span><h1>Welcome back</h1><p>Enter your 6-digit PIN to access your persistent node dashboard.</p><form autoComplete="new-password" style={{ width: "100%" }} onSubmit={(event) => { event.preventDefault(); void submitLogin(pinState); }}>
     <label>Email address<input type="email" value={email} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="email" /></label>
-    <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} className="pin-input" type="password" autoComplete="new-password" inputMode="numeric" maxLength={6} value={pinState} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6) void submitLogin(pin); }} pattern="[0-9]*" required /></div></label>
+    <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} className="pin-input" type="password" autoComplete="new-password" inputMode="numeric" maxLength={6} value={pinState} onKeyDown={(event) => { if (/^\d$/.test(event.key)) setIsUserTyping(true); }} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6 && isUserTyping) { void submitLogin(pin); setIsUserTyping(false); } }} pattern="[0-9]*" required /></div></label>
     {message && <div className="auth-message" role="alert">{message}</div>}
     {busy && <div className="login-status" aria-live="polite">Verifying secure PIN...</div>}
   </form>
@@ -546,13 +547,15 @@ function MarketView() {
     let cancelled = false;
     type CoinGeckoAsset = { id?: string; symbol?: string; name?: string; current_price?: number; price_change_percentage_24h?: number; total_volume?: number };
     type CoinGeckoPrice = { usd?: number; usd_24h_change?: number };
-    const baseAssets = fetchWithTimeout("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&category=base-ecosystem&order=market_cap_desc&per_page=50&page=1&sparkline=false&price_change_percentage=24h")
-      .then((response) => response.ok ? response.json() as Promise<CoinGeckoAsset[]> : Promise.reject(new Error("market unavailable")));
-    const rtrPrice = fetchWithTimeout("https://api.coingecko.com/api/v3/simple/price?ids=rtr-network&vs_currencies=usd&include_24hr_change=true")
-      .then((response) => response.ok ? response.json() as Promise<Record<string, CoinGeckoPrice>> : Promise.reject(new Error("RTR market unavailable")))
-      .catch(() => ({} as Record<string, CoinGeckoPrice>));
-    Promise.all([baseAssets, rtrPrice]).then(([assets, rtrPrices]) => {
+    async function refreshMarket() {
+      try {
+        const marketPages = await Promise.all([1, 2, 3, 4].map((page) => fetchWithTimeout(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}&sparkline=false&price_change_percentage=24h`)
+          .then((response) => response.ok ? response.json() as Promise<CoinGeckoAsset[]> : Promise.reject(new Error("market unavailable")))));
+        const rtrPrices = await fetchWithTimeout("https://api.coingecko.com/api/v3/simple/price?ids=rtr-network&vs_currencies=usd&include_24hr_change=true")
+          .then((response) => response.ok ? response.json() as Promise<Record<string, CoinGeckoPrice>> : Promise.reject(new Error("RTR market unavailable")))
+          .catch(() => ({} as Record<string, CoinGeckoPrice>));
         if (cancelled) return;
+        const assets = marketPages.flat();
         const fetched = assets.map((asset) => ({
           symbol: asset.symbol?.trim().toUpperCase() || "--",
           name: asset.name?.trim() || "Unknown token",
@@ -562,13 +565,17 @@ function MarketView() {
         })).filter((asset) => asset.symbol !== "--" && asset.symbol !== "RTR");
         const rtrAsset = assets.find((asset) => asset.id === "rtr-network" || asset.symbol?.toUpperCase() === "RTR");
         const rtrSimplePrice = rtrPrices["rtr-network"];
-        setMarket([{ symbol: "RTR", name: rtrAsset?.name || "RTR Network", price: rtrAsset?.current_price ?? rtrSimplePrice?.usd ?? null, change: rtrAsset?.price_change_percentage_24h ?? rtrSimplePrice?.usd_24h_change ?? null, volume: rtrAsset?.total_volume ?? null }, ...fetched.slice(0, 49)]);
-      })
-      .catch(() => setMarket([{ symbol: "RTR", name: "RTR Network", price: null, change: null, volume: null }]));
-    return () => { cancelled = true; };
+        setMarket([{ symbol: "RTR", name: rtrAsset?.name || "RTR Network", price: rtrAsset?.current_price ?? rtrSimplePrice?.usd ?? null, change: rtrAsset?.price_change_percentage_24h ?? rtrSimplePrice?.usd_24h_change ?? null, volume: rtrAsset?.total_volume ?? null }, ...fetched.slice(0, 1000)]);
+      } catch {
+        if (!cancelled) setMarket([{ symbol: "RTR", name: "RTR Network", price: null, change: null, volume: null }]);
+      }
+    }
+    void refreshMarket();
+    const refreshTimer = window.setInterval(() => void refreshMarket(), 10000);
+    return () => { cancelled = true; window.clearInterval(refreshTimer); };
   }, []);
 
-  return <div className="market-view"><div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and 24-hour movement across the RTR ecosystem.</p></div><div className="market-table" aria-label="Base ecosystem market monitor"><div className="market-row market-header"><span>Asset</span><span>Spot price</span><span>24h</span></div>{market.map((asset) => <div className="market-row" key={asset.symbol}><span><strong>{asset.symbol}</strong><small>{asset.name}</small></span><span>{asset.price === null ? "--" : `$${asset.price.toLocaleString(undefined, { maximumFractionDigits: 4 })}`}</span><span className={asset.change !== null && asset.change >= 0 ? "market-up" : "market-down"}>{asset.change === null ? "--" : `${asset.change >= 0 ? "+" : ""}${asset.change.toFixed(2)}%`}</span></div>)}</div></div>;
+  return <div className="market-view"><div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and real-time movement across the RTR ecosystem.</p></div><div className="market-table" aria-label="Base ecosystem market monitor"><div className="market-row market-header"><span>Asset</span><span>Spot price</span><span>Live Change</span></div>{market.map((asset, index) => <div className="market-row" key={`${asset.symbol}-${asset.name}-${index}`}><span><strong>{asset.symbol}</strong><small>{asset.name}</small></span><span>{asset.price === null ? "--" : `$${asset.price.toLocaleString(undefined, { maximumFractionDigits: 4 })}`}</span><span className={asset.change !== null && asset.change >= 0 ? "market-up" : "market-down"}>{asset.change === null ? "--" : `${asset.change >= 0 ? "+" : ""}${asset.change.toFixed(2)}%`}</span></div>)}</div></div>;
 }
 
 function PlaceholderView({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) { return <div className="placeholder-view"><div className="placeholder-icon">{icon}</div><span className="eyebrow">COMING ONLINE</span><h2>{title}</h2><p>{text}</p><button className="primary-button">View protocol status <ArrowUpRight size={16} /></button></div>; }
