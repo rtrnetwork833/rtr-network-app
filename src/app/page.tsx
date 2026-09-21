@@ -39,7 +39,7 @@ type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "wallet";
 type Activation = { tier: string; activated_at: string; expires_at: string };
 type Profile = { full_name: string | null; avatar_url: string | null };
 type WalletBalance = { balance: number | string | null };
-type MarketAsset = { symbol: string; name: string; price: number | null; change: number | null };
+type MarketAsset = { symbol: string; name: string; price: number | null; change: number | null; volume?: number | null };
 type PortfolioAsset = MarketAsset & { amount: number; value: number };
 const supabase = createClient();
 const rtrTokenAbi = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
@@ -85,6 +85,7 @@ export default function Home() {
   const [profileLoading, setProfileLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(true);
   const [view, setView] = useState<View>("dashboard");
+  const [navigationReady, setNavigationReady] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [modal, setModal] = useState<"upload" | "language" | "tasks" | null>(null);
   const [language, setLanguage] = useState("English");
@@ -102,6 +103,21 @@ export default function Home() {
   useEffect(() => {
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    const mountTimer = window.setTimeout(() => {
+      const savedView = window.localStorage.getItem("active_tab");
+      if (savedView === "dashboard" || savedView === "upgrades" || savedView === "market" || savedView === "trading" || savedView === "game" || savedView === "wallet") {
+        setView(savedView);
+      }
+      setNavigationReady(true);
+    }, 0);
+    return () => window.clearTimeout(mountTimer);
+  }, []);
+
+  useEffect(() => {
+    if (navigationReady) window.localStorage.setItem("active_tab", view);
+  }, [navigationReady, view]);
 
   useEffect(() => {
     window.setTimeout(() => {
@@ -256,10 +272,9 @@ export default function Home() {
   }
 
   async function signOut() {
-    const rememberedEmail = window.localStorage.getItem("rtr-email");
-    window.localStorage.clear();
-    if (rememberedEmail) window.localStorage.setItem("rtr-email", rememberedEmail);
     await supabase.auth.signOut();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
   }
 
   if (authLoading) return <main className="app-shell auth-loading">Checking secure session...</main>;
@@ -368,6 +383,14 @@ function AuthOverlay() {
   const pinsMatch = pinIsValid && password === confirmPin;
 
   useEffect(() => {
+    const mountTimer = window.setTimeout(() => setPassword(""), 0);
+    return () => {
+      window.clearTimeout(mountTimer);
+      setPassword("");
+    };
+  }, []);
+
+  useEffect(() => {
     if (mode !== "login" || !email.includes("@")) return;
     let cancelled = false;
     const timer = window.setTimeout(async () => {
@@ -396,6 +419,7 @@ function AuthOverlay() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (mode === "login" && password.length < 6) return;
     setBusy(true);
     setMessage(null);
     if (mode === "recovery") {
@@ -428,7 +452,7 @@ function AuthOverlay() {
 
   const isSignup = mode === "signup";
   const isRecovery = mode === "recovery";
-  const canSubmit = !busy && (mode === "login" || (isSignup ? Boolean(fullName && email && dateOfBirth && pinsMatch) : Boolean(email && dateOfBirth)));
+  const canSubmit = !busy && (mode === "login" ? Boolean(email && password.length === 6) : (isSignup ? Boolean(fullName && email && dateOfBirth && pinsMatch) : Boolean(email && dateOfBirth)));
 
   if (signupVerification) return <main className="app-shell auth-shell"><div className="auth-panel otp-panel"><img className="shield-mark" src="/rtr-shield.svg" alt="RTR Network shield" /><span className="eyebrow">REGISTRATION ACTIVATION</span><h1>Verify Your Account</h1><p>We sent a 6-digit secure security verification token to your email inbox. Please type it in below to authorize your registration activation script.</p><form onSubmit={verifySignupCode}><label className="otp-label">Security token<input className="otp-input" type="text" inputMode="numeric" maxLength={6} pattern="[0-9]*" value={enteredToken} onChange={(event) => setEnteredToken(event.target.value.replace(/\D/g, "").slice(0, 6))} required autoComplete="one-time-code" /></label>{message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={busy || enteredToken.length !== 6}>{busy ? <><span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>Authenticating token...</> : "Verify Code"}</button></form></div></main>;
 
@@ -524,14 +548,21 @@ function MarketView() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("https://api.coingecko.com/api/v3/simple/price?ids=rtr-network,ethereum,usd-coin,coinbase-wrapped-staked-eth&vs_currencies=usd&include_24hr_change=true")
-      .then((response) => response.ok ? response.json() as Promise<Record<string, { usd?: number; usd_24h_change?: number }>> : Promise.reject(new Error("market unavailable")))
-      .then((prices) => {
+    type GeckoToken = { attributes?: { symbol?: string; name?: string; price_usd?: string; price_change_percentage?: { h24?: string }; volume_usd?: { h24?: string } } };
+    type GeckoResponse = { data?: GeckoToken[] };
+    Promise.all([1, 2, 3].map((page) => fetch(`https://api.geckoterminal.com/api/v2/networks/base/tokens?page=${page}`).then((response) => response.ok ? response.json() as Promise<GeckoResponse> : Promise.reject(new Error("market unavailable")))))
+      .then((responses) => {
         if (cancelled) return;
-        const assets = [["RTR", "RTR Network", "rtr-network"], ["ETH", "Ethereum", "ethereum"], ["USDC", "Bridged USDC", "usd-coin"], ["cbETH", "Coinbase Wrapped Staked ETH", "coinbase-wrapped-staked-eth"]] as const;
-        setMarket(assets.map(([symbol, name, id]) => ({ symbol, name, price: prices[id]?.usd ?? null, change: prices[id]?.usd_24h_change ?? null })));
+        const fetched = responses.flatMap((response) => response.data ?? []).map(({ attributes }) => ({
+          symbol: attributes?.symbol?.trim() || "--",
+          name: attributes?.name?.trim() || "Unknown token",
+          price: attributes?.price_usd ? Number(attributes.price_usd) : null,
+          change: attributes?.price_change_percentage?.h24 ? Number(attributes.price_change_percentage.h24) : null,
+          volume: attributes?.volume_usd?.h24 ? Number(attributes.volume_usd.h24) : 0,
+        })).filter((asset) => asset.symbol !== "--" && asset.symbol.toUpperCase() !== "RTR").sort((left, right) => (right.volume ?? 0) - (left.volume ?? 0)).slice(0, 49);
+        setMarket([{ symbol: "RTR", name: "RTR Network", price: null, change: null, volume: null }, ...fetched]);
       })
-      .catch(() => setMarket([]));
+      .catch(() => setMarket([{ symbol: "RTR", name: "RTR Network", price: null, change: null, volume: null }]));
     return () => { cancelled = true; };
   }, []);
 
