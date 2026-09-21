@@ -33,7 +33,7 @@ import { createClient } from "@/lib/supabase/client";
 
 type View = "dashboard" | "upgrades" | "trading" | "game" | "wallet";
 type Activation = { tier: string; activated_at: string; expires_at: string };
-type Profile = { full_name: string | null };
+type Profile = { full_name: string | null; avatar_url: string | null };
 type WalletBalance = { balance: number | string | null };
 const supabase = createClient();
 
@@ -146,10 +146,11 @@ export default function Home() {
     let cancelled = false;
     async function loadProfile() {
       try {
-        const { data, error } = await supabase.from("profiles").select("full_name").eq("id", userId).single<Profile>();
+        const { data, error } = await supabase.from("profiles").select("full_name, avatar_url").eq("id", userId).single<Profile>();
         if (error) throw error;
         if (!cancelled) {
           setProfileName(data?.full_name?.trim() || null);
+          setAvatar(data?.avatar_url?.trim() || null);
           setProfileLoading(false);
         }
       } catch {
@@ -330,6 +331,7 @@ function ProfileMenu({ onSelect }: { onSelect: (item: string) => void }) {
 }
 
 function AuthOverlay() {
+  const [profilePreview, setProfilePreview] = useState<Profile | null>(null);
   const [mode, setMode] = useState<"login" | "signup" | "recovery">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -341,8 +343,28 @@ function AuthOverlay() {
   const [showDobInfo, setShowDobInfo] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showPin, setShowPin] = useState(false);
+  const pinInput = useRef<HTMLInputElement>(null);
   const pinIsValid = /^\d{6}$/.test(password);
   const pinsMatch = pinIsValid && password === confirmPin;
+
+  useEffect(() => {
+    if (mode !== "login" || !email.includes("@")) return;
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch("/api/auth/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
+        const body = await response.json() as { profile: Profile | null };
+        if (!cancelled) setProfilePreview(body.profile);
+      } catch {
+        if (!cancelled) setProfilePreview(null);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [email, mode]);
 
   async function verifySignupCode(event: React.FormEvent) {
     event.preventDefault();
@@ -372,20 +394,41 @@ function AuthOverlay() {
     else if (mode === "signup") setSignupVerification(true);
   }
 
+  async function submitLogin(pin: string) {
+    if (busy || !email || pin.length !== 6) return;
+    setBusy(true);
+    setMessage(null);
+    const result = await supabase.auth.signInWithPassword({ email, password: pin });
+    setBusy(false);
+    if (result.error) {
+      setPassword("");
+      setMessage("Incorrect PIN. Try again.");
+      window.requestAnimationFrame(() => pinInput.current?.focus());
+    }
+  }
+
   const isSignup = mode === "signup";
   const isRecovery = mode === "recovery";
   const canSubmit = !busy && (mode === "login" || (isSignup ? Boolean(fullName && email && dateOfBirth && pinsMatch) : Boolean(email && dateOfBirth)));
 
   if (signupVerification) return <main className="app-shell auth-shell"><div className="auth-panel otp-panel"><img className="shield-mark" src="/rtr-shield.svg" alt="RTR Network shield" /><span className="eyebrow">REGISTRATION ACTIVATION</span><h1>Verify Your Account</h1><p>We sent a 6-digit secure security verification token to your email inbox. Please type it in below to authorize your registration activation script.</p><form onSubmit={verifySignupCode}><label className="otp-label">Security token<input className="otp-input" type="text" inputMode="numeric" maxLength={6} pattern="[0-9]*" value={enteredToken} onChange={(event) => setEnteredToken(event.target.value.replace(/\D/g, "").slice(0, 6))} required autoComplete="one-time-code" /></label>{message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={busy || enteredToken.length !== 6}>{busy ? <><span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>Authenticating token...</> : "Verify Code"}</button></form></div></main>;
 
-  return <main className="app-shell auth-shell"><div className="auth-panel"><img className="shield-mark" src="/rtr-shield.svg" alt="RTR Network shield" /><span className="eyebrow">SECURE NODE PLATFORM</span><h1>{isRecovery ? "Recover your account" : mode === "login" ? "Welcome back" : "Create your account"}</h1><p>{isRecovery ? "Verify your registered details to receive a secure password reset code." : "Sign in to access your persistent node dashboard and activation history."}</p><form onSubmit={submit}>
+  if (mode === "login") return <main className="app-shell auth-shell"><div className="auth-panel login-panel"><div className="auth-identity"><div className="auth-avatar">{profilePreview?.avatar_url ? <img src={profilePreview.avatar_url} alt="Profile" /> : <UserRound size={34} strokeWidth={1.5} />}</div><strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong><span>Secure node access</span></div><span className="eyebrow">SECURE NODE PLATFORM</span><h1>Welcome back</h1><p>Enter your 6-digit PIN to access your persistent node dashboard.</p><form onSubmit={(event) => { event.preventDefault(); void submitLogin(password); }}>
+    <label>Email address<input type="email" value={email} onChange={(event) => { setEmail(event.target.value); setProfilePreview(null); }} required autoComplete="email" /></label>
+    <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} className="pin-input" type={showPin ? "text" : "password"} value={password} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPassword(pin); if (pin.length === 6) void submitLogin(pin); }} inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="current-password" required /><button type="button" className="pin-visibility" aria-label={showPin ? "Hide PIN" : "Show PIN"} onClick={() => setShowPin(!showPin)}>{showPin ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
+    {message && <div className="auth-message" role="alert">{message}</div>}
+    {busy && <div className="login-status" aria-live="polite">Verifying secure PIN...</div>}
+  </form>
+    <button className="auth-switch" onClick={() => { setMode("recovery"); setProfilePreview(null); setMessage(null); }}>Forgot password?</button>
+    <button className="auth-switch" onClick={() => { setMode("signup"); setProfilePreview(null); setMessage(null); }}>Need an account? Sign up</button>
+  </div></main>;
+
+  return <main className="app-shell auth-shell"><div className="auth-panel"><img className="shield-mark" src="/rtr-shield.svg" alt="RTR Network shield" /><span className="eyebrow">SECURE NODE PLATFORM</span><h1>{isRecovery ? "Recover your account" : "Create your account"}</h1><p>{isRecovery ? "Verify your registered details to receive a secure password reset code." : "Create a secure account for your persistent node dashboard."}</p><form onSubmit={submit}>
     {isSignup && <label>Full name<input type="text" value={fullName} onChange={(event) => setFullName(event.target.value)} required autoComplete="name" /></label>}
     <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" /></label>
     {(isSignup || isRecovery) && <label className="date-field">Date of birth<div className="date-input-wrap"><input type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} required /><button type="button" className="info-button" aria-label="Why we need your date of birth" aria-expanded={showDobInfo} onClick={() => setShowDobInfo(!showDobInfo)}><Info size={15} /></button>{showDobInfo && <div className="dob-tooltip" role="tooltip"><strong>🔒 Why we need your Date of Birth:</strong><span>- Account Recovery: If you ever lose access to your password, you must verify your exact date of birth to reset it.</span><span>- Anti-Hack Protection: This stops hackers from trying to steal your funds via fake password reset requests.</span><span>- Security Lock: For your safety, this information cannot be changed after registration. Please ensure it matches your official records.</span></div>}</div></label>}
     {isSignup && <><label>Create 6-digit PIN<input type="password" value={password} onChange={(event) => setPassword(event.target.value.replace(/\D/g, "").slice(0, 6))} required inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" /></label><label>Confirm 6-digit PIN<input type="password" value={confirmPin} onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))} required inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" /></label>{confirmPin && !pinsMatch && <div className="pin-error" role="alert">PINs must match and contain exactly 6 digits.</div>}</>}
-    {mode === "login" && <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={6} autoComplete="current-password" /></label>}
-    {message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={!canSubmit}>{busy ? "Securing account..." : isRecovery ? "Send recovery code" : mode === "login" ? "Log in" : "Register"}</button></form>
-    {mode === "login" && <button className="auth-switch" onClick={() => { setMode("recovery"); setMessage(null); }}>Forgot password?</button>}
+    {message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={!canSubmit}>{busy ? "Securing account..." : isRecovery ? "Send recovery code" : "Register"}</button></form>
     <button className="auth-switch" onClick={() => { setMode(isRecovery || mode === "signup" ? "login" : "signup"); setMessage(null); setShowDobInfo(false); }}>{isRecovery || mode === "signup" ? "Back to log in" : "Need an account? Sign up"}</button>
   </div></main>;
 }

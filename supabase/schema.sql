@@ -2,9 +2,12 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null unique,
   full_name text not null,
+  avatar_url text,
   date_of_birth date not null,
   created_at timestamptz not null default now()
 );
+
+alter table public.profiles add column if not exists avatar_url text;
 
 alter table public.profiles enable row level security;
 

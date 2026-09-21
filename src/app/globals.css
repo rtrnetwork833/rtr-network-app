@@ -45,6 +45,19 @@ button { font: inherit; }
 .auth-panel h1 { margin: 8px 0; font-size: 28px; letter-spacing: -.05em; }
 .auth-panel > p { color: var(--muted); font-size: 12px; line-height: 1.6; margin-bottom: 24px; }
 .auth-panel form { display: grid; gap: 15px; }
+.login-panel { text-align: center; }
+.auth-identity { display: grid; justify-items: center; gap: 6px; margin-bottom: 26px; }
+.auth-avatar { width: 76px; height: 76px; display: grid; place-items: center; margin-bottom: 5px; color: #aeb8c4; background: #243447; border: 1px solid rgba(197,255,82,.35); border-radius: 50%; box-shadow: 0 0 0 7px rgba(197,255,82,.06); }
+.auth-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.auth-identity strong { font-size: 16px; }
+.auth-identity span, .login-status { color: var(--muted); font-size: 10px; }
+.login-panel > p { margin-bottom: 22px; }
+.login-panel form { text-align: left; }
+.pin-input-wrap { position: relative; }
+.pin-input-wrap input { padding-right: 43px; letter-spacing: .24em; }
+.pin-visibility { position: absolute; right: 8px; top: 50%; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; color: var(--muted); background: transparent; border: 0; transform: translateY(-50%); cursor: pointer; }
+.pin-visibility:hover, .pin-visibility:focus-visible { color: var(--green); }
+.login-status { text-align: center; }
 .auth-panel label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; }
 .auth-panel input { width: 100%; padding: 12px 13px; color: var(--foreground); background: #081a2d; border: 1px solid var(--line); border-radius: 9px; outline: none; }
 .auth-panel input:focus { border-color: rgba(197, 255, 82, .7); }
