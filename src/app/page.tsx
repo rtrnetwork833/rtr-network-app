@@ -23,14 +23,12 @@ import {
   ShieldCheck,
   Sparkles,
   TrendingUp,
-  Upload,
   UserRound,
   Wallet,
-  X,
   Zap,
 } from "lucide-react";
 import { formatUnits, type Address } from "viem";
-import { useAccount, useBalance, useConnect, useConnectors, useReadContract } from "wagmi";
+import { useAccount, useBalance, useReadContract } from "wagmi";
 import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/client";
 
@@ -86,8 +84,6 @@ export default function Home() {
   const [view, setView] = useState<View>("dashboard");
   const [navigationReady, setNavigationReady] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [modal, setModal] = useState<"upload" | "language" | "tasks" | null>(null);
-  const [language, setLanguage] = useState("English");
   const [avatar, setAvatar] = useState<string | null>(null);
   const [active, setActive] = useState(false);
   const [activation, setActivation] = useState<Activation | null>(null);
@@ -96,12 +92,6 @@ export default function Home() {
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
   const [visibilityReady, setVisibilityReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fileName, setFileName] = useState("No file selected");
-  const fileInput = useRef<HTMLInputElement>(null);
-  const walletProvisionedFor = useRef("");
-  const { address } = useAccount();
-  const { connectAsync } = useConnect();
-  const connectors = useConnectors();
 
   useEffect(() => {
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
@@ -191,25 +181,6 @@ export default function Home() {
   }, [user]);
 
   useEffect(() => {
-    const email = user?.email?.trim().toLowerCase();
-    const coinbaseConnector = connectors.find((connector) => connector.id === "coinbaseWalletSDK");
-    if (!email) {
-      walletProvisionedFor.current = "";
-      return;
-    }
-    if (!coinbaseConnector || address || walletProvisionedFor.current === email) return;
-    walletProvisionedFor.current = email;
-    void (async () => {
-      try {
-        const provider = await coinbaseConnector.getProvider() as { request: (args: { method: string; params: unknown[] }) => Promise<unknown> };
-        await provider.request({ method: "eth_requestAccounts", params: [{ onboarding: "instant", email }] });
-      } catch {
-      }
-      await connectAsync({ connector: coinbaseConnector }).catch(() => undefined);
-    })();
-  }, [address, connectAsync, connectors, user]);
-
-  useEffect(() => {
     if (!user) return;
     const userId = user.id;
     let cancelled = false;
@@ -282,17 +253,6 @@ export default function Home() {
     }
   }
 
-  async function selectAvatar(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setFileName(file.name);
-    setAvatar(URL.createObjectURL(file));
-    const response = await fetch("/api/profile/avatar", { method: "POST", headers: { "Content-Type": file.type }, body: file });
-    const body = await response.json() as { avatarUrl?: string; error?: string };
-    if (response.ok && body.avatarUrl) setAvatar(body.avatarUrl);
-    else setError(body.error ?? "Unable to save the profile picture.");
-  }
-
   async function signOut() {
     setUser(null);
     setProfileName(null);
@@ -326,12 +286,7 @@ export default function Home() {
             {avatar ? <img src={avatar} alt="Profile" /> : <UserRound size={20} />}
           </button>
         </div>
-        {profileOpen && <ProfileMenu onSelect={(item) => {
-          setProfileOpen(false);
-          if (item === "Tasks") setModal("tasks");
-          if (item === "Change Your Language") setModal("language");
-          if (item === "Upload Profile Picture") setModal("upload");
-        }} onSignOut={() => void signOut()} />}
+        {profileOpen && <ProfileMenu onClose={() => setProfileOpen(false)} onSignOut={() => void signOut()} />}
       </header>
 
       <section className="identity-row">
@@ -360,20 +315,6 @@ export default function Home() {
         <NavItem icon={<Wallet />} label="Wallet" active={view === "wallet"} onClick={() => setView("wallet")} />
       </nav>
 
-      {modal === "upload" && <Modal title="Profile picture" onClose={() => setModal(null)}>
-        <div className="upload-preview">{avatar ? <img src={avatar} alt="Preview" /> : <UserRound size={36} />}</div>
-        <p className="modal-copy">Use a clear image so your network identity is easy to recognize.</p>
-        <input ref={fileInput} hidden type="file" accept="image/*" onChange={selectAvatar} />
-        <button className="primary-button" onClick={() => fileInput.current?.click()}><Upload size={17} /> Choose photo</button>
-        <small className="file-name">{fileName}</small>
-      </Modal>}
-      {modal === "language" && <Modal title="Language" onClose={() => setModal(null)}>
-        <p className="modal-copy">Your language preference is shared across the app.</p>
-        <div className="language-grid">{[["English", "en"], ["Spanish", "es"], ["French", "fr"], ["Chinese", "zh-CN"], ["Arabic", "ar"], ["Hindi", "hi"], ["Portuguese", "pt"], ["German", "de"]].map(([item, code]) => <button key={item} className={language === item ? "language-option selected" : "language-option"} onClick={() => { setLanguage(item); const selector = document.querySelector<HTMLSelectElement>(".goog-te-combo"); if (selector) { selector.value = code; selector.dispatchEvent(new Event("change")); } setModal(null); }}>{item}{language === item && <Check size={15} />}</button>)}</div>
-      </Modal>}
-      {modal === "tasks" && <Modal title="Community tasks" onClose={() => setModal(null)}>
-          {["Join Official Telegram", "Follow on Warpcast", "Share the RTR Network update"].map((task) => <div className="task-row" key={task}><span>{task}</span><span className="task-status">Verification pending</span></div>)}
-      </Modal>}
     </main>
   );
 }
@@ -393,8 +334,8 @@ function Upgrades({ onPurchase }: { onPurchase: (tier: (typeof tiers)[number]) =
   return <div className="upgrades-view"><div className="page-intro"><span className="eyebrow">PROTOCOL STORE</span><h2>Choose your node tier</h2><p>Every paid tier runs for a fixed 30-day cycle and streams allocation directly from the deployment treasury.</p></div><div className="tier-list">{tiers.map((tier, index) => <article className={index === 3 ? "tier-card featured" : "tier-card"} key={tier[0]}><div className="tier-top"><span className="tier-number">0{index + 1}</span>{index === 3 && <span className="featured-label">POPULAR</span>}</div><h3>{tier[0]}</h3><div className="tier-price">{tier[1] === "Free" ? "Free" : `$${tier[1]}`}<small>{tier[1] === "Free" ? "" : " USDC"}</small></div><div className="tier-speed"><Zap size={15} /> {tier[2]} RTR <span>/ day</span></div><div className="tier-details"><span><Globe2 size={14} /> {tier[3]}</span><span><LockKeyhole size={14} /> {tier[4]}</span></div><button className="tier-button" onClick={() => onPurchase(tier)}>{tier[1] === "Free" ? "Activate free node" : "Purchase with USDC"}<ArrowUpRight size={16} /></button></article>)}</div></div>;
 }
 
-function ProfileMenu({ onSelect, onSignOut }: { onSelect: (item: string) => void; onSignOut: () => void }) {
-  return <div className="profile-menu"><div className="menu-profile"><div className="mini-avatar"><UserRound size={17} /></div><div><strong>RTR member</strong><span>Authenticated session</span></div></div><button className="menu-option" onClick={() => onSelect("Upload Profile Picture")}><Upload size={16} /> Upload Profile Picture</button>{menuItems.map(([label, Icon]) => <button className="menu-option" key={label} onClick={() => onSelect(label)}><Icon size={16} /> {label}<ChevronRight className="menu-chevron" size={14} /></button>)}<button className="menu-option logout" onClick={onSignOut}><LogOut size={16} /> Sign out</button></div>;
+function ProfileMenu({ onClose, onSignOut }: { onClose: () => void; onSignOut: () => void }) {
+  return <div className="profile-menu"><div className="menu-profile"><div className="mini-avatar"><UserRound size={17} /></div><div><strong>RTR member</strong><span>Authenticated session</span></div></div>{menuItems.map(([label, Icon]) => <button className="menu-option" key={label} onClick={onClose}><Icon size={16} /> {label}<ChevronRight className="menu-chevron" size={14} /></button>)}<button className="menu-option logout" onClick={onSignOut}><LogOut size={16} /> Sign out</button></div>;
 }
 
 function AuthOverlay() {
@@ -526,10 +467,6 @@ function AuthOverlay() {
     {message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={!canSubmit}>{busy ? "Securing account..." : isRecovery ? "Send recovery code" : "Register"}</button></form>
     <button className="auth-switch" onClick={() => { setMode(isRecovery || mode === "signup" ? "login" : "signup"); setMessage(null); setShowDobInfo(false); }}>{isRecovery || mode === "signup" ? "Back to log in" : "Need an account? Sign up"}</button>
   </div></main>;
-}
-
-function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
-  return <div className="modal-backdrop" onClick={onClose}><div className="modal" onClick={(event) => event.stopPropagation()}><div className="modal-header"><h3>{title}</h3><button className="icon-button" onClick={onClose} aria-label="Close"><X size={18} /></button></div>{children}</div></div>;
 }
 
 function WalletView() {
