@@ -22,6 +22,7 @@ import {
   MessageCircle,
   ShieldCheck,
   Sparkles,
+  TrendingUp,
   Upload,
   UserRound,
   Wallet,
@@ -34,11 +35,12 @@ import { useWeb3Modal } from "@web3modal/wagmi/react";
 import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/client";
 
-type View = "dashboard" | "upgrades" | "trading" | "game" | "wallet";
+type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "wallet";
 type Activation = { tier: string; activated_at: string; expires_at: string };
 type Profile = { full_name: string | null; avatar_url: string | null };
 type WalletBalance = { balance: number | string | null };
 type MarketAsset = { symbol: string; name: string; price: number | null; change: number | null };
+type PortfolioAsset = MarketAsset & { amount: number; value: number };
 const supabase = createClient();
 const rtrTokenAbi = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
 
@@ -295,6 +297,7 @@ export default function Home() {
         {error && <div className="error-banner" role="alert">{error}</div>}
         {view === "dashboard" && <Dashboard balance={balance} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} active={active} tier={activation?.tier} progress={progress} remaining={remaining} onStart={startCollection} />}
         {view === "upgrades" && <Upgrades onPurchase={purchase} />}
+        {view === "market" && <MarketView />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
         {view === "game" && <PlaceholderView icon={<Gamepad2 />} title="Node quests" text="Complete community missions to unlock bonus points." />}
         {view === "wallet" && <WalletView />}
@@ -303,6 +306,7 @@ export default function Home() {
       <nav className="bottom-nav" aria-label="Primary navigation">
         <NavItem icon={<LayoutDashboard />} label="Dashboard" active={view === "dashboard"} onClick={() => setView("dashboard")} />
         <NavItem icon={<Crown />} label="Upgrades" active={view === "upgrades"} onClick={() => setView("upgrades")} />
+        <NavItem icon={<TrendingUp />} label="Market" active={view === "market"} onClick={() => setView("market")} />
         <NavItem icon={<Activity />} label="Trading" active={view === "trading"} onClick={() => setView("trading")} />
         <NavItem icon={<Gamepad2 />} label="Game" active={view === "game"} onClick={() => setView("game")} />
         <NavItem icon={<Wallet />} label="Wallet" active={view === "wallet"} onClick={() => setView("wallet")} />
@@ -464,7 +468,15 @@ function WalletView() {
     args: address ? [address] : undefined,
     query: { enabled: Boolean(address && tokenAddress) },
   });
-  const [market, setMarket] = useState<MarketAsset[]>([]);
+  const usdcAddress = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as Address;
+  const { data: usdcBalance } = useReadContract({
+    address: usdcAddress,
+    abi: rtrTokenAbi,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address) },
+  });
+  const [prices, setPrices] = useState<MarketAsset[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -478,27 +490,52 @@ function WalletView() {
           ["USDC", "Bridged USDC", "usd-coin"],
           ["cbETH", "Coinbase Wrapped Staked ETH", "coinbase-wrapped-staked-eth"],
         ] as const;
+        setPrices(assets.map(([symbol, name, id]) => ({ symbol, name, price: prices[id]?.usd ?? null, change: prices[id]?.usd_24h_change ?? null })));
+      })
+      .catch(() => setPrices([]));
+    return () => { cancelled = true; };
+  }, []);
+
+  const shortenedAddress = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Wallet not connected";
+  const rtrAmount = typeof rtrBalance === "bigint" ? Number(formatUnits(rtrBalance, 18)) : 0;
+  const ethAmount = nativeBalance ? Number(formatUnits(nativeBalance.value, nativeBalance.decimals)) : 0;
+  const usdcAmount = typeof usdcBalance === "bigint" ? Number(formatUnits(usdcBalance, 6)) : 0;
+  const priceFor = (symbol: string, fallback: number | null = null) => prices.find((asset) => asset.symbol === symbol)?.price ?? fallback;
+  const portfolio: PortfolioAsset[] = [
+    { symbol: "RTR", name: "RTR Network", price: priceFor("RTR"), change: null, amount: rtrAmount, value: rtrAmount * (priceFor("RTR") ?? 0) },
+    { symbol: "ETH", name: "Ethereum", price: priceFor("ETH"), change: null, amount: ethAmount, value: ethAmount * (priceFor("ETH") ?? 0) },
+    { symbol: "USDC", name: "Bridged USDC", price: priceFor("USDC", 1), change: null, amount: usdcAmount, value: usdcAmount * (priceFor("USDC", 1) ?? 0) },
+  ];
+  const sortedPortfolio = portfolio.filter((asset) => asset.symbol === "RTR" || asset.amount > 0).sort((left, right) => left.symbol === "RTR" ? -1 : right.symbol === "RTR" ? 1 : right.value - left.value);
+
+  return <div className="wallet-view">
+    <div className="page-intro"><span className="eyebrow">BASE NETWORK</span><h2>Embedded wallet</h2><p>Read-only balances for your connected Base account.</p></div>
+    <div className="wallet-card">
+      <div className="wallet-card-top"><div><span className="eyebrow">LIVE ADDRESS</span><strong className="wallet-address">{shortenedAddress}</strong></div><Wallet size={20} /></div>
+      {address ? <div className="wallet-actions"><button className="secondary-button" onClick={() => void navigator.clipboard.writeText(address)}>Copy address</button><a className="secondary-button" href={`https://basescan.org/address/${address}`} target="_blank" rel="noreferrer">View on BaseScan <ArrowUpRight size={14} /></a></div> : <button className="primary-button wallet-connect" onClick={() => void open()}>Connect Base wallet</button>}
+      <div className="portfolio-list" aria-label="Wallet portfolio">{sortedPortfolio.map((asset) => <div className="portfolio-row" key={asset.symbol}><div className="asset-identity"><span className={`asset-logo asset-${asset.symbol.toLowerCase()}`}>{asset.symbol.slice(0, 1)}</span><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div><div className="asset-value"><strong>{asset.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} {asset.symbol}</strong><small>{asset.price === null ? "Price unavailable" : `$${asset.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</small></div></div>)}</div>
+    </div>
+    {!isConnected && <p className="wallet-note">Connect a wallet to display its live on-chain address and balances.</p>}
+  </div>;
+}
+
+function MarketView() {
+  const [market, setMarket] = useState<MarketAsset[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("https://api.coingecko.com/api/v3/simple/price?ids=rtr-network,ethereum,usd-coin,coinbase-wrapped-staked-eth&vs_currencies=usd&include_24hr_change=true")
+      .then((response) => response.ok ? response.json() as Promise<Record<string, { usd?: number; usd_24h_change?: number }>> : Promise.reject(new Error("market unavailable")))
+      .then((prices) => {
+        if (cancelled) return;
+        const assets = [["RTR", "RTR Network", "rtr-network"], ["ETH", "Ethereum", "ethereum"], ["USDC", "Bridged USDC", "usd-coin"], ["cbETH", "Coinbase Wrapped Staked ETH", "coinbase-wrapped-staked-eth"]] as const;
         setMarket(assets.map(([symbol, name, id]) => ({ symbol, name, price: prices[id]?.usd ?? null, change: prices[id]?.usd_24h_change ?? null })));
       })
       .catch(() => setMarket([]));
     return () => { cancelled = true; };
   }, []);
 
-  const shortenedAddress = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Wallet not connected";
-  const rtrDisplay = typeof rtrBalance === "bigint" ? Number(formatUnits(rtrBalance, 18)).toFixed(4) : "0.0000";
-  const ethDisplay = nativeBalance ? Number(formatUnits(nativeBalance.value, nativeBalance.decimals)).toFixed(4) : "0.0000";
-
-  return <div className="wallet-view">
-    <div className="page-intro"><span className="eyebrow">BASE NETWORK</span><h2>Embedded wallet</h2><p>Read-only balances and market signals for your connected Base account.</p></div>
-    <div className="wallet-card">
-      <div className="wallet-card-top"><div><span className="eyebrow">LIVE ADDRESS</span><strong className="wallet-address">{shortenedAddress}</strong></div><Wallet size={20} /></div>
-      {address ? <div className="wallet-actions"><button className="secondary-button" onClick={() => void navigator.clipboard.writeText(address)}>Copy address</button><a className="secondary-button" href={`https://basescan.org/address/${address}`} target="_blank" rel="noreferrer">View on BaseScan <ArrowUpRight size={14} /></a></div> : <button className="primary-button wallet-connect" onClick={() => void open()}>Connect Base wallet</button>}
-      <div className="wallet-balances"><div><span>RTR Network Token</span><strong>{rtrDisplay} <small>RTR</small></strong></div><div><span>Base Ethereum</span><strong>{ethDisplay} <small>ETH</small></strong></div></div>
-    </div>
-    <div className="section-heading market-heading"><div><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2></div><span className="live-dot">SPOT DATA</span></div>
-    <div className="market-table" aria-label="Base ecosystem market monitor"><div className="market-row market-header"><span>Asset</span><span>Spot price</span><span>24h</span></div>{market.map((asset) => <div className="market-row" key={asset.symbol}><span><strong>{asset.symbol}</strong><small>{asset.name}</small></span><span>{asset.price === null ? "--" : `$${asset.price.toLocaleString(undefined, { maximumFractionDigits: 4 })}`}</span><span className={asset.change !== null && asset.change >= 0 ? "market-up" : "market-down"}>{asset.change === null ? "--" : `${asset.change >= 0 ? "+" : ""}${asset.change.toFixed(2)}%`}</span></div>)}</div>
-    {!isConnected && <p className="wallet-note">Connect a wallet to display its live on-chain address and balances.</p>}
-  </div>;
+  return <div className="market-view"><div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and 24-hour movement across the RTR ecosystem.</p></div><div className="market-table" aria-label="Base ecosystem market monitor"><div className="market-row market-header"><span>Asset</span><span>Spot price</span><span>24h</span></div>{market.map((asset) => <div className="market-row" key={asset.symbol}><span><strong>{asset.symbol}</strong><small>{asset.name}</small></span><span>{asset.price === null ? "--" : `$${asset.price.toLocaleString(undefined, { maximumFractionDigits: 4 })}`}</span><span className={asset.change !== null && asset.change >= 0 ? "market-up" : "market-down"}>{asset.change === null ? "--" : `${asset.change >= 0 ? "+" : ""}${asset.change.toFixed(2)}%`}</span></div>)}</div></div>;
 }
 
 function PlaceholderView({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) { return <div className="placeholder-view"><div className="placeholder-icon">{icon}</div><span className="eyebrow">COMING ONLINE</span><h2>{title}</h2><p>{text}</p><button className="primary-button">View protocol status <ArrowUpRight size={16} /></button></div>; }
