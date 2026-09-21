@@ -11,6 +11,26 @@ alter table public.profiles add column if not exists avatar_url text;
 
 alter table public.profiles enable row level security;
 
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do update set public = true;
+
+drop policy if exists "Anyone can read profile avatars" on storage.objects;
+create policy "Anyone can read profile avatars"
+  on storage.objects for select
+  using (bucket_id = 'avatars');
+
+drop policy if exists "Users can upload their own avatar" on storage.objects;
+create policy "Users can upload their own avatar"
+  on storage.objects for insert
+  with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "Users can update their own avatar" on storage.objects;
+create policy "Users can update their own avatar"
+  on storage.objects for update
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text)
+  with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
 create table if not exists public.wallet_balances (
   user_id uuid primary key references auth.users(id) on delete cascade,
   balance numeric(20, 8) not null default 0 check (balance >= 0),
@@ -26,6 +46,11 @@ create policy "Users can read their own wallet balance"
 create policy "Users can read their own profile"
   on public.profiles for select
   using (auth.uid() = id);
+
+create policy "Users can update their own avatar"
+  on public.profiles for update
+  using (auth.uid() = id)
+  with check (auth.uid() = id);
 
 create or replace function public.prevent_date_of_birth_change()
 returns trigger

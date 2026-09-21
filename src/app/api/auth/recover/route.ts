@@ -16,6 +16,11 @@ export async function POST(request: Request) {
   if (profileError || !profile || profile.date_of_birth !== dateOfBirth) return invalidResponse();
 
   const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: new URL("/", request.url).toString() });
-  if (error) return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503 });
+  if (error) {
+    const smtpMessage = /smtp|email|mail/i.test(error.message)
+      ? "Recovery email delivery is not configured. Enable SMTP or email provider delivery in the Supabase dashboard."
+      : "Recovery is temporarily unavailable. Please try again later.";
+    return NextResponse.json({ error: smtpMessage }, { status: 503 });
+  }
   return NextResponse.json({ message: "Recovery instructions sent." });
 }

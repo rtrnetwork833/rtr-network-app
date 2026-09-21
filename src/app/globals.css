@@ -88,3 +88,29 @@ button { font: inherit; }
 .balance-toggle { display: grid; place-items: center; width: 26px; height: 26px; padding: 0; color: var(--muted); background: transparent; border: 0; cursor: pointer; transition: color .2s ease, transform .2s ease; }
 .balance-toggle:hover { color: var(--green); transform: scale(1.08); }
 .metric-grid small { color: var(--muted); font-size: 8px; line-height: 1.3; }
+
+.wallet-view { padding-bottom: 16px; }
+.wallet-card { padding: 18px; border: 1px solid rgba(197,255,82,.22); border-radius: 16px; background: linear-gradient(145deg, #172b2a, #10171e); }
+.wallet-card-top { display: flex; justify-content: space-between; align-items: flex-start; color: var(--green); }
+.wallet-address { display: block; margin-top: 7px; color: var(--foreground); font-family: var(--font-geist-mono), monospace; font-size: 18px; letter-spacing: .02em; }
+.wallet-actions { display: flex; gap: 8px; margin-top: 17px; }
+.secondary-button { min-height: 35px; padding: 9px 11px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; color: var(--foreground); background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 8px; font-size: 10px; text-decoration: none; cursor: pointer; }
+.wallet-connect { margin-top: 17px; }
+.wallet-balances { display: grid; gap: 9px; margin-top: 18px; padding-top: 15px; border-top: 1px solid var(--line); }
+.wallet-balances > div { display: flex; justify-content: space-between; align-items: center; }
+.wallet-balances span, .market-row span { color: var(--muted); font-size: 10px; }
+.wallet-balances strong { font-family: var(--font-geist-mono), monospace; font-size: 14px; }
+.wallet-balances small { color: var(--muted); font-size: 9px; }
+.market-heading { margin-top: 25px; }
+.market-table { overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: rgba(13,29,49,.6); }
+.market-row { min-height: 54px; padding: 9px 11px; display: grid; grid-template-columns: 1.45fr 1fr .65fr; align-items: center; gap: 8px; border-top: 1px solid var(--line); }
+.market-row:first-child { border-top: 0; }
+.market-row > span:not(:first-child) { text-align: right; color: var(--foreground); font-family: var(--font-geist-mono), monospace; font-size: 10px; }
+.market-row strong, .market-row small { display: block; }
+.market-row strong { color: var(--foreground); font-size: 11px; }
+.market-row small { margin-top: 3px; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.market-header { min-height: 34px; background: rgba(255,255,255,.035); }
+.market-header span { color: var(--muted) !important; font-family: var(--font-geist-sans), sans-serif !important; font-size: 8px !important; letter-spacing: .1em; text-transform: uppercase; }
+.market-up { color: var(--green) !important; }
+.market-down { color: var(--orange) !important; }
+.wallet-note { margin-top: 12px; color: var(--muted); font-size: 10px; line-height: 1.5; }

@@ -28,6 +28,9 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { formatUnits, type Address } from "viem";
+import { useAccount, useBalance, useReadContract } from "wagmi";
+import { useWeb3Modal } from "@web3modal/wagmi/react";
 import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/client";
 
@@ -35,7 +38,9 @@ type View = "dashboard" | "upgrades" | "trading" | "game" | "wallet";
 type Activation = { tier: string; activated_at: string; expires_at: string };
 type Profile = { full_name: string | null; avatar_url: string | null };
 type WalletBalance = { balance: number | string | null };
+type MarketAsset = { symbol: string; name: string; price: number | null; change: number | null };
 const supabase = createClient();
+const rtrTokenAbi = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
 
 const tiers = [
   ["Free Node Booster", "Free", "0.16", "Base Level", "Manual 24-hour verification"],
@@ -237,12 +242,22 @@ export default function Home() {
     }
   }
 
-  function selectAvatar(event: React.ChangeEvent<HTMLInputElement>) {
+  async function selectAvatar(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
     setFileName(file.name);
     setAvatar(URL.createObjectURL(file));
-    void fetch("/api/profile/avatar", { method: "POST", body: file });
+    const response = await fetch("/api/profile/avatar", { method: "POST", headers: { "Content-Type": file.type }, body: file });
+    const body = await response.json() as { avatarUrl?: string; error?: string };
+    if (response.ok && body.avatarUrl) setAvatar(body.avatarUrl);
+    else setError(body.error ?? "Unable to save the profile picture.");
+  }
+
+  async function signOut() {
+    const rememberedEmail = window.localStorage.getItem("rtr-email");
+    window.localStorage.clear();
+    if (rememberedEmail) window.localStorage.setItem("rtr-email", rememberedEmail);
+    await supabase.auth.signOut();
   }
 
   if (authLoading) return <main className="app-shell auth-loading">Checking secure session...</main>;
@@ -266,7 +281,7 @@ export default function Home() {
           if (item === "Tasks") setModal("tasks");
           if (item === "Change Your Language") setModal("language");
           if (item === "Upload Profile Picture") setModal("upload");
-        }} />}
+        }} onSignOut={() => void signOut()} />}
       </header>
 
       <section className="identity-row">
@@ -282,7 +297,7 @@ export default function Home() {
         {view === "upgrades" && <Upgrades onPurchase={purchase} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
         {view === "game" && <PlaceholderView icon={<Gamepad2 />} title="Node quests" text="Complete community missions to unlock bonus points." />}
-        {view === "wallet" && <PlaceholderView icon={<Wallet />} title="Treasury wallet" text="Your Base network wallet is protected by server-side relay controls." />}
+        {view === "wallet" && <WalletView />}
       </section>
 
       <nav className="bottom-nav" aria-label="Primary navigation">
@@ -326,14 +341,14 @@ function Upgrades({ onPurchase }: { onPurchase: (tier: (typeof tiers)[number]) =
   return <div className="upgrades-view"><div className="page-intro"><span className="eyebrow">PROTOCOL STORE</span><h2>Choose your node tier</h2><p>Every paid tier runs for a fixed 30-day cycle and streams allocation directly from the deployment treasury.</p></div><div className="tier-list">{tiers.map((tier, index) => <article className={index === 3 ? "tier-card featured" : "tier-card"} key={tier[0]}><div className="tier-top"><span className="tier-number">0{index + 1}</span>{index === 3 && <span className="featured-label">POPULAR</span>}</div><h3>{tier[0]}</h3><div className="tier-price">{tier[1] === "Free" ? "Free" : `$${tier[1]}`}<small>{tier[1] === "Free" ? "" : " USDC"}</small></div><div className="tier-speed"><Zap size={15} /> {tier[2]} RTR <span>/ day</span></div><div className="tier-details"><span><Globe2 size={14} /> {tier[3]}</span><span><LockKeyhole size={14} /> {tier[4]}</span></div><button className="tier-button" onClick={() => onPurchase(tier)}>{tier[1] === "Free" ? "Activate free node" : "Purchase with USDC"}<ArrowUpRight size={16} /></button></article>)}</div></div>;
 }
 
-function ProfileMenu({ onSelect }: { onSelect: (item: string) => void }) {
-  return <div className="profile-menu"><div className="menu-profile"><div className="mini-avatar"><UserRound size={17} /></div><div><strong>RTR member</strong><span>Authenticated session</span></div></div><button className="menu-option" onClick={() => onSelect("Upload Profile Picture")}><Upload size={16} /> Upload Profile Picture</button>{menuItems.map(([label, Icon]) => <button className="menu-option" key={label} onClick={() => onSelect(label)}><Icon size={16} /> {label}<ChevronRight className="menu-chevron" size={14} /></button>)}<button className="menu-option logout" onClick={() => void supabase.auth.signOut()}><LogOut size={16} /> Sign out</button></div>;
+function ProfileMenu({ onSelect, onSignOut }: { onSelect: (item: string) => void; onSignOut: () => void }) {
+  return <div className="profile-menu"><div className="menu-profile"><div className="mini-avatar"><UserRound size={17} /></div><div><strong>RTR member</strong><span>Authenticated session</span></div></div><button className="menu-option" onClick={() => onSelect("Upload Profile Picture")}><Upload size={16} /> Upload Profile Picture</button>{menuItems.map(([label, Icon]) => <button className="menu-option" key={label} onClick={() => onSelect(label)}><Icon size={16} /> {label}<ChevronRight className="menu-chevron" size={14} /></button>)}<button className="menu-option logout" onClick={onSignOut}><LogOut size={16} /> Sign out</button></div>;
 }
 
 function AuthOverlay() {
   const [profilePreview, setProfilePreview] = useState<Profile | null>(null);
   const [mode, setMode] = useState<"login" | "signup" | "recovery">("login");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem("rtr-email") ?? "");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
@@ -414,7 +429,7 @@ function AuthOverlay() {
   if (signupVerification) return <main className="app-shell auth-shell"><div className="auth-panel otp-panel"><img className="shield-mark" src="/rtr-shield.svg" alt="RTR Network shield" /><span className="eyebrow">REGISTRATION ACTIVATION</span><h1>Verify Your Account</h1><p>We sent a 6-digit secure security verification token to your email inbox. Please type it in below to authorize your registration activation script.</p><form onSubmit={verifySignupCode}><label className="otp-label">Security token<input className="otp-input" type="text" inputMode="numeric" maxLength={6} pattern="[0-9]*" value={enteredToken} onChange={(event) => setEnteredToken(event.target.value.replace(/\D/g, "").slice(0, 6))} required autoComplete="one-time-code" /></label>{message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={busy || enteredToken.length !== 6}>{busy ? <><span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>Authenticating token...</> : "Verify Code"}</button></form></div></main>;
 
   if (mode === "login") return <main className="app-shell auth-shell"><div className="auth-panel login-panel"><div className="auth-identity"><div className="auth-avatar">{profilePreview?.avatar_url ? <img src={profilePreview.avatar_url} alt="Profile" /> : <UserRound size={34} strokeWidth={1.5} />}</div><strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong><span>Secure node access</span></div><span className="eyebrow">SECURE NODE PLATFORM</span><h1>Welcome back</h1><p>Enter your 6-digit PIN to access your persistent node dashboard.</p><form onSubmit={(event) => { event.preventDefault(); void submitLogin(password); }}>
-    <label>Email address<input type="email" value={email} onChange={(event) => { setEmail(event.target.value); setProfilePreview(null); }} required autoComplete="email" /></label>
+    <label>Email address<input type="email" value={email} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="email" /></label>
     <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} className="pin-input" type={showPin ? "text" : "password"} value={password} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPassword(pin); if (pin.length === 6) void submitLogin(pin); }} inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="current-password" required /><button type="button" className="pin-visibility" aria-label={showPin ? "Hide PIN" : "Show PIN"} onClick={() => setShowPin(!showPin)}>{showPin ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
     {message && <div className="auth-message" role="alert">{message}</div>}
     {busy && <div className="login-status" aria-live="polite">Verifying secure PIN...</div>}
@@ -435,6 +450,55 @@ function AuthOverlay() {
 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return <div className="modal-backdrop" onClick={onClose}><div className="modal" onClick={(event) => event.stopPropagation()}><div className="modal-header"><h3>{title}</h3><button className="icon-button" onClick={onClose} aria-label="Close"><X size={18} /></button></div>{children}</div></div>;
+}
+
+function WalletView() {
+  const { address, isConnected } = useAccount();
+  const { open } = useWeb3Modal();
+  const { data: nativeBalance } = useBalance({ address });
+  const tokenAddress = process.env.NEXT_PUBLIC_RTR_TOKEN_ADDRESS as Address | undefined;
+  const { data: rtrBalance } = useReadContract({
+    address: tokenAddress,
+    abi: rtrTokenAbi,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address && tokenAddress) },
+  });
+  const [market, setMarket] = useState<MarketAsset[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("https://api.coingecko.com/api/v3/simple/price?ids=rtr-network,ethereum,usd-coin,coinbase-wrapped-staked-eth&vs_currencies=usd&include_24hr_change=true")
+      .then((response) => response.ok ? response.json() as Promise<Record<string, { usd?: number; usd_24h_change?: number }>> : Promise.reject(new Error("market unavailable")))
+      .then((prices) => {
+        if (cancelled) return;
+        const assets = [
+          ["RTR", "RTR Network", "rtr-network"],
+          ["ETH", "Ethereum", "ethereum"],
+          ["USDC", "Bridged USDC", "usd-coin"],
+          ["cbETH", "Coinbase Wrapped Staked ETH", "coinbase-wrapped-staked-eth"],
+        ] as const;
+        setMarket(assets.map(([symbol, name, id]) => ({ symbol, name, price: prices[id]?.usd ?? null, change: prices[id]?.usd_24h_change ?? null })));
+      })
+      .catch(() => setMarket([]));
+    return () => { cancelled = true; };
+  }, []);
+
+  const shortenedAddress = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Wallet not connected";
+  const rtrDisplay = typeof rtrBalance === "bigint" ? Number(formatUnits(rtrBalance, 18)).toFixed(4) : "0.0000";
+  const ethDisplay = nativeBalance ? Number(formatUnits(nativeBalance.value, nativeBalance.decimals)).toFixed(4) : "0.0000";
+
+  return <div className="wallet-view">
+    <div className="page-intro"><span className="eyebrow">BASE NETWORK</span><h2>Embedded wallet</h2><p>Read-only balances and market signals for your connected Base account.</p></div>
+    <div className="wallet-card">
+      <div className="wallet-card-top"><div><span className="eyebrow">LIVE ADDRESS</span><strong className="wallet-address">{shortenedAddress}</strong></div><Wallet size={20} /></div>
+      {address ? <div className="wallet-actions"><button className="secondary-button" onClick={() => void navigator.clipboard.writeText(address)}>Copy address</button><a className="secondary-button" href={`https://basescan.org/address/${address}`} target="_blank" rel="noreferrer">View on BaseScan <ArrowUpRight size={14} /></a></div> : <button className="primary-button wallet-connect" onClick={() => void open()}>Connect Base wallet</button>}
+      <div className="wallet-balances"><div><span>RTR Network Token</span><strong>{rtrDisplay} <small>RTR</small></strong></div><div><span>Base Ethereum</span><strong>{ethDisplay} <small>ETH</small></strong></div></div>
+    </div>
+    <div className="section-heading market-heading"><div><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2></div><span className="live-dot">SPOT DATA</span></div>
+    <div className="market-table" aria-label="Base ecosystem market monitor"><div className="market-row market-header"><span>Asset</span><span>Spot price</span><span>24h</span></div>{market.map((asset) => <div className="market-row" key={asset.symbol}><span><strong>{asset.symbol}</strong><small>{asset.name}</small></span><span>{asset.price === null ? "--" : `$${asset.price.toLocaleString(undefined, { maximumFractionDigits: 4 })}`}</span><span className={asset.change !== null && asset.change >= 0 ? "market-up" : "market-down"}>{asset.change === null ? "--" : `${asset.change >= 0 ? "+" : ""}${asset.change.toFixed(2)}%`}</span></div>)}</div>
+    {!isConnected && <p className="wallet-note">Connect a wallet to display its live on-chain address and balances.</p>}
+  </div>;
 }
 
 function PlaceholderView({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) { return <div className="placeholder-view"><div className="placeholder-icon">{icon}</div><span className="eyebrow">COMING ONLINE</span><h2>{title}</h2><p>{text}</p><button className="primary-button">View protocol status <ArrowUpRight size={16} /></button></div>; }
