@@ -2,7 +2,7 @@
 
 import { OnchainKitProvider } from "@coinbase/onchainkit";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createWeb3Modal, defaultWagmiConfig } from "@web3modal/wagmi/react";
+import { defaultWagmiConfig } from "@web3modal/wagmi/react";
 import { useState } from "react";
 import { WagmiProvider } from "wagmi";
 import { base } from "wagmi/chains";
@@ -22,12 +22,6 @@ const wagmiConfig = defaultWagmiConfig({
   projectId: walletConnectProjectId,
   metadata,
   enableCoinbase: true,
-});
-
-createWeb3Modal({
-  wagmiConfig,
-  projectId: walletConnectProjectId,
-  enableAnalytics: false,
 });
 
 export function Providers({ children }: { children: React.ReactNode }) {

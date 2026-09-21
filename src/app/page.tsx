@@ -294,9 +294,20 @@ export default function Home() {
   }
 
   async function signOut() {
+    setUser(null);
+    setProfileName(null);
+    setAvatar(null);
+    setActivation(null);
+    setActive(false);
+    setBalance(0);
     await supabase.auth.signOut();
     window.localStorage.clear();
     window.sessionStorage.clear();
+    document.cookie.split(";").forEach((cookie) => {
+      const name = cookie.split("=")[0]?.trim();
+      if (name) document.cookie = `${name}=; Max-Age=0; path=/`;
+    });
+    window.dispatchEvent(new Event("rtr-auth-reset"));
   }
 
   if (authLoading) return <main className="app-shell auth-loading">Checking secure session...</main>;
@@ -413,6 +424,22 @@ function AuthOverlay() {
   }, []);
 
   useEffect(() => {
+    const resetAuthForm = () => {
+      setEmail("");
+      setPassword("");
+      setFullName("");
+      setDateOfBirth("");
+      setConfirmPin("");
+      setEnteredToken("");
+      setMessage(null);
+      setProfilePreview(null);
+      setBusy(false);
+    };
+    window.addEventListener("rtr-auth-reset", resetAuthForm);
+    return () => window.removeEventListener("rtr-auth-reset", resetAuthForm);
+  }, []);
+
+  useEffect(() => {
     if (mode !== "login" || !email.includes("@")) return;
     let cancelled = false;
     const timer = window.setTimeout(async () => {
@@ -481,9 +508,9 @@ function AuthOverlay() {
 
   if (signupVerification) return <main className="app-shell auth-shell"><div className="auth-panel otp-panel"><img className="shield-mark" src="/rtr-shield.svg" alt="RTR Network shield" /><span className="eyebrow">REGISTRATION ACTIVATION</span><h1>Verify Your Account</h1><p>We sent a 6-digit secure security verification token to your email inbox. Please type it in below to authorize your registration activation script.</p><form onSubmit={verifySignupCode}><label className="otp-label">Security token<input className="otp-input" type="text" inputMode="numeric" maxLength={6} pattern="[0-9]*" value={enteredToken} onChange={(event) => setEnteredToken(event.target.value.replace(/\D/g, "").slice(0, 6))} required autoComplete="one-time-code" /></label>{message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={busy || enteredToken.length !== 6}>{busy ? <><span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>Authenticating token...</> : "Verify Code"}</button></form></div></main>;
 
-  if (mode === "login") return <main className="app-shell auth-shell"><div className="auth-panel login-panel"><div className="auth-identity"><div className="auth-avatar">{profilePreview?.avatar_url ? <img src={profilePreview.avatar_url} alt="Profile" /> : <UserRound size={34} strokeWidth={1.5} />}</div><strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong><span>Secure node access</span></div><span className="eyebrow">SECURE NODE PLATFORM</span><h1>Welcome back</h1><p>Enter your 6-digit PIN to access your persistent node dashboard.</p><form onSubmit={(event) => { event.preventDefault(); void submitLogin(password); }}>
+  if (mode === "login") return <main className="app-shell auth-shell"><div className="auth-panel login-panel"><div className="auth-identity"><div className="auth-avatar">{profilePreview?.avatar_url ? <img src={profilePreview.avatar_url} alt="Profile" /> : <UserRound size={34} strokeWidth={1.5} />}</div><strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong><span>Secure node access</span></div><span className="eyebrow">SECURE NODE PLATFORM</span><h1>Welcome back</h1><p>Enter your 6-digit PIN to access your persistent node dashboard.</p><form autoComplete="off" onSubmit={(event) => { event.preventDefault(); void submitLogin(password); }}>
     <label>Email address<input type="email" value={email} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="email" /></label>
-    <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} className="pin-input" type={showPin ? "text" : "password"} value={password} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPassword(pin); if (pin.length === 6) void submitLogin(pin); }} inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="current-password" required /><button type="button" className="pin-visibility" aria-label={showPin ? "Hide PIN" : "Show PIN"} onClick={() => setShowPin(!showPin)}>{showPin ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
+    <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} className="pin-input" type={showPin ? "text" : "password"} value={password} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPassword(pin); if (pin.length === 6) void submitLogin(pin); }} inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" required /><button type="button" className="pin-visibility" aria-label={showPin ? "Hide PIN" : "Show PIN"} onClick={() => setShowPin(!showPin)}>{showPin ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
     {message && <div className="auth-message" role="alert">{message}</div>}
     {busy && <div className="login-status" aria-live="polite">Verifying secure PIN...</div>}
   </form>
@@ -491,7 +518,7 @@ function AuthOverlay() {
     <button className="auth-switch" onClick={() => { setMode("signup"); setProfilePreview(null); setMessage(null); }}>Need an account? Sign up</button>
   </div></main>;
 
-  return <main className="app-shell auth-shell"><div className="auth-panel"><img className="shield-mark" src="/rtr-shield.svg" alt="RTR Network shield" /><span className="eyebrow">SECURE NODE PLATFORM</span><h1>{isRecovery ? "Recover your account" : "Create your account"}</h1><p>{isRecovery ? "Verify your registered details to receive a secure password reset code." : "Create a secure account for your persistent node dashboard."}</p><form onSubmit={submit}>
+  return <main className="app-shell auth-shell"><div className="auth-panel"><img className="shield-mark" src="/rtr-shield.svg" alt="RTR Network shield" /><span className="eyebrow">SECURE NODE PLATFORM</span><h1>{isRecovery ? "Recover your account" : "Create your account"}</h1><p>{isRecovery ? "Verify your registered details to receive a secure password reset code." : "Create a secure account for your persistent node dashboard."}</p><form autoComplete="off" onSubmit={submit}>
     {isSignup && <label>Full name<input type="text" value={fullName} onChange={(event) => setFullName(event.target.value)} required autoComplete="name" /></label>}
     <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" /></label>
     {(isSignup || isRecovery) && <label className="date-field">Date of birth<div className="date-input-wrap"><input type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} required /><button type="button" className="info-button" aria-label="Why we need your date of birth" aria-expanded={showDobInfo} onClick={() => setShowDobInfo(!showDobInfo)}><Info size={15} /></button>{showDobInfo && <div className="dob-tooltip" role="tooltip"><strong>🔒 Why we need your Date of Birth:</strong><span>- Account Recovery: If you ever lose access to your password, you must verify your exact date of birth to reset it.</span><span>- Anti-Hack Protection: This stops hackers from trying to steal your funds via fake password reset requests.</span><span>- Security Lock: For your safety, this information cannot be changed after registration. Please ensure it matches your official records.</span></div>}</div></label>}
@@ -544,7 +571,7 @@ function WalletView() {
     return () => { cancelled = true; };
   }, []);
 
-  const shortenedAddress = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Creating secure wallet...";
+  const shortenedAddress = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : null;
   const rtrAmount = typeof rtrBalance === "bigint" ? Number(formatUnits(rtrBalance, 18)) : 0;
   const ethAmount = nativeBalance ? Number(formatUnits(nativeBalance.value, nativeBalance.decimals)) : 0;
   const usdcAmount = typeof usdcBalance === "bigint" ? Number(formatUnits(usdcBalance, 6)) : 0;
@@ -559,7 +586,7 @@ function WalletView() {
   return <div className="wallet-view">
     <div className="page-intro"><span className="eyebrow">BASE NETWORK</span><h2>Embedded wallet</h2><p>Read-only balances for your connected Base account.</p></div>
     <div className="wallet-card">
-      <div className="wallet-card-top"><div><span className="eyebrow">LIVE ADDRESS</span><strong className="wallet-address">{shortenedAddress}</strong></div><Wallet size={20} /></div>
+      <div className="wallet-card-top"><div><span className="eyebrow">LIVE ADDRESS</span>{shortenedAddress ? <strong className="wallet-address">{shortenedAddress}</strong> : <span className="greeting-skeleton" aria-label="Loading wallet address" />}</div></div>
       {address && <div className="wallet-actions"><button className="secondary-button" onClick={() => void navigator.clipboard.writeText(address)}>Copy address</button><a className="secondary-button" href={`https://basescan.org/address/${address}`} target="_blank" rel="noreferrer">View on BaseScan <ArrowUpRight size={14} /></a></div>}
       <div className="portfolio-list" aria-label="Wallet portfolio">{sortedPortfolio.map((asset) => <div className="portfolio-row" key={asset.symbol}><div className="asset-identity"><span className={`asset-logo asset-${asset.symbol.toLowerCase()}`}>{asset.symbol.slice(0, 1)}</span><div><strong>{asset.symbol}</strong><small>{asset.name}</small></div></div><div className="asset-value"><strong>{asset.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} {asset.symbol}</strong><small>{asset.price === null ? "Price unavailable" : `$${asset.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</small></div></div>)}</div>
     </div>
@@ -571,32 +598,25 @@ function MarketView() {
 
   useEffect(() => {
     let cancelled = false;
-    type GeckoToken = { attributes?: { symbol?: string; name?: string; price_usd?: string; price_change_percentage?: { h24?: string }; volume_usd?: { h24?: string } } };
-    type GeckoResponse = { data?: GeckoToken[] };
-    type DexPair = { chainId?: string; baseToken?: { symbol?: string; name?: string }; priceUsd?: string; priceChange?: { h24?: number }; volume?: { h24?: number } };
-    type DexResponse = { pairs?: DexPair[] };
-    const geckoPages = Promise.allSettled([1, 2, 3].map((page) => fetch(`https://api.geckoterminal.com/api/v2/networks/base/tokens?page=${page}`).then((response) => response.ok ? response.json() as Promise<GeckoResponse> : Promise.reject(new Error("market unavailable")))));
-    const rtrSearch = fetch("https://api.dexscreener.com/latest/dex/search?q=RTR%20Network").then((response) => response.ok ? response.json() as Promise<DexResponse> : Promise.reject(new Error("RTR market unavailable"))).catch(() => ({ pairs: [] }));
-    Promise.all([geckoPages, rtrSearch])
-      .then(([pageResults, dexResponse]) => {
+    type CoinGeckoAsset = { id?: string; symbol?: string; name?: string; current_price?: number; price_change_percentage_24h?: number; total_volume?: number };
+    type CoinGeckoPrice = { usd?: number; usd_24h_change?: number };
+    const baseAssets = fetch("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&category=base-ecosystem&order=market_cap_desc&per_page=50&page=1&sparkline=false&price_change_percentage=24h")
+      .then((response) => response.ok ? response.json() as Promise<CoinGeckoAsset[]> : Promise.reject(new Error("market unavailable")));
+    const rtrPrice = fetch("https://api.coingecko.com/api/v3/simple/price?ids=rtr-network&vs_currencies=usd&include_24hr_change=true")
+      .then((response) => response.ok ? response.json() as Promise<Record<string, CoinGeckoPrice>> : Promise.reject(new Error("RTR market unavailable")))
+      .catch(() => ({} as Record<string, CoinGeckoPrice>));
+    Promise.all([baseAssets, rtrPrice]).then(([assets, rtrPrices]) => {
         if (cancelled) return;
-        const fetched = pageResults.flatMap((result) => result.status === "fulfilled" ? result.value.data ?? [] : []).map(({ attributes }) => ({
-          symbol: attributes?.symbol?.trim() || "--",
-          name: attributes?.name?.trim() || "Unknown token",
-          price: attributes?.price_usd ? Number(attributes.price_usd) : null,
-          change: attributes?.price_change_percentage?.h24 ? Number(attributes.price_change_percentage.h24) : null,
-          volume: attributes?.volume_usd?.h24 ? Number(attributes.volume_usd.h24) : 0,
-        })).filter((asset) => asset.symbol !== "--" && asset.symbol.toUpperCase() !== "RTR");
-        const rtrPair = dexResponse.pairs?.find((pair) => pair.chainId === "base" && pair.baseToken?.symbol?.toUpperCase() === "RTR") ?? dexResponse.pairs?.find((pair) => pair.chainId === "base");
-        const rtrAsset: MarketAsset = {
-          symbol: "RTR",
-          name: rtrPair?.baseToken?.name || "RTR Network",
-          price: rtrPair?.priceUsd ? Number(rtrPair.priceUsd) : null,
-          change: typeof rtrPair?.priceChange?.h24 === "number" ? rtrPair.priceChange.h24 : null,
-          volume: typeof rtrPair?.volume?.h24 === "number" ? rtrPair.volume.h24 : null,
-        };
-        const uniqueAssets = new Map(fetched.map((asset) => [`${asset.symbol.toUpperCase()}-${asset.name}`, asset]));
-        setMarket([rtrAsset, ...Array.from(uniqueAssets.values()).sort((left, right) => (right.volume ?? 0) - (left.volume ?? 0)).slice(0, 49)]);
+        const fetched = assets.map((asset) => ({
+          symbol: asset.symbol?.trim().toUpperCase() || "--",
+          name: asset.name?.trim() || "Unknown token",
+          price: typeof asset.current_price === "number" ? asset.current_price : null,
+          change: typeof asset.price_change_percentage_24h === "number" ? asset.price_change_percentage_24h : null,
+          volume: typeof asset.total_volume === "number" ? asset.total_volume : 0,
+        })).filter((asset) => asset.symbol !== "--" && asset.symbol !== "RTR");
+        const rtrAsset = assets.find((asset) => asset.id === "rtr-network" || asset.symbol?.toUpperCase() === "RTR");
+        const rtrSimplePrice = rtrPrices["rtr-network"];
+        setMarket([{ symbol: "RTR", name: rtrAsset?.name || "RTR Network", price: rtrAsset?.current_price ?? rtrSimplePrice?.usd ?? null, change: rtrAsset?.price_change_percentage_24h ?? rtrSimplePrice?.usd_24h_change ?? null, volume: rtrAsset?.total_volume ?? null }, ...fetched.slice(0, 49)]);
       })
       .catch(() => setMarket([{ symbol: "RTR", name: "RTR Network", price: null, change: null, volume: null }]));
     return () => { cancelled = true; };
