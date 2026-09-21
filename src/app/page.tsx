@@ -41,6 +41,16 @@ type PortfolioAsset = MarketAsset & { amount: number; value: number };
 const supabase = createClient();
 const rtrTokenAbi = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
 
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 const tiers = [
   ["Free Node Booster", "Free", "0.16", "Base Level", "Manual 24-hour verification"],
   ["Starter Utility Boost", "4.99", "0.66", "Level 2 Priority", "30 day subscription"],
@@ -78,6 +88,7 @@ function formatTime(seconds: number) {
 
 export default function Home() {
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
+  const [, setPinState] = useState("");
   const [profileName, setProfileName] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(true);
@@ -126,7 +137,7 @@ export default function Home() {
 
   async function loadActivation() {
     try {
-      const response = await fetch("/api/mining/activate");
+      const response = await fetchWithTimeout("/api/mining/activate");
       if (!response.ok) return;
       const body = await response.json() as { activation: Activation | null };
       setActivation(body.activation);
@@ -248,7 +259,6 @@ export default function Home() {
 
   async function purchase(tier: (typeof tiers)[number]) {
     if (await activateTier(tier[0])) {
-      setModal(null);
       setView("dashboard");
     }
   }
@@ -260,14 +270,14 @@ export default function Home() {
     setActivation(null);
     setActive(false);
     setBalance(0);
+    // Force clear structural component states instantly
+    setPinState("");
+    // Purge all persistent storage caches
+    localStorage.clear();
+    sessionStorage.clear();
     await supabase.auth.signOut();
-    window.localStorage.clear();
-    window.sessionStorage.clear();
-    document.cookie.split(";").forEach((cookie) => {
-      const name = cookie.split("=")[0]?.trim();
-      if (name) document.cookie = `${name}=; Max-Age=0; path=/`;
-    });
-    window.dispatchEvent(new Event("rtr-auth-reset"));
+    // Force an absolute hard refresh of the window to destroy lingering state variables in browser memory
+    window.location.href = "/login";
   }
 
   if (authLoading) return <main className="app-shell auth-loading">Checking secure session...</main>;
@@ -342,7 +352,7 @@ function AuthOverlay() {
   const [profilePreview, setProfilePreview] = useState<Profile | null>(null);
   const [mode, setMode] = useState<"login" | "signup" | "recovery">("login");
   const [email, setEmail] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem("rtr-email") ?? "");
-  const [password, setPassword] = useState("");
+  const [pinState, setPinState] = useState("");
   const [fullName, setFullName] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
@@ -351,23 +361,22 @@ function AuthOverlay() {
   const [showDobInfo, setShowDobInfo] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showPin, setShowPin] = useState(false);
   const pinInput = useRef<HTMLInputElement>(null);
-  const pinIsValid = /^\d{6}$/.test(password);
-  const pinsMatch = pinIsValid && password === confirmPin;
+  const pinIsValid = /^\d{6}$/.test(pinState);
+  const pinsMatch = pinIsValid && pinState === confirmPin;
 
   useEffect(() => {
-    const mountTimer = window.setTimeout(() => setPassword(""), 0);
+    const mountTimer = window.setTimeout(() => setPinState(""), 0);
     return () => {
       window.clearTimeout(mountTimer);
-      setPassword("");
+      setPinState("");
     };
   }, []);
 
   useEffect(() => {
     const resetAuthForm = () => {
       setEmail("");
-      setPassword("");
+      setPinState("");
       setFullName("");
       setDateOfBirth("");
       setConfirmPin("");
@@ -385,7 +394,7 @@ function AuthOverlay() {
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       try {
-        const response = await fetch("/api/auth/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
+        const response = await fetchWithTimeout("/api/auth/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
         const body = await response.json() as { profile: Profile | null };
         if (!cancelled) setProfilePreview(body.profile);
       } catch {
@@ -409,7 +418,7 @@ function AuthOverlay() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (mode === "login" && password.length < 6) return;
+    if (mode === "login" && pinState.length < 6) return;
     setBusy(true);
     setMessage(null);
     if (mode === "recovery") {
@@ -420,11 +429,11 @@ function AuthOverlay() {
       return;
     }
     const result = mode === "login"
-      ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName, date_of_birth: dateOfBirth } } });
+      ? await supabase.auth.signInWithPassword({ email, password: pinState })
+      : await supabase.auth.signUp({ email, password: pinState, options: { data: { full_name: fullName, date_of_birth: dateOfBirth } } });
     setBusy(false);
     if (result.error) setMessage(result.error.message);
-    else if (mode === "login") setPassword("");
+    else if (mode === "login") setPinState("");
     else if (mode === "signup") setSignupVerification(true);
   }
 
@@ -435,23 +444,23 @@ function AuthOverlay() {
     const result = await supabase.auth.signInWithPassword({ email, password: pin });
     setBusy(false);
     if (result.error) {
-      setPassword("");
+      setPinState("");
       setMessage("Incorrect PIN. Try again.");
       window.requestAnimationFrame(() => pinInput.current?.focus());
     } else {
-      setPassword("");
+      setPinState("");
     }
   }
 
   const isSignup = mode === "signup";
   const isRecovery = mode === "recovery";
-  const canSubmit = !busy && (mode === "login" ? Boolean(email && password.length === 6) : (isSignup ? Boolean(fullName && email && dateOfBirth && pinsMatch) : Boolean(email && dateOfBirth)));
+  const canSubmit = !busy && (mode === "login" ? Boolean(email && pinState.length === 6) : (isSignup ? Boolean(fullName && email && dateOfBirth && pinsMatch) : Boolean(email && dateOfBirth)));
 
   if (signupVerification) return <main className="app-shell auth-shell"><div className="auth-panel otp-panel"><img className="shield-mark" src="/rtr-shield.svg" alt="RTR Network shield" /><span className="eyebrow">REGISTRATION ACTIVATION</span><h1>Verify Your Account</h1><p>We sent a 6-digit secure security verification token to your email inbox. Please type it in below to authorize your registration activation script.</p><form onSubmit={verifySignupCode}><label className="otp-label">Security token<input className="otp-input" type="text" inputMode="numeric" maxLength={6} pattern="[0-9]*" value={enteredToken} onChange={(event) => setEnteredToken(event.target.value.replace(/\D/g, "").slice(0, 6))} required autoComplete="one-time-code" /></label>{message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={busy || enteredToken.length !== 6}>{busy ? <><span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>Authenticating token...</> : "Verify Code"}</button></form></div></main>;
 
-  if (mode === "login") return <main className="app-shell auth-shell"><div className="auth-panel login-panel"><div className="auth-identity"><div className="auth-avatar">{profilePreview?.avatar_url ? <img src={profilePreview.avatar_url} alt="Profile" /> : <UserRound size={34} strokeWidth={1.5} />}</div><strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong><span>Secure node access</span></div><span className="eyebrow">SECURE NODE PLATFORM</span><h1>Welcome back</h1><p>Enter your 6-digit PIN to access your persistent node dashboard.</p><form autoComplete="off" onSubmit={(event) => { event.preventDefault(); void submitLogin(password); }}>
+  if (mode === "login") return <main className="app-shell auth-shell"><div className="auth-panel login-panel"><div className="auth-identity"><div className="auth-avatar">{profilePreview?.avatar_url ? <img src={profilePreview.avatar_url} alt="Profile" /> : <UserRound size={34} strokeWidth={1.5} />}</div><strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong><span>Secure node access</span></div><span className="eyebrow">SECURE NODE PLATFORM</span><h1>Welcome back</h1><p>Enter your 6-digit PIN to access your persistent node dashboard.</p><form autoComplete="new-password" style={{ width: "100%" }} onSubmit={(event) => { event.preventDefault(); void submitLogin(pinState); }}>
     <label>Email address<input type="email" value={email} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="email" /></label>
-    <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} className="pin-input" type={showPin ? "text" : "password"} value={password} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPassword(pin); if (pin.length === 6) void submitLogin(pin); }} inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" required /><button type="button" className="pin-visibility" aria-label={showPin ? "Hide PIN" : "Show PIN"} onClick={() => setShowPin(!showPin)}>{showPin ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
+    <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} className="pin-input" type="password" autoComplete="new-password" inputMode="numeric" maxLength={6} value={pinState} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6) void submitLogin(pin); }} pattern="[0-9]*" required /></div></label>
     {message && <div className="auth-message" role="alert">{message}</div>}
     {busy && <div className="login-status" aria-live="polite">Verifying secure PIN...</div>}
   </form>
@@ -463,7 +472,7 @@ function AuthOverlay() {
     {isSignup && <label>Full name<input type="text" value={fullName} onChange={(event) => setFullName(event.target.value)} required autoComplete="name" /></label>}
     <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" /></label>
     {(isSignup || isRecovery) && <label className="date-field">Date of birth<div className="date-input-wrap"><input type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} required /><button type="button" className="info-button" aria-label="Why we need your date of birth" aria-expanded={showDobInfo} onClick={() => setShowDobInfo(!showDobInfo)}><Info size={15} /></button>{showDobInfo && <div className="dob-tooltip" role="tooltip"><strong>🔒 Why we need your Date of Birth:</strong><span>- Account Recovery: If you ever lose access to your password, you must verify your exact date of birth to reset it.</span><span>- Anti-Hack Protection: This stops hackers from trying to steal your funds via fake password reset requests.</span><span>- Security Lock: For your safety, this information cannot be changed after registration. Please ensure it matches your official records.</span></div>}</div></label>}
-    {isSignup && <><label>Create 6-digit PIN<input type="password" value={password} onChange={(event) => setPassword(event.target.value.replace(/\D/g, "").slice(0, 6))} required inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" /></label><label>Confirm 6-digit PIN<input type="password" value={confirmPin} onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))} required inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" /></label>{confirmPin && !pinsMatch && <div className="pin-error" role="alert">PINs must match and contain exactly 6 digits.</div>}</>}
+    {isSignup && <><label>Create 6-digit PIN<input type="password" value={pinState} onChange={(event) => setPinState(event.target.value.replace(/\D/g, "").slice(0, 6))} required inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" /></label><label>Confirm 6-digit PIN<input type="password" value={confirmPin} onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))} required inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" /></label>{confirmPin && !pinsMatch && <div className="pin-error" role="alert">PINs must match and contain exactly 6 digits.</div>}</>}
     {message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={!canSubmit}>{busy ? "Securing account..." : isRecovery ? "Send recovery code" : "Register"}</button></form>
     <button className="auth-switch" onClick={() => { setMode(isRecovery || mode === "signup" ? "login" : "signup"); setMessage(null); setShowDobInfo(false); }}>{isRecovery || mode === "signup" ? "Back to log in" : "Need an account? Sign up"}</button>
   </div></main>;
@@ -492,7 +501,7 @@ function WalletView() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("https://api.coingecko.com/api/v3/simple/price?ids=rtr-network,ethereum,usd-coin,coinbase-wrapped-staked-eth&vs_currencies=usd&include_24hr_change=true")
+    fetchWithTimeout("https://api.coingecko.com/api/v3/simple/price?ids=rtr-network,ethereum,usd-coin,coinbase-wrapped-staked-eth&vs_currencies=usd&include_24hr_change=true")
       .then((response) => response.ok ? response.json() as Promise<Record<string, { usd?: number; usd_24h_change?: number }>> : Promise.reject(new Error("market unavailable")))
       .then((prices) => {
         if (cancelled) return;
@@ -537,9 +546,9 @@ function MarketView() {
     let cancelled = false;
     type CoinGeckoAsset = { id?: string; symbol?: string; name?: string; current_price?: number; price_change_percentage_24h?: number; total_volume?: number };
     type CoinGeckoPrice = { usd?: number; usd_24h_change?: number };
-    const baseAssets = fetch("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&category=base-ecosystem&order=market_cap_desc&per_page=50&page=1&sparkline=false&price_change_percentage=24h")
+    const baseAssets = fetchWithTimeout("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&category=base-ecosystem&order=market_cap_desc&per_page=50&page=1&sparkline=false&price_change_percentage=24h")
       .then((response) => response.ok ? response.json() as Promise<CoinGeckoAsset[]> : Promise.reject(new Error("market unavailable")));
-    const rtrPrice = fetch("https://api.coingecko.com/api/v3/simple/price?ids=rtr-network&vs_currencies=usd&include_24hr_change=true")
+    const rtrPrice = fetchWithTimeout("https://api.coingecko.com/api/v3/simple/price?ids=rtr-network&vs_currencies=usd&include_24hr_change=true")
       .then((response) => response.ok ? response.json() as Promise<Record<string, CoinGeckoPrice>> : Promise.reject(new Error("RTR market unavailable")))
       .catch(() => ({} as Record<string, CoinGeckoPrice>));
     Promise.all([baseAssets, rtrPrice]).then(([assets, rtrPrices]) => {

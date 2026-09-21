@@ -27,12 +27,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <div id="google_translate_element" className="google-translate-hidden" />
-        <Providers>{children}</Providers>
-        <Script id="google-translate-init">
-          {`window.googleTranslateElementInit = function() { new window.google.translate.TranslateElement({ pageLanguage: 'en', autoDisplay: false }, 'google_translate_element'); };`}
-        </Script>
-        <Script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit" strategy="afterInteractive" />
+        <div id="app-root">
+          <div id="google_translate_element" className="google-translate-hidden" />
+          <Providers>{children}</Providers>
+          <Script id="google-translate-init">
+            {`window.googleTranslateElementInit = function() { new window.google.translate.TranslateElement({ pageLanguage: 'en', autoDisplay: false }, 'google_translate_element'); };`}
+          </Script>
+          <Script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit" strategy="afterInteractive" />
+        </div>
       </body>
     </html>
   );
