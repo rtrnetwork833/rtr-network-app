@@ -8,7 +8,6 @@ export function createClient() {
       auth: {
         autoRefreshToken: true,
         persistSession: true,
-        storage: typeof window === "undefined" ? undefined : window.sessionStorage,
       },
     },
   );

@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { normalizeDateOfBirth } from "@/lib/date";
 
-const invalidResponse = () => NextResponse.json({ error: "Invalid credentials provided." }, { status: 400 });
+const invalidResponse = () => NextResponse.json({ error: "The details provided do not match our records." }, { status: 400 });
 
 export async function POST(request: Request) {
   const body = await request.json() as { email?: unknown; dateOfBirth?: unknown };

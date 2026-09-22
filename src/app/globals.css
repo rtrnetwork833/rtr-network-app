@@ -142,6 +142,11 @@ button { font: inherit; }
 .market-row strong, .market-row small { display: block; }
 .market-row strong { color: #fff; font-size: 16px; font-weight: 500; line-height: 1.1; }
 .market-row small { margin-top: 4px; overflow: hidden; color: var(--muted); font-size: 13px; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+.market-skeleton-row span { height: 12px; border-radius: 5px; background: linear-gradient(90deg, rgba(255,255,255,.06), rgba(255,255,255,.14), rgba(255,255,255,.06)); background-size: 200% 100%; animation: market-skeleton 1.4s ease-in-out infinite; }
+.market-skeleton-row span:first-child { width: 72%; }
+.market-skeleton-row span:nth-child(2) { width: 64%; margin-left: auto; }
+.market-skeleton-row span:last-child { width: 52%; margin-left: auto; }
+@keyframes market-skeleton { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 .market-header { min-height: 34px; background: rgba(255,255,255,.035); }
 .market-header span { color: var(--muted) !important; font-family: var(--font-geist-sans), sans-serif !important; font-size: 8px !important; letter-spacing: .1em; text-transform: uppercase; }
 .market-up { color: var(--green) !important; }

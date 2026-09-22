@@ -37,6 +37,8 @@ type Profile = { full_name: string | null; avatar_url: string | null };
 type WalletBalance = { balance: number | string | null };
 type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null };
 type PortfolioAsset = MarketAsset & { amount: number; value: number };
+type CoinGeckoAsset = { id?: string; symbol?: string; name?: string; current_price?: number; price_change_percentage_24h?: number; total_volume?: number };
+type CoinGeckoPrice = { usd?: number; usd_24h_change?: number };
 const supabase = createClient();
 const MARKET_CACHE_KEY = "rtr-market-assets-v1";
 const BUILD_TIMESTAMP = process.env.NEXT_PUBLIC_BUILD_TIMESTAMP ?? "development";
@@ -106,6 +108,7 @@ export default function Home() {
   const [remaining, setRemaining] = useState(0);
   const [balance, setBalance] = useState(0);
   const [market, setMarket] = useState<MarketAsset[]>(readMarketCache);
+  const marketRef = useRef(market);
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
   const [visibilityReady, setVisibilityReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +127,68 @@ export default function Home() {
     }, 0);
     return () => window.clearTimeout(cacheTimer);
   }, [market.length]);
+
+  useEffect(() => {
+    marketRef.current = market;
+  }, [market]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function refreshMarketRows() {
+      try {
+        const timestamp = Date.now();
+        const marketPages = await Promise.all([1, 2, 3, 4].map((page) => fetchWithTimeout(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}&sparkline=false&price_change_percentage=24h&timestamp=${timestamp}`)
+          .then((response) => response.ok ? response.json() as Promise<CoinGeckoAsset[]> : Promise.reject(new Error("market unavailable")))));
+        const rtrPrices = await fetchWithTimeout(`https://api.coingecko.com/api/v3/simple/price?ids=rtr-network&vs_currencies=usd&include_24hr_change=true&timestamp=${timestamp}`)
+          .then((response) => response.ok ? response.json() as Promise<Record<string, CoinGeckoPrice>> : Promise.reject(new Error("RTR market unavailable")))
+          .catch(() => ({} as Record<string, CoinGeckoPrice>));
+        if (cancelled) return;
+        const assets = marketPages.flat();
+        const fetched = assets.map((asset) => ({
+          id: asset.id,
+          symbol: asset.symbol?.trim().toUpperCase() || "--",
+          name: asset.name?.trim() || "Unknown token",
+          price: typeof asset.current_price === "number" ? asset.current_price : null,
+          change: typeof asset.price_change_percentage_24h === "number" ? asset.price_change_percentage_24h : null,
+          volume: typeof asset.total_volume === "number" ? asset.total_volume : 0,
+        })).filter((asset) => asset.symbol !== "--" && asset.symbol !== "RTR");
+        const rtrAsset = assets.find((asset) => asset.id === "rtr-network" || asset.symbol?.toUpperCase() === "RTR");
+        const rtrSimplePrice = rtrPrices["rtr-network"];
+        if (fetched.length > 0) {
+          const rtr = { id: "rtr-network", symbol: "RTR", name: rtrAsset?.name || "RTR Network", price: rtrAsset?.current_price ?? rtrSimplePrice?.usd ?? null, change: rtrAsset?.price_change_percentage_24h ?? rtrSimplePrice?.usd_24h_change ?? null, volume: rtrAsset?.total_volume ?? null };
+          const nextMarket = [rtr, ...fetched.slice(0, 999)];
+          window.localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify(nextMarket));
+          marketRef.current = nextMarket;
+          setMarket(nextMarket);
+        }
+      } catch {
+        // Keep cached rows and the last known quote when the feed is unavailable.
+      }
+    }
+    async function refreshQuotes() {
+      const ids = marketRef.current.map((asset) => asset.id).filter((id): id is string => Boolean(id));
+      if (!ids.length) return;
+      try {
+        const quotePages = await Promise.all(Array.from({ length: Math.ceil(ids.length / 100) }, (_, index) => ids.slice(index * 100, index * 100 + 100)).map((page) => fetchWithTimeout(`https://api.coingecko.com/api/v3/simple/price?ids=${page.join(",")}&vs_currencies=usd&include_24hr_change=true`)
+          .then((response) => response.ok ? response.json() as Promise<Record<string, CoinGeckoPrice>> : Promise.reject(new Error("market unavailable")))));
+        const quotes = Object.assign({}, ...quotePages);
+        if (cancelled) return;
+        setMarket((previousMarket) => {
+          const nextMarket = previousMarket.map((asset) => asset.id && quotes[asset.id] ? { ...asset, price: quotes[asset.id].usd ?? asset.price, change: quotes[asset.id].usd_24h_change ?? asset.change } : asset);
+          window.localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify(nextMarket));
+          marketRef.current = nextMarket;
+          return nextMarket;
+        });
+      } catch {
+        // Keep cached rows and the last known quote when the feed is unavailable.
+      }
+    }
+    if (!marketRef.current.length) void refreshMarketRows();
+    const rowRefreshTimer = window.setInterval(() => void refreshMarketRows(), 30000);
+    const quoteRefreshTimer = window.setInterval(() => void refreshQuotes(), 1000);
+    void refreshQuotes();
+    return () => { cancelled = true; window.clearInterval(rowRefreshTimer); window.clearInterval(quoteRefreshTimer); };
+  }, []);
 
   useEffect(() => {
     if (authLoading) return;
@@ -297,10 +362,17 @@ export default function Home() {
     setActive(false);
     setBalance(0);
     setPinState("");
-    void supabase.auth.signOut();
-    localStorage.clear();
-    sessionStorage.clear();
-    window.location.replace("/login");
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+      document.cookie.split(";").forEach((cookie) => {
+        const name = cookie.split("=")[0]?.trim();
+        if (name) document.cookie = `${name}=; Max-Age=0; path=/`;
+      });
+      window.location.replace("/login");
+    }
   }
 
   if (splashVisible) return <SplashGate exiting={splashExiting} />;
@@ -333,7 +405,7 @@ export default function Home() {
         {error && <div className="error-banner" role="alert">{error}</div>}
         {view === "dashboard" && <Dashboard balance={balance} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} active={active} tier={activation?.tier} progress={progress} remaining={remaining} onStart={startCollection} />}
         {view === "upgrades" && <Upgrades onPurchase={purchase} />}
-        {view === "market" && <MarketView market={market} setMarket={setMarket} />}
+        {view === "market" && <MarketView market={market} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
         {view === "game" && <PlaceholderView icon={<Gamepad2 />} title="Node quests" text="Complete community missions to unlock bonus points." />}
         {view === "wallet" && <WalletView />}
@@ -468,17 +540,10 @@ function AuthOverlay() {
     setBusy(true);
     setMessage(null);
     if (mode === "recovery") {
-      const profileResponse = await fetch("/api/auth/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, dateOfBirth }) });
-      const profileBody = await profileResponse.json() as { matches?: boolean };
-      if (!profileResponse.ok || !profileBody.matches) {
-        setBusy(false);
-        setMessage("Recovery is temporarily unavailable. Invalid credentials provided.");
-        return;
-      }
       const response = await fetch("/api/auth/recover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, dateOfBirth }) });
       const body = await response.json() as { error?: string; message?: string };
       setBusy(false);
-      setMessage(response.ok ? body.message ?? "Recovery instructions sent." : body.error ?? "Invalid credentials provided.");
+      setMessage(response.ok ? body.message ?? "Recovery instructions sent." : body.error ?? "The details provided do not match our records.");
       return;
     }
     const result = mode === "login"
@@ -600,81 +665,14 @@ function WalletView() {
   </div>;
 }
 
-function MarketView({ market, setMarket }: { market: MarketAsset[]; setMarket: React.Dispatch<React.SetStateAction<MarketAsset[]>> }) {
-  const marketRef = useRef(market);
+function MarketView({ market }: { market: MarketAsset[] }) {
   const [query, setQuery] = useState("");
-
-  useEffect(() => {
-    marketRef.current = market;
-  }, [market]);
-
-  useEffect(() => {
-    let cancelled = false;
-    type CoinGeckoAsset = { id?: string; symbol?: string; name?: string; current_price?: number; price_change_percentage_24h?: number; total_volume?: number };
-    type CoinGeckoPrice = { usd?: number; usd_24h_change?: number };
-    async function refreshMarketRows() {
-      try {
-        const timestamp = Date.now();
-        const marketPages = await Promise.all([1, 2, 3, 4].map((page) => fetchWithTimeout(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}&sparkline=false&price_change_percentage=24h&timestamp=${timestamp}`)
-          .then((response) => response.ok ? response.json() as Promise<CoinGeckoAsset[]> : Promise.reject(new Error("market unavailable")))));
-        const rtrPrices = await fetchWithTimeout(`https://api.coingecko.com/api/v3/simple/price?ids=rtr-network&vs_currencies=usd&include_24hr_change=true&timestamp=${timestamp}`)
-          .then((response) => response.ok ? response.json() as Promise<Record<string, CoinGeckoPrice>> : Promise.reject(new Error("RTR market unavailable")))
-          .catch(() => ({} as Record<string, CoinGeckoPrice>));
-        if (cancelled) return;
-        const assets = marketPages.flat();
-        const fetched = assets.map((asset) => ({
-          id: asset.id,
-          symbol: asset.symbol?.trim().toUpperCase() || "--",
-          name: asset.name?.trim() || "Unknown token",
-          price: typeof asset.current_price === "number" ? asset.current_price : null,
-          change: typeof asset.price_change_percentage_24h === "number" ? asset.price_change_percentage_24h : null,
-          volume: typeof asset.total_volume === "number" ? asset.total_volume : 0,
-        })).filter((asset) => asset.symbol !== "--" && asset.symbol !== "RTR");
-        const rtrAsset = assets.find((asset) => asset.id === "rtr-network" || asset.symbol?.toUpperCase() === "RTR");
-        const rtrSimplePrice = rtrPrices["rtr-network"];
-        if (fetched.length > 0) {
-          const rtr = { id: "rtr-network", symbol: "RTR", name: rtrAsset?.name || "RTR Network", price: rtrAsset?.current_price ?? rtrSimplePrice?.usd ?? null, change: rtrAsset?.price_change_percentage_24h ?? rtrSimplePrice?.usd_24h_change ?? null, volume: rtrAsset?.total_volume ?? null };
-          const nextMarket = [rtr, ...fetched.slice(0, 999)];
-          window.localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify(nextMarket));
-          marketRef.current = nextMarket;
-          setMarket(nextMarket);
-        } else {
-          console.log("Keep existing state rows to prevent screen flashing");
-        }
-      } catch {
-        console.log("Keep existing state rows to prevent screen flashing");
-      }
-    }
-    async function refreshQuotes() {
-      const ids = marketRef.current.map((asset) => asset.id).filter((id): id is string => Boolean(id));
-      if (!ids.length) return;
-      try {
-        const quotePages = await Promise.all(Array.from({ length: Math.ceil(ids.length / 100) }, (_, index) => ids.slice(index * 100, index * 100 + 100)).map((page) => fetchWithTimeout(`https://api.coingecko.com/api/v3/simple/price?ids=${page.join(",")}&vs_currencies=usd&include_24hr_change=true`)
-          .then((response) => response.ok ? response.json() as Promise<Record<string, CoinGeckoPrice>> : Promise.reject(new Error("market unavailable")))));
-        const quotes = Object.assign({}, ...quotePages);
-        if (cancelled) return;
-        setMarket((previousMarket) => {
-          const nextMarket = previousMarket.map((asset) => asset.id && quotes[asset.id] ? { ...asset, price: quotes[asset.id].usd ?? asset.price, change: quotes[asset.id].usd_24h_change ?? asset.change } : asset);
-          window.localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify(nextMarket));
-          marketRef.current = nextMarket;
-          return nextMarket;
-        });
-      } catch {
-        // Keep cached rows and the last known quote when the feed is unavailable.
-      }
-    }
-    if (!marketRef.current.length) void refreshMarketRows();
-    const rowRefreshTimer = window.setInterval(() => void refreshMarketRows(), 30000);
-    const quoteRefreshTimer = window.setInterval(() => void refreshQuotes(), 1000);
-    void refreshQuotes();
-    return () => { cancelled = true; window.clearInterval(rowRefreshTimer); window.clearInterval(quoteRefreshTimer); };
-  }, [setMarket]);
 
   const normalizedQuery = query.trim().toLowerCase();
   const pinnedAsset = market.find((asset) => asset.symbol === "RTR");
   const filteredAssets = market.filter((asset) => asset.symbol !== "RTR" && (!normalizedQuery || asset.symbol.toLowerCase().includes(normalizedQuery) || asset.name.toLowerCase().includes(normalizedQuery)));
   const renderAsset = (asset: MarketAsset, index: number) => <div className="market-row" key={`${asset.symbol}-${asset.name}-${index}`}><span><strong>{asset.symbol}</strong><small>{asset.name}</small></span><span>{formatMarketPrice(asset)}</span><span className={asset.change !== null && asset.change >= 0 ? "market-up" : "market-down"}>{asset.change === null ? "--" : `${asset.change >= 0 ? "+" : ""}${asset.change.toFixed(2)}%`}</span></div>;
-  return <div className="market-view"><div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and real-time movement across the RTR ecosystem.</p></div><label className="market-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search market assets</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by symbol or name" /></label><div className="market-table" aria-label="Base ecosystem market monitor"><div className="market-row market-header"><span>Asset</span><span>Spot price</span><span>Live Change</span></div>{pinnedAsset && renderAsset(pinnedAsset, 0)}{filteredAssets.map((asset, index) => renderAsset(asset, index + 1))}</div></div>;
+  return <div className="market-view"><div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and real-time movement across the RTR ecosystem.</p></div><label className="market-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search market assets</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by symbol or name" /></label><div className="market-table" aria-label="Base ecosystem market monitor"><div className="market-row market-header"><span>Asset</span><span>Spot price</span><span>Live Change</span></div>{market.length === 0 ? Array.from({ length: 6 }, (_, index) => <div className="market-row market-skeleton-row" key={`market-skeleton-${index}`} aria-label="Loading market data"><span /><span /><span /></div>) : <>{pinnedAsset && renderAsset(pinnedAsset, 0)}{filteredAssets.map((asset, index) => renderAsset(asset, index + 1))}</>}</div></div>;
 }
 
 function PlaceholderView({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) { return <div className="placeholder-view"><div className="placeholder-icon">{icon}</div><span className="eyebrow">COMING ONLINE</span><h2>{title}</h2><p>{text}</p><button className="primary-button">View protocol status <ArrowUpRight size={16} /></button></div>; }
