@@ -4,6 +4,16 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 The app uses Supabase Auth for email/password sign-up and login. Local credentials are read from `.env.local` using `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`; configure the same variables in the deployment environment.
 
+Account recovery also requires these server-only Brevo variables in `.env.local` and the deployment environment:
+
+```text
+BREVO_API_KEY=your-brevo-api-key
+BREVO_SENDER_EMAIL=verified-sender@example.com
+BREVO_SENDER_NAME=RTR Network
+```
+
+Recovery validates `profiles.email` and `profiles.date_of_birth`, stores a six-digit code in `profiles.recovery_code`, and sends it through Brevo's transactional email API. Never expose `BREVO_API_KEY` with a `NEXT_PUBLIC_` prefix.
+
 Before testing activations, run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. It creates the `booster_activations` table and row-level security policies. The free node is persisted for 24 hours; every paid tier is persisted for 30 days, with the countdown derived from the database `expires_at` timestamp after refresh.
 
 ## Getting Started

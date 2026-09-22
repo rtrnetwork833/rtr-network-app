@@ -4,10 +4,14 @@ create table if not exists public.profiles (
   full_name text not null,
   avatar_url text,
   date_of_birth date not null,
+  balance numeric(20, 8) not null default 0 check (balance >= 0),
+  recovery_code text,
   created_at timestamptz not null default now()
 );
 
 alter table public.profiles add column if not exists avatar_url text;
+alter table public.profiles add column if not exists balance numeric(20, 8) not null default 0;
+alter table public.profiles add column if not exists recovery_code text;
 
 alter table public.profiles enable row level security;
 

@@ -33,8 +33,7 @@ import { createClient } from "@/lib/supabase/client";
 
 type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "wallet";
 type Activation = { tier: string; activated_at: string; expires_at: string };
-type Profile = { full_name: string | null; avatar_url: string | null };
-type WalletBalance = { balance: number | string | null };
+type Profile = { full_name: string | null; avatar_url: string | null; balance: number | string | null };
 type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null };
 type PortfolioAsset = MarketAsset & { amount: number; value: number };
 type CoinGeckoAsset = { id?: string; symbol?: string; name?: string; current_price?: number; price_change_percentage_24h?: number; total_volume?: number };
@@ -106,7 +105,7 @@ export default function Home() {
   const [active, setActive] = useState(false);
   const [activation, setActivation] = useState<Activation | null>(null);
   const [remaining, setRemaining] = useState(0);
-  const [balance, setBalance] = useState(0);
+  const [balance, setBalance] = useState<number | null>(null);
   const [market, setMarket] = useState<MarketAsset[]>(readMarketCache);
   const marketRef = useRef(market);
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
@@ -264,39 +263,24 @@ export default function Home() {
     let cancelled = false;
     async function loadProfile() {
       try {
-        const { data, error } = await supabase.from("profiles").select("full_name, avatar_url").eq("id", userId).single<Profile>();
+        const { data, error } = await supabase.from("profiles").select("full_name, avatar_url, balance").eq("id", userId).single<Profile>();
         if (error) throw error;
         if (!cancelled) {
           setProfileName(data?.full_name?.trim() || null);
           setAvatar(data?.avatar_url?.trim() || null);
+          const nextBalance = Number(data?.balance ?? 0);
+          setBalance(Number.isFinite(nextBalance) ? nextBalance : 0);
           setProfileLoading(false);
         }
       } catch {
         if (!cancelled) {
           setProfileName(null);
+          setBalance(null);
           setProfileLoading(false);
         }
       }
     }
     void loadProfile();
-    return () => { cancelled = true; };
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-    const userId = user.id;
-    let cancelled = false;
-    async function loadBalance() {
-      try {
-        const { data, error } = await supabase.from("wallet_balances").select("balance").eq("user_id", userId).maybeSingle<WalletBalance>();
-        if (error) throw error;
-        const nextBalance = Number(data?.balance ?? 0);
-        if (!cancelled) setBalance(Number.isFinite(nextBalance) ? nextBalance : 0);
-      } catch {
-        if (!cancelled) setBalance(0);
-      }
-    }
-    void loadBalance();
     return () => { cancelled = true; };
   }, [user]);
 
@@ -403,7 +387,7 @@ export default function Home() {
 
       <section className="content-scroll">
         {error && <div className="error-banner" role="alert">{error}</div>}
-        {view === "dashboard" && <Dashboard balance={balance} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} active={active} tier={activation?.tier} progress={progress} remaining={remaining} onStart={startCollection} />}
+        {view === "dashboard" && <Dashboard balance={balance} balanceLoading={profileLoading} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} active={active} tier={activation?.tier} progress={progress} remaining={remaining} onStart={startCollection} />}
         {view === "upgrades" && <Upgrades onPurchase={purchase} />}
         {view === "market" && <MarketView market={market} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
@@ -424,8 +408,8 @@ export default function Home() {
   );
 }
 
-function Dashboard({ balance, isBalanceHidden, onToggleBalance, active, tier, progress, remaining, onStart }: { balance: number; isBalanceHidden: boolean; onToggleBalance: () => void; active: boolean; tier?: string; progress: number; remaining: number; onStart: () => void }) {
-  const displayBalance = isBalanceHidden ? "••••••" : `$${balance.toFixed(4)}`;
+function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, active, tier, progress, remaining, onStart }: { balance: number | null; balanceLoading: boolean; isBalanceHidden: boolean; onToggleBalance: () => void; active: boolean; tier?: string; progress: number; remaining: number; onStart: () => void }) {
+  const displayBalance = balanceLoading ? "Loading..." : isBalanceHidden ? "••••••" : `$${(balance ?? 0).toFixed(4)}`;
   return <div className="dashboard-view">
     <div className="balance-card"><div><div className="balance-label"><span className="eyebrow">TOTAL ACCRUED</span><button className="balance-toggle" type="button" onClick={onToggleBalance} aria-label={isBalanceHidden ? "Show balance" : "Hide balance"}>{isBalanceHidden ? <EyeOff size={16} /> : <Eye size={16} />}</button></div><strong>{displayBalance} <small>RTR</small></strong><span className="delta"><ArrowUpRight size={14} /> {isBalanceHidden ? "•••••• / day" : "+0.16 RTR / day"}</span></div><div className="balance-icon"><Zap size={21} /></div></div>
     <div className="section-heading"><div><span className="eyebrow">ACTIVE NODE</span><h2>{tier ?? "Collection protocol"}</h2></div><span className="live-dot">{active ? "LIVE" : "PAUSED"}</span></div>
@@ -551,13 +535,25 @@ function AuthOverlay() {
       : await supabase.auth.signUp({ email, password: pinState, options: { data: { full_name: fullName, date_of_birth: dateOfBirth } } });
     setBusy(false);
     if (result.error) setMessage(result.error.message);
+    else if (mode === "signup" && result.data.user) {
+      const { error: profileError } = await supabase.from("profiles").upsert({
+        id: result.data.user.id,
+        email: email.trim().toLowerCase(),
+        full_name: fullName.trim(),
+        date_of_birth: dateOfBirth,
+      }, { onConflict: "id" });
+      if (profileError && !/row-level security|permission denied/i.test(profileError.message)) {
+        setMessage("Your account was created, but your profile could not be saved. Please contact support.");
+        return;
+      }
+      setSignupVerification(true);
+    }
     else if (mode === "login") {
       setEmail("");
       setPinState("");
       const pinElement = document.getElementById("node-entry-7q4m") as HTMLInputElement | null;
       if (pinElement) pinElement.value = "";
     }
-    else if (mode === "signup") setSignupVerification(true);
   }
 
   async function submitLogin(pin: string) {
