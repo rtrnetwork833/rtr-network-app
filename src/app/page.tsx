@@ -7,7 +7,6 @@ import {
   Bell,
   Check,
   ChevronRight,
-  CircleHelp,
   Crown,
   Eye,
   EyeOff,
@@ -15,11 +14,9 @@ import {
   Globe2,
   Info,
   KeyRound,
-  Languages,
   LayoutDashboard,
   LockKeyhole,
   LogOut,
-  MessageCircle,
   ShieldCheck,
   Sparkles,
   TrendingUp,
@@ -28,6 +25,7 @@ import {
   Zap,
 } from "lucide-react";
 import { formatUnits, type Address } from "viem";
+import { usePathname, useRouter } from "next/navigation";
 import { useAccount, useBalance, useReadContract } from "wagmi";
 import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/client";
@@ -36,10 +34,21 @@ type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "wallet";
 type Activation = { tier: string; activated_at: string; expires_at: string };
 type Profile = { full_name: string | null; avatar_url: string | null };
 type WalletBalance = { balance: number | string | null };
-type MarketAsset = { symbol: string; name: string; price: number | null; change: number | null; volume?: number | null };
+type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null };
 type PortfolioAsset = MarketAsset & { amount: number; value: number };
 const supabase = createClient();
+const MARKET_CACHE_KEY = "rtr-market-assets-v1";
 const rtrTokenAbi = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
+
+function readMarketCache(): MarketAsset[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const cached = JSON.parse(window.localStorage.getItem(MARKET_CACHE_KEY) ?? "[]") as unknown;
+    return Array.isArray(cached) ? cached as MarketAsset[] : [];
+  } catch {
+    return [];
+  }
+}
 
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 8000) {
   const controller = new AbortController();
@@ -65,19 +74,6 @@ const tiers = [
   ["Sovereign Genesis License", "899.99", "333.33", "Genesis Core Level", "30 day subscription"],
 ];
 
-const menuItems = [
-  ["Two-Factor Authentication", ShieldCheck],
-  ["Enable Fingerprint / Face ID Login", LockKeyhole],
-  ["Change Your Password", KeyRound],
-  ["Tasks", Check],
-  ["Change Your Language", Languages],
-  ["Read Whitepaper", ArrowUpRight],
-  ["Read Roadmap", ArrowUpRight],
-  ["Privacy Policy", ShieldCheck],
-  ["About Us", CircleHelp],
-  ["Contact Us", MessageCircle],
-] as const;
-
 function formatTime(seconds: number) {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
@@ -93,6 +89,8 @@ function formatMarketPrice(asset: MarketAsset) {
 }
 
 export default function Home() {
+  const pathname = usePathname();
+  const router = useRouter();
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
   const [, setPinState] = useState("");
   const [profileName, setProfileName] = useState<string | null>(null);
@@ -100,13 +98,12 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(true);
   const [view, setView] = useState<View>("dashboard");
   const [navigationReady, setNavigationReady] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
   const [avatar, setAvatar] = useState<string | null>(null);
   const [active, setActive] = useState(false);
   const [activation, setActivation] = useState<Activation | null>(null);
   const [remaining, setRemaining] = useState(0);
   const [balance, setBalance] = useState(0);
-  const [market, setMarket] = useState<MarketAsset[]>([]);
+  const [market, setMarket] = useState<MarketAsset[]>(readMarketCache);
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
   const [visibilityReady, setVisibilityReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -288,6 +285,7 @@ export default function Home() {
 
   if (authLoading) return <main className="app-shell auth-loading">Checking secure session...</main>;
   if (!user) return <AuthOverlay />;
+  if (pathname === "/settings") return <AccountSettings profileName={profileName} avatar={avatar} onBack={() => router.push("/")} onSignOut={() => void signOut()} />;
 
   return (
     <main className="app-shell">
@@ -298,11 +296,10 @@ export default function Home() {
         </div>
         <div className="header-actions">
           <button className="icon-button" aria-label="Notifications"><Bell size={18} /></button>
-          <button className="avatar-button" aria-label="Open profile menu" onClick={() => setProfileOpen(!profileOpen)}>
+          <button className="avatar-button" aria-label="Open account settings" onClick={() => router.push("/settings")}>
             {avatar ? <img src={avatar} alt="Profile" /> : <UserRound size={20} />}
           </button>
         </div>
-        {profileOpen && <ProfileMenu onClose={() => setProfileOpen(false)} onSignOut={() => void signOut()} />}
       </header>
 
       <section className="identity-row">
@@ -350,8 +347,9 @@ function Upgrades({ onPurchase }: { onPurchase: (tier: (typeof tiers)[number]) =
   return <div className="upgrades-view"><div className="page-intro"><span className="eyebrow">PROTOCOL STORE</span><h2>Choose your node tier</h2><p>Every paid tier runs for a fixed 30-day cycle and streams allocation directly from the deployment treasury.</p></div><div className="tier-list">{tiers.map((tier, index) => <article className={index === 3 ? "tier-card featured" : "tier-card"} key={tier[0]}><div className="tier-top"><span className="tier-number">0{index + 1}</span>{index === 3 && <span className="featured-label">POPULAR</span>}</div><h3>{tier[0]}</h3><div className="tier-price">{tier[1] === "Free" ? "Free" : `$${tier[1]}`}<small>{tier[1] === "Free" ? "" : " USDC"}</small></div><div className="tier-speed"><Zap size={15} /> {tier[2]} RTR <span>/ day</span></div><div className="tier-details"><span><Globe2 size={14} /> {tier[3]}</span><span><LockKeyhole size={14} /> {tier[4]}</span></div><button className="tier-button" onClick={() => onPurchase(tier)}>{tier[1] === "Free" ? "Activate free node" : "Purchase with USDC"}<ArrowUpRight size={16} /></button></article>)}</div></div>;
 }
 
-function ProfileMenu({ onClose, onSignOut }: { onClose: () => void; onSignOut: () => void }) {
-  return <div className="profile-menu"><div className="menu-profile"><div className="mini-avatar"><UserRound size={17} /></div><div><strong>RTR member</strong><span>Authenticated session</span></div></div>{menuItems.map(([label, Icon]) => <button className="menu-option" key={label} onClick={onClose}><Icon size={16} /> {label}<ChevronRight className="menu-chevron" size={14} /></button>)}<button className="menu-option logout" onClick={onSignOut}><LogOut size={16} /> Sign out</button></div>;
+function AccountSettings({ profileName, avatar, onBack, onSignOut }: { profileName: string | null; avatar: string | null; onBack: () => void; onSignOut: () => void }) {
+  const settings = [["Two-Factor", ShieldCheck], ["Face ID Login", LockKeyhole], ["Change Password", KeyRound], ["Tasks", Check], ["Whitepaper", ArrowUpRight]] as const;
+  return <main className="app-shell settings-shell"><header className="topbar"><button className="settings-back" onClick={onBack} aria-label="Back to dashboard"><ChevronRight size={20} /></button><strong className="settings-top-title">Account Settings</strong><div className="avatar-button" aria-hidden="true">{avatar ? <img src={avatar} alt="" /> : <UserRound size={20} />}</div></header><section className="settings-content"><div className="settings-identity"><div className="settings-avatar">{avatar ? <img src={avatar} alt="Profile" /> : <UserRound size={28} />}</div><span className="eyebrow">ACCOUNT SECURITY</span><h1>Account Settings</h1><p>{profileName || "RTR Network member"}</p></div><div className="settings-list">{settings.map(([label, Icon]) => <button className="settings-row" key={label}><span><Icon size={18} />{label}</span><ChevronRight size={16} /></button>)}<button className="settings-row settings-signout" onClick={onSignOut}><span><LogOut size={18} />Sign out</span><ChevronRight size={16} /></button></div></section></main>;
 }
 
 function AuthOverlay() {
@@ -556,12 +554,17 @@ function WalletView() {
 }
 
 function MarketView({ market, setMarket }: { market: MarketAsset[]; setMarket: React.Dispatch<React.SetStateAction<MarketAsset[]>> }) {
+  const marketRef = useRef(market);
+
+  useEffect(() => {
+    marketRef.current = market;
+  }, [market]);
 
   useEffect(() => {
     let cancelled = false;
     type CoinGeckoAsset = { id?: string; symbol?: string; name?: string; current_price?: number; price_change_percentage_24h?: number; total_volume?: number };
     type CoinGeckoPrice = { usd?: number; usd_24h_change?: number };
-    async function refreshMarket() {
+    async function refreshMarketRows() {
       try {
         const timestamp = Date.now();
         const marketPages = await Promise.all([1, 2, 3, 4].map((page) => fetchWithTimeout(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}&sparkline=false&price_change_percentage=24h&timestamp=${timestamp}`)
@@ -572,6 +575,7 @@ function MarketView({ market, setMarket }: { market: MarketAsset[]; setMarket: R
         if (cancelled) return;
         const assets = marketPages.flat();
         const fetched = assets.map((asset) => ({
+          id: asset.id,
           symbol: asset.symbol?.trim().toUpperCase() || "--",
           name: asset.name?.trim() || "Unknown token",
           price: typeof asset.current_price === "number" ? asset.current_price : null,
@@ -581,8 +585,11 @@ function MarketView({ market, setMarket }: { market: MarketAsset[]; setMarket: R
         const rtrAsset = assets.find((asset) => asset.id === "rtr-network" || asset.symbol?.toUpperCase() === "RTR");
         const rtrSimplePrice = rtrPrices["rtr-network"];
         if (fetched.length > 0) {
-          const rtr = { symbol: "RTR", name: rtrAsset?.name || "RTR Network", price: rtrAsset?.current_price ?? rtrSimplePrice?.usd ?? null, change: rtrAsset?.price_change_percentage_24h ?? rtrSimplePrice?.usd_24h_change ?? null, volume: rtrAsset?.total_volume ?? null };
-          setMarket((previousMarket) => [previousMarket[0] ?? rtr, ...fetched.slice(0, 1000)]);
+          const rtr = { id: "rtr-network", symbol: "RTR", name: rtrAsset?.name || "RTR Network", price: rtrAsset?.current_price ?? rtrSimplePrice?.usd ?? null, change: rtrAsset?.price_change_percentage_24h ?? rtrSimplePrice?.usd_24h_change ?? null, volume: rtrAsset?.total_volume ?? null };
+          const nextMarket = [rtr, ...fetched.slice(0, 999)];
+          window.localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify(nextMarket));
+          marketRef.current = nextMarket;
+          setMarket(nextMarket);
         } else {
           console.log("Keep existing state rows to prevent screen flashing");
         }
@@ -590,9 +597,29 @@ function MarketView({ market, setMarket }: { market: MarketAsset[]; setMarket: R
         console.log("Keep existing state rows to prevent screen flashing");
       }
     }
-    void refreshMarket();
-    const refreshTimer = window.setInterval(() => void refreshMarket(), 30000);
-    return () => { cancelled = true; window.clearInterval(refreshTimer); };
+    async function refreshQuotes() {
+      const ids = marketRef.current.map((asset) => asset.id).filter((id): id is string => Boolean(id));
+      if (!ids.length) return;
+      try {
+        const quotePages = await Promise.all(Array.from({ length: Math.ceil(ids.length / 100) }, (_, index) => ids.slice(index * 100, index * 100 + 100)).map((page) => fetchWithTimeout(`https://api.coingecko.com/api/v3/simple/price?ids=${page.join(",")}&vs_currencies=usd&include_24hr_change=true`)
+          .then((response) => response.ok ? response.json() as Promise<Record<string, CoinGeckoPrice>> : Promise.reject(new Error("market unavailable")))));
+        const quotes = Object.assign({}, ...quotePages);
+        if (cancelled) return;
+        setMarket((previousMarket) => {
+          const nextMarket = previousMarket.map((asset) => asset.id && quotes[asset.id] ? { ...asset, price: quotes[asset.id].usd ?? asset.price, change: quotes[asset.id].usd_24h_change ?? asset.change } : asset);
+          window.localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify(nextMarket));
+          marketRef.current = nextMarket;
+          return nextMarket;
+        });
+      } catch {
+        // Keep cached rows and the last known quote when the feed is unavailable.
+      }
+    }
+    if (!marketRef.current.length) void refreshMarketRows();
+    const rowRefreshTimer = window.setInterval(() => void refreshMarketRows(), 30000);
+    const quoteRefreshTimer = window.setInterval(() => void refreshQuotes(), 1000);
+    void refreshQuotes();
+    return () => { cancelled = true; window.clearInterval(rowRefreshTimer); window.clearInterval(quoteRefreshTimer); };
   }, [setMarket]);
 
   return <div className="market-view"><div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and real-time movement across the RTR ecosystem.</p></div><div className="market-table" aria-label="Base ecosystem market monitor"><div className="market-row market-header"><span>Asset</span><span>Spot price</span><span>Live Change</span></div>{market.map((asset, index) => <div className="market-row" key={`${asset.symbol}-${asset.name}-${index}`}><span><strong>{asset.symbol}</strong><small>{asset.name}</small></span><span>{formatMarketPrice(asset)}</span><span className={asset.change !== null && asset.change >= 0 ? "market-up" : "market-down"}>{asset.change === null ? "--" : `${asset.change >= 0 ? "+" : ""}${asset.change.toFixed(2)}%`}</span></div>)}</div></div>;

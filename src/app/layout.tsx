@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RTR NETWORK | Node Platform",
+  title: "RTR NETWORK",
   description: "A secure mobile-first cloud mining dashboard.",
   manifest: "/manifest.json",
 };
