@@ -151,4 +151,5 @@ button { font: inherit; }
 .market-header span { color: var(--muted) !important; font-family: var(--font-geist-sans), sans-serif !important; font-size: 8px !important; letter-spacing: .1em; text-transform: uppercase; }
 .market-up { color: var(--green) !important; }
 .market-down { color: var(--orange) !important; }
+.auth-switch:disabled { cursor: not-allowed; opacity: .45; }
 .wallet-note { margin-top: 12px; color: var(--muted); font-size: 10px; line-height: 1.5; }

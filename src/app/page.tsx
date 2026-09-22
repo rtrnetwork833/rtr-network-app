@@ -433,13 +433,14 @@ function AccountSettings({ profileName, avatar, onBack, onSignOut }: { profileNa
 }
 
 function AuthOverlay() {
+  const router = useRouter();
   const [profilePreview, setProfilePreview] = useState<Profile | null>(null);
   const [mode, setMode] = useState<"login" | "signup" | "recovery">(() => {
     if (typeof window === "undefined") return "login";
     const savedMode = window.sessionStorage.getItem("rtr-auth-view");
     return savedMode === "signup" || savedMode === "recovery" ? savedMode : "login";
   });
-  const [email, setEmail] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem("rtr-email") ?? "");
+  const [email, setEmail] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem("rtr-email") ?? window.sessionStorage.getItem("rtr-signup-email") ?? "");
   const [pinState, setPinState] = useState("");
   const [fullName, setFullName] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
@@ -448,9 +449,11 @@ function AuthOverlay() {
   const [enteredToken, setEnteredToken] = useState("");
   const [showDobInfo, setShowDobInfo] = useState(false);
   const [emailVisible, setEmailVisible] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isUserTyping, setIsUserTyping] = useState(false);
+  const [resendSeconds, setResendSeconds] = useState(60);
   const pinInput = useRef<HTMLInputElement>(null);
   const pinIsValid = /^\d{6}$/.test(pinState);
   const pinsMatch = pinIsValid && pinState === confirmPin;
@@ -462,6 +465,14 @@ function AuthOverlay() {
   useEffect(() => {
     if (signupVerification) window.sessionStorage.setItem("rtr-signup-verification", "true");
     else window.sessionStorage.removeItem("rtr-signup-verification");
+  }, [signupVerification]);
+
+  useEffect(() => {
+    if (!signupVerification) return;
+    const timer = window.setInterval(() => {
+      setResendSeconds((seconds) => Math.max(0, seconds - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
   }, [signupVerification]);
 
   useEffect(() => {
@@ -486,6 +497,7 @@ function AuthOverlay() {
       setIsUserTyping(false);
       window.sessionStorage.removeItem("rtr-auth-view");
       window.sessionStorage.removeItem("rtr-signup-verification");
+      window.sessionStorage.removeItem("rtr-signup-email");
     };
     window.addEventListener("rtr-auth-reset", resetAuthForm);
     return () => window.removeEventListener("rtr-auth-reset", resetAuthForm);
@@ -515,7 +527,27 @@ function AuthOverlay() {
     setMessage(null);
     const result = await supabase.auth.verifyOtp({ email, token: enteredToken, type: "signup" });
     setBusy(false);
-    if (result.error) setMessage(result.error.message);
+    if (result.error) {
+      setMessage(result.error.message);
+      return;
+    }
+    setSignupVerification(false);
+    setMode("login");
+    setMessage("Your account is verified. You can now sign in.");
+  }
+
+  async function resendSignupCode() {
+    if (busy || resendSeconds > 0 || !email) return;
+    setBusy(true);
+    setMessage(null);
+    const result = await supabase.auth.resend({ type: "signup", email });
+    setBusy(false);
+    if (result.error) {
+      setMessage(result.error.message);
+      return;
+    }
+    setResendSeconds(60);
+    setMessage("A new verification code was sent.");
   }
 
   async function submit(event: React.FormEvent) {
@@ -536,6 +568,7 @@ function AuthOverlay() {
     setBusy(false);
     if (result.error) setMessage(result.error.message);
     else if (mode === "signup" && result.data.user) {
+      window.sessionStorage.setItem("rtr-signup-email", email.trim().toLowerCase());
       const { error: profileError } = await supabase.from("profiles").upsert({
         id: result.data.user.id,
         email: email.trim().toLowerCase(),
@@ -546,6 +579,7 @@ function AuthOverlay() {
         setMessage("Your account was created, but your profile could not be saved. Please contact support.");
         return;
       }
+      setResendSeconds(60);
       setSignupVerification(true);
     }
     else if (mode === "login") {
@@ -578,11 +612,11 @@ function AuthOverlay() {
   const isRecovery = mode === "recovery";
   const canSubmit = !busy && (mode === "login" ? Boolean(email && pinState.length === 6) : (isSignup ? Boolean(fullName && email && dateOfBirth && pinsMatch) : Boolean(email && dateOfBirth)));
 
-  if (signupVerification) return <main className="app-shell auth-shell"><div className="auth-panel otp-panel"><img className="shield-mark" src="/logo.png" alt="RTR Network shield" /><span className="eyebrow">REGISTRATION ACTIVATION</span><h1>Verify Your Account</h1><p>We sent a 6-digit secure security verification token to your email inbox. Please type it in below to authorize your registration activation script.</p><form onSubmit={verifySignupCode}><label className="otp-label">Security token<input className="otp-input" type="text" inputMode="numeric" maxLength={6} pattern="[0-9]*" value={enteredToken} onChange={(event) => setEnteredToken(event.target.value.replace(/\D/g, "").slice(0, 6))} required autoComplete="one-time-code" /></label>{message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={busy || enteredToken.length !== 6}>{busy ? <><span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>Authenticating token...</> : "Verify Code"}</button></form></div></main>;
+  if (signupVerification) return <main className="app-shell auth-shell"><div className="auth-panel otp-panel"><img className="shield-mark" src="/logo.png" alt="RTR Network shield" /><span className="eyebrow">REGISTRATION ACTIVATION</span><h1>Verify Your Account</h1><p>Enter the 6-digit verification code sent to {email}.</p><form onSubmit={verifySignupCode}><label className="otp-label">Security token<input className="otp-input" type="text" inputMode="numeric" maxLength={6} pattern="[0-9]*" value={enteredToken} onChange={(event) => setEnteredToken(event.target.value.replace(/\D/g, "").slice(0, 6))} required autoComplete="one-time-code" /></label>{message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={busy || enteredToken.length !== 6}>{busy ? <><span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>Authenticating token...</> : "Verify Code"}</button></form><p className="resend-status" aria-live="polite">{resendSeconds > 0 ? `Resend code in 00:${String(resendSeconds).padStart(2, "0")}` : "You can request a new code."}</p><button type="button" className="auth-switch" disabled={busy || resendSeconds > 0} onClick={() => void resendSignupCode()}>Resend Code</button><button type="button" className="auth-switch" onClick={() => { setSignupVerification(false); setMode("login"); setMessage(null); router.push("/login"); }}>← Back to Login</button></div></main>;
 
   if (mode === "login") return <main className="app-shell auth-shell"><div className="auth-panel login-panel"><div className="auth-identity"><img className="auth-logo" src="/logo.png" alt="RTR Network shield" /><strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong><span>Secure node access</span></div><span className="eyebrow">SECURE NODE PLATFORM</span><h1>Welcome back</h1><p>Enter your 6-digit PIN to access your persistent node dashboard.</p><form autoComplete="off" action="javascript:void(0);" style={{ width: "100%" }} onSubmit={(event) => { event.preventDefault(); void submitLogin(pinState); }}>
     <label>Email address<div className="email-input-wrap"><input id="login-user-email-address" name="email" type={emailVisible ? "email" : "text"} value={email} style={emailVisible ? undefined : { WebkitTextSecurity: "disc" } as React.CSSProperties} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="username" /><button type="button" className="pin-visibility" onClick={() => setEmailVisible((visible) => !visible)} aria-label={emailVisible ? "Hide email address" : "Show email address"}>{emailVisible ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
-    <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} id="node-entry-7q4m" name="credential-fragment-x91k" className="pin-input" type="text" autoComplete="off" inputMode="numeric" maxLength={6} value={pinState} style={{ WebkitTextSecurity: "disc" } as React.CSSProperties} onKeyDown={(event) => { if (/^\d$/.test(event.key)) setIsUserTyping(true); }} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6 && isUserTyping) { void submitLogin(pin); setIsUserTyping(false); } }} pattern="[0-9]*" required /></div></label>
+    <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} id="node-entry-7q4m" name="credential-fragment-x91k" className="pin-input" type={showPassword ? "text" : "password"} autoComplete="off" inputMode="numeric" maxLength={6} value={pinState} onKeyDown={(event) => { if (/^\d$/.test(event.key)) setIsUserTyping(true); }} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6 && isUserTyping) { void submitLogin(pin); setIsUserTyping(false); } }} pattern="[0-9]*" required /><button type="button" className="pin-visibility" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide PIN" : "Show PIN"}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
     {message && <div className="auth-message" role="alert">{message}</div>}
     {busy && <div className="login-status" aria-live="polite">Verifying secure PIN...</div>}
   </form>
@@ -592,9 +626,15 @@ function AuthOverlay() {
 
   return <main className="app-shell auth-shell"><div className="auth-panel"><img className="shield-mark" src="/logo.png" alt="RTR Network shield" /><span className="eyebrow">SECURE NODE PLATFORM</span><h1>{isRecovery ? "Recover your account" : "Create your account"}</h1><p>{isRecovery ? "Verify your registered details to receive a secure password reset code." : "Create a secure account for your persistent node dashboard."}</p><form autoComplete="off" onSubmit={submit}>
     {isSignup && <label>Full name<input type="text" value={fullName} onChange={(event) => setFullName(event.target.value)} required autoComplete="name" /></label>}
-    <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" /></label>
+    <label>Email address<input type="email" value={email} onChange={(event) => { setEmail(event.target.value); if (isSignup) window.sessionStorage.setItem("rtr-signup-email", event.target.value); }} required autoComplete="email" /></label>
     {(isSignup || isRecovery) && <label className="date-field">Date of birth<div className="date-input-wrap"><input type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} required /><button type="button" className="info-button" aria-label="Why we need your date of birth" aria-expanded={showDobInfo} onClick={() => setShowDobInfo(!showDobInfo)}><Info size={15} /></button>{showDobInfo && <div className="dob-tooltip" role="tooltip"><strong>🔒 Why we need your Date of Birth:</strong><span>- Account Recovery: If you ever lose access to your password, you must verify your exact date of birth to reset it.</span><span>- Anti-Hack Protection: This stops hackers from trying to steal your funds via fake password reset requests.</span><span>- Security Lock: For your safety, this information cannot be changed after registration. Please ensure it matches your official records.</span></div>}</div></label>}
-    {isSignup && <><label>Create 6-digit PIN<input type="password" value={pinState} onChange={(event) => setPinState(event.target.value.replace(/\D/g, "").slice(0, 6))} required inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" /></label><label>Confirm 6-digit PIN<input type="password" value={confirmPin} onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))} required inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" /></label>{confirmPin && !pinsMatch && <div className="pin-error" role="alert">PINs must match and contain exactly 6 digits.</div>}</>}
+    {isSignup && (
+      <>
+        <label>Create 6-digit PIN<div className="pin-input-wrap"><input type={showPassword ? "text" : "password"} value={pinState} onChange={(event) => setPinState(event.target.value.replace(/\D/g, "").slice(0, 6))} required inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" /><button type="button" className="pin-visibility" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide PIN" : "Show PIN"}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
+        <label>Confirm 6-digit PIN<div className="pin-input-wrap"><input type={showPassword ? "text" : "password"} value={confirmPin} onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))} required inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" /><button type="button" className="pin-visibility" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide PIN" : "Show PIN"}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
+        {confirmPin && !pinsMatch && <div className="pin-error" role="alert">PINs must match and contain exactly 6 digits.</div>}
+      </>
+    )}
     {message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={!canSubmit}>{busy ? "Securing account..." : isRecovery ? "Send recovery code" : "Register"}</button></form>
     <button className="auth-switch" onClick={() => { setMode(isRecovery || mode === "signup" ? "login" : "signup"); setMessage(null); setShowDobInfo(false); }}>{isRecovery || mode === "signup" ? "Back to log in" : "Need an account? Sign up"}</button>
   </div></main>;
