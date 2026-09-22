@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   title: "RTR NETWORK",
   description: "A secure mobile-first cloud mining dashboard.",
   manifest: "/manifest.json",
-  icons: { icon: "/favicon.ico", shortcut: "/favicon.ico", apple: "/logo.png" },
+  icons: { icon: "/logo.png", shortcut: "/logo.png", apple: "/logo.png" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -28,8 +28,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        <link rel="icon" href="/favicon.ico" />
-        <link rel="shortcut icon" href="/favicon.ico" />
+        <link rel="icon" href="/logo.png" />
+        <link rel="shortcut icon" href="/logo.png" />
+        <link rel="apple-touch-icon" href="/logo.png" />
         <meta name="rtr-build" content={process.env.NEXT_PUBLIC_BUILD_TIMESTAMP} />
       </head>
       <body className="min-h-full flex flex-col">

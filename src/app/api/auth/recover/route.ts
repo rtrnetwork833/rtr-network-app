@@ -1,13 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { normalizeDateOfBirth } from "@/lib/date";
 
 const invalidResponse = () => NextResponse.json({ error: "Invalid credentials provided." }, { status: 400 });
 
 export async function POST(request: Request) {
   const body = await request.json() as { email?: unknown; dateOfBirth?: unknown };
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-  const dateOfBirth = typeof body.dateOfBirth === "string" ? body.dateOfBirth : "";
-  if (!email || !dateOfBirth || !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) return invalidResponse();
+  const dateOfBirth = typeof body.dateOfBirth === "string" ? normalizeDateOfBirth(body.dateOfBirth) : null;
+  if (!email || !dateOfBirth) return invalidResponse();
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceKey) return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503 });

@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { normalizeDateOfBirth } from "@/lib/date";
 
 export async function POST(request: Request) {
   const body = await request.json() as { email?: unknown; dateOfBirth?: unknown };
@@ -18,7 +19,8 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (typeof body.dateOfBirth === "string") {
-    return NextResponse.json({ matches: Boolean(data && data.date_of_birth === body.dateOfBirth) });
+    const dateOfBirth = normalizeDateOfBirth(body.dateOfBirth);
+    return NextResponse.json({ matches: Boolean(dateOfBirth && data && data.date_of_birth === dateOfBirth) });
   }
 
   return NextResponse.json({

@@ -378,13 +378,17 @@ function AccountSettings({ profileName, avatar, onBack, onSignOut }: { profileNa
 
 function AuthOverlay() {
   const [profilePreview, setProfilePreview] = useState<Profile | null>(null);
-  const [mode, setMode] = useState<"login" | "signup" | "recovery">("login");
+  const [mode, setMode] = useState<"login" | "signup" | "recovery">(() => {
+    if (typeof window === "undefined") return "login";
+    const savedMode = window.sessionStorage.getItem("rtr-auth-view");
+    return savedMode === "signup" || savedMode === "recovery" ? savedMode : "login";
+  });
   const [email, setEmail] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem("rtr-email") ?? "");
   const [pinState, setPinState] = useState("");
   const [fullName, setFullName] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
-  const [signupVerification, setSignupVerification] = useState(false);
+  const [signupVerification, setSignupVerification] = useState(() => typeof window !== "undefined" && window.sessionStorage.getItem("rtr-signup-verification") === "true");
   const [enteredToken, setEnteredToken] = useState("");
   const [showDobInfo, setShowDobInfo] = useState(false);
   const [emailVisible, setEmailVisible] = useState(true);
@@ -394,6 +398,15 @@ function AuthOverlay() {
   const pinInput = useRef<HTMLInputElement>(null);
   const pinIsValid = /^\d{6}$/.test(pinState);
   const pinsMatch = pinIsValid && pinState === confirmPin;
+
+  useEffect(() => {
+    window.sessionStorage.setItem("rtr-auth-view", mode);
+  }, [mode]);
+
+  useEffect(() => {
+    if (signupVerification) window.sessionStorage.setItem("rtr-signup-verification", "true");
+    else window.sessionStorage.removeItem("rtr-signup-verification");
+  }, [signupVerification]);
 
   useEffect(() => {
     const mountTimer = window.setTimeout(() => setPinState(""), 0);
@@ -415,6 +428,8 @@ function AuthOverlay() {
       setProfilePreview(null);
       setBusy(false);
       setIsUserTyping(false);
+      window.sessionStorage.removeItem("rtr-auth-view");
+      window.sessionStorage.removeItem("rtr-signup-verification");
     };
     window.addEventListener("rtr-auth-reset", resetAuthForm);
     return () => window.removeEventListener("rtr-auth-reset", resetAuthForm);

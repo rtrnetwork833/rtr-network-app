@@ -11,7 +11,7 @@ const metadata = {
   name: "RTR Network",
   description: "Base Mainnet node dashboard",
   url: "https://rtr.network",
-  icons: ["https://rtr.network/icon.png"],
+  icons: ["https://rtr.network/logo.png"],
 };
 
 const wagmiConfig = defaultWagmiConfig({
