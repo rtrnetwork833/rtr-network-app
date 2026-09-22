@@ -17,6 +17,7 @@ import {
   LayoutDashboard,
   LockKeyhole,
   LogOut,
+  Search,
   ShieldCheck,
   Sparkles,
   TrendingUp,
@@ -38,6 +39,7 @@ type MarketAsset = { id?: string; symbol: string; name: string; price: number | 
 type PortfolioAsset = MarketAsset & { amount: number; value: number };
 const supabase = createClient();
 const MARKET_CACHE_KEY = "rtr-market-assets-v1";
+const BUILD_TIMESTAMP = process.env.NEXT_PUBLIC_BUILD_TIMESTAMP ?? "development";
 const rtrTokenAbi = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
 
 function readMarketCache(): MarketAsset[] {
@@ -294,14 +296,10 @@ export default function Home() {
     setActivation(null);
     setActive(false);
     setBalance(0);
-    // Force clear structural component states instantly
     setPinState("");
-    // Preserve the market snapshot while clearing account-specific state.
-    const cachedMarket = localStorage.getItem(MARKET_CACHE_KEY);
+    void supabase.auth.signOut();
     localStorage.clear();
-    if (cachedMarket) localStorage.setItem(MARKET_CACHE_KEY, cachedMarket);
     sessionStorage.clear();
-    await supabase.auth.signOut();
     window.location.replace("/login");
   }
 
@@ -310,7 +308,7 @@ export default function Home() {
   if (pathname === "/settings") return <AccountSettings profileName={profileName} avatar={avatar} onBack={() => router.push("/")} onSignOut={() => void signOut()} />;
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" data-build={BUILD_TIMESTAMP}>
       <header className="topbar">
         <div className="brand-lockup">
           <img className="shield-mark" src="/logo.png" alt="RTR Network shield" />
@@ -455,6 +453,13 @@ function AuthOverlay() {
     setBusy(true);
     setMessage(null);
     if (mode === "recovery") {
+      const profileResponse = await fetch("/api/auth/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, dateOfBirth }) });
+      const profileBody = await profileResponse.json() as { matches?: boolean };
+      if (!profileResponse.ok || !profileBody.matches) {
+        setBusy(false);
+        setMessage("Recovery is temporarily unavailable. Invalid credentials provided.");
+        return;
+      }
       const response = await fetch("/api/auth/recover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, dateOfBirth }) });
       const body = await response.json() as { error?: string; message?: string };
       setBusy(false);
@@ -582,6 +587,7 @@ function WalletView() {
 
 function MarketView({ market, setMarket }: { market: MarketAsset[]; setMarket: React.Dispatch<React.SetStateAction<MarketAsset[]>> }) {
   const marketRef = useRef(market);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     marketRef.current = market;
@@ -649,7 +655,11 @@ function MarketView({ market, setMarket }: { market: MarketAsset[]; setMarket: R
     return () => { cancelled = true; window.clearInterval(rowRefreshTimer); window.clearInterval(quoteRefreshTimer); };
   }, [setMarket]);
 
-  return <div className="market-view"><div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and real-time movement across the RTR ecosystem.</p></div><div className="market-table" aria-label="Base ecosystem market monitor"><div className="market-row market-header"><span>Asset</span><span>Spot price</span><span>Live Change</span></div>{market.map((asset, index) => <div className="market-row" key={`${asset.symbol}-${asset.name}-${index}`}><span><strong>{asset.symbol}</strong><small>{asset.name}</small></span><span>{formatMarketPrice(asset)}</span><span className={asset.change !== null && asset.change >= 0 ? "market-up" : "market-down"}>{asset.change === null ? "--" : `${asset.change >= 0 ? "+" : ""}${asset.change.toFixed(2)}%`}</span></div>)}</div></div>;
+  const normalizedQuery = query.trim().toLowerCase();
+  const pinnedAsset = market.find((asset) => asset.symbol === "RTR");
+  const filteredAssets = market.filter((asset) => asset.symbol !== "RTR" && (!normalizedQuery || asset.symbol.toLowerCase().includes(normalizedQuery) || asset.name.toLowerCase().includes(normalizedQuery)));
+  const renderAsset = (asset: MarketAsset, index: number) => <div className="market-row" key={`${asset.symbol}-${asset.name}-${index}`}><span><strong>{asset.symbol}</strong><small>{asset.name}</small></span><span>{formatMarketPrice(asset)}</span><span className={asset.change !== null && asset.change >= 0 ? "market-up" : "market-down"}>{asset.change === null ? "--" : `${asset.change >= 0 ? "+" : ""}${asset.change.toFixed(2)}%`}</span></div>;
+  return <div className="market-view"><div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and real-time movement across the RTR ecosystem.</p></div><label className="market-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search market assets</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by symbol or name" /></label><div className="market-table" aria-label="Base ecosystem market monitor"><div className="market-row market-header"><span>Asset</span><span>Spot price</span><span>Live Change</span></div>{pinnedAsset && renderAsset(pinnedAsset, 0)}{filteredAssets.map((asset, index) => renderAsset(asset, index + 1))}</div></div>;
 }
 
 function PlaceholderView({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) { return <div className="placeholder-view"><div className="placeholder-icon">{icon}</div><span className="eyebrow">COMING ONLINE</span><h2>{title}</h2><p>{text}</p><button className="primary-button">View protocol status <ArrowUpRight size={16} /></button></div>; }

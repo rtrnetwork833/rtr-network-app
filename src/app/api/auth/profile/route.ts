@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
-  const body = await request.json() as { email?: unknown };
+  const body = await request.json() as { email?: unknown; dateOfBirth?: unknown };
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -13,9 +13,13 @@ export async function POST(request: Request) {
   });
   const { data } = await supabase
     .from("profiles")
-    .select("full_name, avatar_url")
+    .select("full_name, avatar_url, date_of_birth")
     .eq("email", email)
     .maybeSingle();
+
+  if (typeof body.dateOfBirth === "string") {
+    return NextResponse.json({ matches: Boolean(data && data.date_of_birth === body.dateOfBirth) });
+  }
 
   return NextResponse.json({
     profile: data?.full_name ? { full_name: data.full_name, avatar_url: data.avatar_url } : null,
