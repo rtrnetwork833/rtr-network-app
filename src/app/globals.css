@@ -107,12 +107,12 @@ button { font: inherit; }
 .portfolio-list { max-height: 430px; overflow-y: auto; display: grid; gap: 8px; margin-top: 18px; padding-top: 15px; border-top: 1px solid var(--line); scrollbar-width: thin; }.portfolio-row { min-height: 66px; padding: 10px 11px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--line); border-radius: 11px; background: rgba(255,255,255,.035); }.asset-identity, .asset-identity > div { display: flex; align-items: center; }.asset-identity { min-width: 0; gap: 9px; }.asset-identity > div { display: grid; gap: 3px; }.asset-identity strong, .asset-value strong { font-family: var(--font-geist-mono), monospace; font-size: 12px; }.asset-identity small, .asset-value small { color: var(--muted); font-size: 9px; }.asset-logo { width: 31px; height: 31px; display: grid; place-items: center; flex: 0 0 auto; color: #10151a; background: var(--green); border-radius: 50%; font-family: var(--font-geist-mono), monospace; font-size: 11px; font-weight: 700; }.asset-eth { color: #d6e2ff; background: #4768af; }.asset-value { display: grid; gap: 4px; text-align: right; }.asset-value strong { white-space: nowrap; }.asset-value small { white-space: nowrap; }
 .market-heading { margin-top: 25px; }
 .market-table { overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: rgba(13,29,49,.6); }
-.market-row { min-height: 54px; padding: 9px 11px; display: grid; grid-template-columns: 1.45fr 1fr .65fr; align-items: center; gap: 8px; border-top: 1px solid var(--line); }
+.market-row { min-height: 70px; padding: 15px 13px; display: grid; grid-template-columns: 1.45fr 1fr .65fr; align-items: center; gap: 8px; border-top: 1px solid var(--line); }
 .market-row:first-child { border-top: 0; }
-.market-row > span:not(:first-child) { text-align: right; color: var(--foreground); font-family: var(--font-geist-mono), monospace; font-size: 10px; }
+.market-row > span:not(:first-child) { text-align: right; color: var(--foreground); font-family: var(--font-geist-mono), monospace; font-size: 16px; font-weight: 700; }
 .market-row strong, .market-row small { display: block; }
-.market-row strong { color: var(--foreground); font-size: 11px; }
-.market-row small { margin-top: 3px; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.market-row strong { color: #fff; font-size: 16px; font-weight: 500; line-height: 1.1; }
+.market-row small { margin-top: 4px; overflow: hidden; color: var(--muted); font-size: 13px; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
 .market-header { min-height: 34px; background: rgba(255,255,255,.035); }
 .market-header span { color: var(--muted) !important; font-family: var(--font-geist-sans), sans-serif !important; font-size: 8px !important; letter-spacing: .1em; text-transform: uppercase; }
 .market-up { color: var(--green) !important; }
