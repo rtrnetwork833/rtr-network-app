@@ -441,8 +441,9 @@ function AuthOverlay() {
     setBusy(false);
     if (result.error) setMessage(result.error.message);
     else if (mode === "login") {
+      setEmail("");
       setPinState("");
-      const pinElement = document.getElementById("user-node-pass-code") as HTMLInputElement | null;
+      const pinElement = document.getElementById("login-user-security-pin") as HTMLInputElement | null;
       if (pinElement) pinElement.value = "";
     }
     else if (mode === "signup") setSignupVerification(true);
@@ -459,8 +460,9 @@ function AuthOverlay() {
       setMessage("Incorrect PIN. Try again.");
       window.requestAnimationFrame(() => pinInput.current?.focus());
     } else {
+      setEmail("");
       setPinState("");
-      const pinElement = document.getElementById("user-node-pass-code") as HTMLInputElement | null;
+      const pinElement = document.getElementById("login-user-security-pin") as HTMLInputElement | null;
       if (pinElement) pinElement.value = "";
     }
   }
@@ -472,10 +474,8 @@ function AuthOverlay() {
   if (signupVerification) return <main className="app-shell auth-shell"><div className="auth-panel otp-panel"><img className="shield-mark" src="/rtr-shield.svg" alt="RTR Network shield" /><span className="eyebrow">REGISTRATION ACTIVATION</span><h1>Verify Your Account</h1><p>We sent a 6-digit secure security verification token to your email inbox. Please type it in below to authorize your registration activation script.</p><form onSubmit={verifySignupCode}><label className="otp-label">Security token<input className="otp-input" type="text" inputMode="numeric" maxLength={6} pattern="[0-9]*" value={enteredToken} onChange={(event) => setEnteredToken(event.target.value.replace(/\D/g, "").slice(0, 6))} required autoComplete="one-time-code" /></label>{message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={busy || enteredToken.length !== 6}>{busy ? <><span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>Authenticating token...</> : "Verify Code"}</button></form></div></main>;
 
   if (mode === "login") return <main className="app-shell auth-shell"><div className="auth-panel login-panel"><div className="auth-identity"><div className="auth-avatar">{profilePreview?.avatar_url ? <img src={profilePreview.avatar_url} alt="Profile" /> : <UserRound size={34} strokeWidth={1.5} />}</div><strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong><span>Secure node access</span></div><span className="eyebrow">SECURE NODE PLATFORM</span><h1>Welcome back</h1><p>Enter your 6-digit PIN to access your persistent node dashboard.</p><form autoComplete="off" action="javascript:void(0);" style={{ width: "100%" }} onSubmit={(event) => { event.preventDefault(); void submitLogin(pinState); }}>
-    <input type="text" name="username" style={{ display: "none" }} autoComplete="off" tabIndex={-1} aria-hidden="true" />
-    <input type="password" name="password" style={{ display: "none" }} autoComplete="off" tabIndex={-1} aria-hidden="true" />
-    <label>Email address<input type="email" value={email} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="email" /></label>
-    <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} id="user-node-pass-code" name="user-node-pass-code-field-random-string" className="pin-input" type="text" autoComplete="new-password" inputMode="numeric" maxLength={6} value={pinState} style={{ WebkitTextSecurity: "disc" } as React.CSSProperties} onKeyDown={(event) => { if (/^\d$/.test(event.key)) setIsUserTyping(true); }} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6 && isUserTyping) { void submitLogin(pin); setIsUserTyping(false); } }} pattern="[0-9]*" required /></div></label>
+    <label>Email address<input id="login-user-email-address" name="email" type="email" value={email} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="username" /></label>
+    <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} id="login-user-security-pin" name="password" className="pin-input" type="text" autoComplete="current-password" inputMode="numeric" maxLength={6} value={pinState} style={{ WebkitTextSecurity: "disc" } as React.CSSProperties} onKeyDown={(event) => { if (/^\d$/.test(event.key)) setIsUserTyping(true); }} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6 && isUserTyping) { void submitLogin(pin); setIsUserTyping(false); } }} pattern="[0-9]*" required /></div></label>
     {message && <div className="auth-message" role="alert">{message}</div>}
     {busy && <div className="login-status" aria-live="polite">Verifying secure PIN...</div>}
   </form>
