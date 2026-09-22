@@ -18,6 +18,7 @@ export const metadata: Metadata = {
   title: "RTR NETWORK",
   description: "A secure mobile-first cloud mining dashboard.",
   manifest: "/manifest.json",
+  icons: { icon: "/logo.png", shortcut: "/logo.png", apple: "/logo.png" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
