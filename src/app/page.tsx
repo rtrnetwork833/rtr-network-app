@@ -106,6 +106,7 @@ export default function Home() {
   const [activation, setActivation] = useState<Activation | null>(null);
   const [remaining, setRemaining] = useState(0);
   const [balance, setBalance] = useState(0);
+  const [market, setMarket] = useState<MarketAsset[]>([]);
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
   const [visibilityReady, setVisibilityReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -315,7 +316,7 @@ export default function Home() {
         {error && <div className="error-banner" role="alert">{error}</div>}
         {view === "dashboard" && <Dashboard balance={balance} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} active={active} tier={activation?.tier} progress={progress} remaining={remaining} onStart={startCollection} />}
         {view === "upgrades" && <Upgrades onPurchase={purchase} />}
-        {view === "market" && <MarketView />}
+        {view === "market" && <MarketView market={market} setMarket={setMarket} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
         {view === "game" && <PlaceholderView icon={<Gamepad2 />} title="Node quests" text="Complete community missions to unlock bonus points." />}
         {view === "wallet" && <WalletView />}
@@ -443,7 +444,7 @@ function AuthOverlay() {
     else if (mode === "login") {
       setEmail("");
       setPinState("");
-      const pinElement = document.getElementById("login-user-security-pin") as HTMLInputElement | null;
+      const pinElement = document.getElementById("node-entry-7q4m") as HTMLInputElement | null;
       if (pinElement) pinElement.value = "";
     }
     else if (mode === "signup") setSignupVerification(true);
@@ -462,7 +463,7 @@ function AuthOverlay() {
     } else {
       setEmail("");
       setPinState("");
-      const pinElement = document.getElementById("login-user-security-pin") as HTMLInputElement | null;
+      const pinElement = document.getElementById("node-entry-7q4m") as HTMLInputElement | null;
       if (pinElement) pinElement.value = "";
     }
   }
@@ -475,7 +476,7 @@ function AuthOverlay() {
 
   if (mode === "login") return <main className="app-shell auth-shell"><div className="auth-panel login-panel"><div className="auth-identity"><div className="auth-avatar">{profilePreview?.avatar_url ? <img src={profilePreview.avatar_url} alt="Profile" /> : <UserRound size={34} strokeWidth={1.5} />}</div><strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong><span>Secure node access</span></div><span className="eyebrow">SECURE NODE PLATFORM</span><h1>Welcome back</h1><p>Enter your 6-digit PIN to access your persistent node dashboard.</p><form autoComplete="off" action="javascript:void(0);" style={{ width: "100%" }} onSubmit={(event) => { event.preventDefault(); void submitLogin(pinState); }}>
     <label>Email address<input id="login-user-email-address" name="email" type="email" value={email} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="username" /></label>
-    <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} id="login-user-security-pin" name="password" className="pin-input" type="text" autoComplete="current-password" inputMode="numeric" maxLength={6} value={pinState} style={{ WebkitTextSecurity: "disc" } as React.CSSProperties} onKeyDown={(event) => { if (/^\d$/.test(event.key)) setIsUserTyping(true); }} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6 && isUserTyping) { void submitLogin(pin); setIsUserTyping(false); } }} pattern="[0-9]*" required /></div></label>
+    <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} id="node-entry-7q4m" name="credential-fragment-x91k" className="pin-input" type="text" autoComplete="off" inputMode="numeric" maxLength={6} value={pinState} style={{ WebkitTextSecurity: "disc" } as React.CSSProperties} onKeyDown={(event) => { if (/^\d$/.test(event.key)) setIsUserTyping(true); }} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6 && isUserTyping) { void submitLogin(pin); setIsUserTyping(false); } }} pattern="[0-9]*" required /></div></label>
     {message && <div className="auth-message" role="alert">{message}</div>}
     {busy && <div className="login-status" aria-live="polite">Verifying secure PIN...</div>}
   </form>
@@ -554,8 +555,7 @@ function WalletView() {
   </div>;
 }
 
-function MarketView() {
-  const [market, setMarket] = useState<MarketAsset[]>([]);
+function MarketView({ market, setMarket }: { market: MarketAsset[]; setMarket: React.Dispatch<React.SetStateAction<MarketAsset[]>> }) {
 
   useEffect(() => {
     let cancelled = false;
@@ -593,7 +593,7 @@ function MarketView() {
     void refreshMarket();
     const refreshTimer = window.setInterval(() => void refreshMarket(), 30000);
     return () => { cancelled = true; window.clearInterval(refreshTimer); };
-  }, []);
+  }, [setMarket]);
 
   return <div className="market-view"><div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and real-time movement across the RTR ecosystem.</p></div><div className="market-table" aria-label="Base ecosystem market monitor"><div className="market-row market-header"><span>Asset</span><span>Spot price</span><span>Live Change</span></div>{market.map((asset, index) => <div className="market-row" key={`${asset.symbol}-${asset.name}-${index}`}><span><strong>{asset.symbol}</strong><small>{asset.name}</small></span><span>{formatMarketPrice(asset)}</span><span className={asset.change !== null && asset.change >= 0 ? "market-up" : "market-down"}>{asset.change === null ? "--" : `${asset.change >= 0 ? "+" : ""}${asset.change.toFixed(2)}%`}</span></div>)}</div></div>;
 }
