@@ -356,7 +356,7 @@ export default function Home() {
     <main className="app-shell" data-build={BUILD_TIMESTAMP}>
       <header className="topbar">
         <div className="brand-lockup">
-          <img className="shield-mark" src="/logo.png" alt="RTR Network shield" />
+          <img className="shield-mark" src="/logo.png" alt="RTR NETWORK LOGO" />
           <div><strong>RTR NETWORK</strong><span>SECURE NODE PLATFORM</span></div>
         </div>
         <div className="header-actions">
@@ -369,7 +369,7 @@ export default function Home() {
 
       <section className="identity-row">
         <div className="greeting" aria-live="polite">
-          {profileLoading || !profileName ? <span className="greeting-skeleton" aria-label="Loading profile name" /> : <h1>Hello, {profileName}</h1>}
+          {profileLoading ? <span className="greeting-skeleton" aria-label="Loading profile name" /> : <h1>Hello, {profileName ?? "RTR Network member"}</h1>}
         </div>
         <div className="status-pill">{profileName && <strong>{profileName}</strong>}<span /> Node online</div>
       </section>
@@ -437,8 +437,6 @@ function AuthOverlay() {
   const [signupVerification, setSignupVerification] = useState(() => typeof window !== "undefined" && window.sessionStorage.getItem("rtr-signup-verification") === "true");
   const [enteredToken, setEnteredToken] = useState("");
   const [showDobInfo, setShowDobInfo] = useState(false);
-  const [emailVisible, setEmailVisible] = useState(() => typeof window === "undefined" || window.sessionStorage.getItem("rtr-email-visible") !== "false");
-  const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isUserTyping, setIsUserTyping] = useState(false);
@@ -451,10 +449,6 @@ function AuthOverlay() {
   useEffect(() => {
     window.sessionStorage.setItem("rtr-auth-view", mode);
   }, [mode]);
-
-  useEffect(() => {
-    window.sessionStorage.setItem("rtr-email-visible", String(emailVisible));
-  }, [emailVisible]);
 
   useEffect(() => {
     if (signupVerification) window.sessionStorage.setItem("rtr-signup-verification", "true");
@@ -602,6 +596,7 @@ function AuthOverlay() {
     } else {
       setEmail("");
       setPinState("");
+      window.localStorage.removeItem("rtr-email");
       loginForm.current?.reset();
     }
   }
@@ -613,8 +608,8 @@ function AuthOverlay() {
   if (signupVerification) return <main className="app-shell auth-shell"><div className="auth-panel otp-panel"><img className="shield-mark" src="/logo.png" alt="RTR Network shield" /><span className="eyebrow">REGISTRATION ACTIVATION</span><h1>Verify Your Account</h1><p>Enter the 6-digit verification code sent to {email}.</p><form onSubmit={verifySignupCode}><label className="otp-label">Security token<input className="otp-input" type="text" inputMode="numeric" maxLength={6} pattern="[0-9]*" value={enteredToken} onChange={(event) => setEnteredToken(event.target.value.replace(/\D/g, "").slice(0, 6))} required autoComplete="one-time-code" /></label>{message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={busy || enteredToken.length !== 6}>{busy ? <><span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>Authenticating token...</> : "Verify Code"}</button></form><p className="resend-status" aria-live="polite">{resendSeconds > 0 ? `Resend code in 00:${String(resendSeconds).padStart(2, "0")}` : "You can request a new code."}</p><button type="button" className="auth-switch" disabled={busy || resendSeconds > 0} onClick={() => void resendSignupCode()}>Resend Code</button><button type="button" className="auth-switch" onClick={() => { setSignupVerification(false); setMode("login"); setMessage(null); router.push("/login"); }}>← Back to Login</button></div></main>;
 
   if (mode === "login") return <main className="app-shell auth-shell"><div className="auth-panel login-panel"><div className="auth-identity"><img className="auth-logo" src="/logo.png" alt="RTR Network shield" /><strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong><span>Secure node access</span></div><span className="eyebrow">SECURE NODE PLATFORM</span><h1>Welcome back</h1><p>Enter your 6-digit PIN to access your persistent node dashboard.</p><form ref={loginForm} autoComplete="off" action="javascript:void(0);" style={{ width: "100%" }} onSubmit={(event) => { event.preventDefault(); void submitLogin(pinState); }}>
-    <label>Email address<div className="email-input-wrap"><input id="login-user-email-address" name="email" type={emailVisible ? "email" : "password"} value={email} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="username" /><button type="button" className="pin-visibility" onClick={() => setEmailVisible((visible) => !visible)} aria-label={emailVisible ? "Hide email address" : "Show email address"}>{emailVisible ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
-    <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} id="node-entry-7q4m" name="credential-fragment-x91k" className="pin-input" type={showPassword ? "text" : "password"} autoComplete="off" inputMode="numeric" maxLength={6} value={pinState} onKeyDown={(event) => { if (/^\d$/.test(event.key)) setIsUserTyping(true); }} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6 && isUserTyping) { void submitLogin(pin); setIsUserTyping(false); } }} pattern="[0-9]*" required /><button type="button" className="pin-visibility" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide PIN" : "Show PIN"}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
+    <label>Email address<input id="login-user-email-address" name="email" type="email" value={email} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="username" /></label>
+    <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} id="node-entry-7q4m" name="credential-fragment-x91k" className="pin-input" type="password" autoComplete="off" inputMode="numeric" maxLength={6} value={pinState} onKeyDown={(event) => { if (/^\d$/.test(event.key)) setIsUserTyping(true); }} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6 && isUserTyping) { void submitLogin(pin); setIsUserTyping(false); } }} pattern="[0-9]*" required /></div></label>
     {message && <div className="auth-message" role="alert">{message}</div>}
     {busy && <div className="login-status" aria-live="polite">Verifying secure PIN...</div>}
   </form>
@@ -628,8 +623,8 @@ function AuthOverlay() {
     {(isSignup || isRecovery) && <label className="date-field">Date of birth<div className="date-input-wrap"><input type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} required /><button type="button" className="info-button" aria-label="Why we need your date of birth" aria-expanded={showDobInfo} onClick={() => setShowDobInfo(!showDobInfo)}><Info size={15} /></button>{showDobInfo && <div className="dob-tooltip" role="tooltip"><strong>🔒 Why we need your Date of Birth:</strong><span>- Account Recovery: If you ever lose access to your password, you must verify your exact date of birth to reset it.</span><span>- Anti-Hack Protection: This stops hackers from trying to steal your funds via fake password reset requests.</span><span>- Security Lock: For your safety, this information cannot be changed after registration. Please ensure it matches your official records.</span></div>}</div></label>}
     {isSignup && (
       <>
-        <label>Create 6-digit PIN<div className="pin-input-wrap"><input type={showPassword ? "text" : "password"} value={pinState} onChange={(event) => setPinState(event.target.value.replace(/\D/g, "").slice(0, 6))} required inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" /><button type="button" className="pin-visibility" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide PIN" : "Show PIN"}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
-        <label>Confirm 6-digit PIN<div className="pin-input-wrap"><input type={showPassword ? "text" : "password"} value={confirmPin} onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))} required inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" /><button type="button" className="pin-visibility" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide PIN" : "Show PIN"}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
+        <label>Create 6-digit PIN<div className="pin-input-wrap"><input type="password" value={pinState} onChange={(event) => setPinState(event.target.value.replace(/\D/g, "").slice(0, 6))} required inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" /></div></label>
+        <label>Confirm 6-digit PIN<div className="pin-input-wrap"><input type="password" value={confirmPin} onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))} required inputMode="numeric" maxLength={6} pattern="[0-9]*" autoComplete="new-password" /></div></label>
         {confirmPin && !pinsMatch && <div className="pin-error" role="alert">PINs must match and contain exactly 6 digits.</div>}
       </>
     )}

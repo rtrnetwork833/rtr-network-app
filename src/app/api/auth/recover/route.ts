@@ -14,13 +14,13 @@ export async function POST(request: Request) {
     return invalidResponse();
   }
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-  const dateOfBirth = typeof body.dateOfBirth === "string" ? normalizeDateOfBirth(body.dateOfBirth) : null;
-  if (!email || !dateOfBirth) return invalidResponse();
+  const normalizedDateOfBirth = typeof body.dateOfBirth === "string" ? normalizeDateOfBirth(body.dateOfBirth) : null;
+  if (!email || !normalizedDateOfBirth) return invalidResponse();
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceKey) return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503 });
   const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
-  const { data: profile, error: profileError } = await supabase.from("profiles").select("id").eq("email", email).eq("date_of_birth", dateOfBirth).maybeSingle();
+  const { data: profile, error: profileError } = await supabase.from("profiles").select("id").eq("email", email).eq("date_of_birth", normalizedDateOfBirth).maybeSingle();
   if (profileError || !profile) return invalidResponse();
 
   const brevoApiKey = process.env.BREVO_API_KEY;
