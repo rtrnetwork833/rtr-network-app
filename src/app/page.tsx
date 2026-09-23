@@ -27,7 +27,9 @@ import {
 } from "lucide-react";
 import { formatUnits, type Address } from "viem";
 import { usePathname, useRouter } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAccount, useBalance, useReadContract } from "wagmi";
+import { normalizeDateOfBirth } from "@/lib/date";
 import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/client";
 
@@ -63,6 +65,31 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}
   }
 }
 
+async function fetchMarketRows(): Promise<MarketAsset[]> {
+  const timestamp = Date.now();
+  const marketPages = await Promise.all([1, 2, 3, 4].map((page) => fetchWithTimeout(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}&sparkline=false&price_change_percentage=24h&timestamp=${timestamp}`)
+    .then((response) => response.ok ? response.json() as Promise<CoinGeckoAsset[]> : Promise.reject(new Error("market unavailable")))));
+  const rtrPrices = await fetchWithTimeout(`https://api.coingecko.com/api/v3/simple/price?ids=rtr-network&vs_currencies=usd&include_24hr_change=true&timestamp=${timestamp}`)
+    .then((response) => response.ok ? response.json() as Promise<Record<string, CoinGeckoPrice>> : Promise.reject(new Error("RTR market unavailable")))
+    .catch(() => ({} as Record<string, CoinGeckoPrice>));
+  const assets = marketPages.flat();
+  const fetched = assets.map((asset) => ({
+    id: asset.id,
+    symbol: asset.symbol?.trim().toUpperCase() || "--",
+    name: asset.name?.trim() || "Unknown token",
+    price: typeof asset.current_price === "number" ? asset.current_price : null,
+    change: typeof asset.price_change_percentage_24h === "number" ? asset.price_change_percentage_24h : null,
+    volume: typeof asset.total_volume === "number" ? asset.total_volume : 0,
+  })).filter((asset) => asset.symbol !== "--" && asset.symbol !== "RTR");
+  const rtrAsset = assets.find((asset) => asset.id === "rtr-network" || asset.symbol?.toUpperCase() === "RTR");
+  const rtrSimplePrice = rtrPrices["rtr-network"];
+  if (fetched.length === 0) throw new Error("market unavailable");
+  const rtr = { id: "rtr-network", symbol: "RTR", name: rtrAsset?.name || "RTR Network", price: rtrAsset?.current_price ?? rtrSimplePrice?.usd ?? null, change: rtrAsset?.price_change_percentage_24h ?? rtrSimplePrice?.usd_24h_change ?? null, volume: rtrAsset?.total_volume ?? null };
+  const nextMarket = [rtr, ...fetched.slice(0, 999)];
+  window.localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify(nextMarket));
+  return nextMarket;
+}
+
 const tiers = [
   ["Free Node Booster", "Free", "0.16", "Base Level", "Manual 24-hour verification"],
   ["Starter Utility Boost", "4.99", "0.66", "Level 2 Priority", "30 day subscription"],
@@ -94,6 +121,7 @@ function formatMarketPrice(asset: MarketAsset) {
 export default function Home() {
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
   const [, setPinState] = useState("");
   const [profileName, setProfileName] = useState<string | null>(null);
@@ -106,8 +134,15 @@ export default function Home() {
   const [activation, setActivation] = useState<Activation | null>(null);
   const [remaining, setRemaining] = useState(0);
   const [balance, setBalance] = useState<number | null>(null);
-  const [market, setMarket] = useState<MarketAsset[]>(readMarketCache);
-  const marketRef = useRef(market);
+  const marketQuery = useQuery({
+    queryKey: ["market-assets"],
+    queryFn: fetchMarketRows,
+    initialData: readMarketCache,
+    staleTime: 30000,
+    refetchInterval: 30000,
+    retry: 1,
+  });
+  const market = marketQuery.data ?? [];
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
   const [visibilityReady, setVisibilityReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -119,75 +154,29 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (market.length > 0) return;
-    const cacheTimer = window.setTimeout(() => {
-      const cachedMarket = readMarketCache();
-      if (cachedMarket.length > 0) setMarket(cachedMarket);
-    }, 0);
-    return () => window.clearTimeout(cacheTimer);
-  }, [market.length]);
-
-  useEffect(() => {
-    marketRef.current = market;
-  }, [market]);
-
-  useEffect(() => {
     let cancelled = false;
-    async function refreshMarketRows() {
-      try {
-        const timestamp = Date.now();
-        const marketPages = await Promise.all([1, 2, 3, 4].map((page) => fetchWithTimeout(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}&sparkline=false&price_change_percentage=24h&timestamp=${timestamp}`)
-          .then((response) => response.ok ? response.json() as Promise<CoinGeckoAsset[]> : Promise.reject(new Error("market unavailable")))));
-        const rtrPrices = await fetchWithTimeout(`https://api.coingecko.com/api/v3/simple/price?ids=rtr-network&vs_currencies=usd&include_24hr_change=true&timestamp=${timestamp}`)
-          .then((response) => response.ok ? response.json() as Promise<Record<string, CoinGeckoPrice>> : Promise.reject(new Error("RTR market unavailable")))
-          .catch(() => ({} as Record<string, CoinGeckoPrice>));
-        if (cancelled) return;
-        const assets = marketPages.flat();
-        const fetched = assets.map((asset) => ({
-          id: asset.id,
-          symbol: asset.symbol?.trim().toUpperCase() || "--",
-          name: asset.name?.trim() || "Unknown token",
-          price: typeof asset.current_price === "number" ? asset.current_price : null,
-          change: typeof asset.price_change_percentage_24h === "number" ? asset.price_change_percentage_24h : null,
-          volume: typeof asset.total_volume === "number" ? asset.total_volume : 0,
-        })).filter((asset) => asset.symbol !== "--" && asset.symbol !== "RTR");
-        const rtrAsset = assets.find((asset) => asset.id === "rtr-network" || asset.symbol?.toUpperCase() === "RTR");
-        const rtrSimplePrice = rtrPrices["rtr-network"];
-        if (fetched.length > 0) {
-          const rtr = { id: "rtr-network", symbol: "RTR", name: rtrAsset?.name || "RTR Network", price: rtrAsset?.current_price ?? rtrSimplePrice?.usd ?? null, change: rtrAsset?.price_change_percentage_24h ?? rtrSimplePrice?.usd_24h_change ?? null, volume: rtrAsset?.total_volume ?? null };
-          const nextMarket = [rtr, ...fetched.slice(0, 999)];
-          window.localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify(nextMarket));
-          marketRef.current = nextMarket;
-          setMarket(nextMarket);
-        }
-      } catch {
-        // Keep cached rows and the last known quote when the feed is unavailable.
-      }
-    }
     async function refreshQuotes() {
-      const ids = marketRef.current.map((asset) => asset.id).filter((id): id is string => Boolean(id));
+      const currentMarket = queryClient.getQueryData<MarketAsset[]>(["market-assets"]) ?? [];
+      const ids = currentMarket.map((asset) => asset.id).filter((id): id is string => Boolean(id)).slice(0, 100);
       if (!ids.length) return;
       try {
         const quotePages = await Promise.all(Array.from({ length: Math.ceil(ids.length / 100) }, (_, index) => ids.slice(index * 100, index * 100 + 100)).map((page) => fetchWithTimeout(`https://api.coingecko.com/api/v3/simple/price?ids=${page.join(",")}&vs_currencies=usd&include_24hr_change=true`)
           .then((response) => response.ok ? response.json() as Promise<Record<string, CoinGeckoPrice>> : Promise.reject(new Error("market unavailable")))));
         const quotes = Object.assign({}, ...quotePages);
         if (cancelled) return;
-        setMarket((previousMarket) => {
+        queryClient.setQueryData<MarketAsset[]>(["market-assets"], (previousMarket = []) => {
           const nextMarket = previousMarket.map((asset) => asset.id && quotes[asset.id] ? { ...asset, price: quotes[asset.id].usd ?? asset.price, change: quotes[asset.id].usd_24h_change ?? asset.change } : asset);
           window.localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify(nextMarket));
-          marketRef.current = nextMarket;
           return nextMarket;
         });
       } catch {
         // Keep cached rows and the last known quote when the feed is unavailable.
       }
     }
-    if (!marketRef.current.length) void refreshMarketRows();
-    const rowRefreshTimer = window.setInterval(() => void refreshMarketRows(), 30000);
-    const quoteRefreshTimer = window.setInterval(() => void refreshQuotes(), 1000);
+    const quoteRefreshTimer = window.setInterval(() => void refreshQuotes(), 15000);
     void refreshQuotes();
-    return () => { cancelled = true; window.clearInterval(rowRefreshTimer); window.clearInterval(quoteRefreshTimer); };
-  }, []);
+    return () => { cancelled = true; window.clearInterval(quoteRefreshTimer); };
+  }, [queryClient]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -448,19 +437,24 @@ function AuthOverlay() {
   const [signupVerification, setSignupVerification] = useState(() => typeof window !== "undefined" && window.sessionStorage.getItem("rtr-signup-verification") === "true");
   const [enteredToken, setEnteredToken] = useState("");
   const [showDobInfo, setShowDobInfo] = useState(false);
-  const [emailVisible, setEmailVisible] = useState(true);
+  const [emailVisible, setEmailVisible] = useState(() => typeof window === "undefined" || window.sessionStorage.getItem("rtr-email-visible") !== "false");
   const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isUserTyping, setIsUserTyping] = useState(false);
   const [resendSeconds, setResendSeconds] = useState(60);
   const pinInput = useRef<HTMLInputElement>(null);
+  const loginForm = useRef<HTMLFormElement>(null);
   const pinIsValid = /^\d{6}$/.test(pinState);
   const pinsMatch = pinIsValid && pinState === confirmPin;
 
   useEffect(() => {
     window.sessionStorage.setItem("rtr-auth-view", mode);
   }, [mode]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem("rtr-email-visible", String(emailVisible));
+  }, [emailVisible]);
 
   useEffect(() => {
     if (signupVerification) window.sessionStorage.setItem("rtr-signup-verification", "true");
@@ -556,7 +550,13 @@ function AuthOverlay() {
     setBusy(true);
     setMessage(null);
     if (mode === "recovery") {
-      const response = await fetch("/api/auth/recover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, dateOfBirth }) });
+      const normalizedDate = normalizeDateOfBirth(dateOfBirth);
+      if (!normalizedDate) {
+        setBusy(false);
+        setMessage("Enter a valid date of birth.");
+        return;
+      }
+      const response = await fetch("/api/auth/recover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, dateOfBirth: normalizedDate }) });
       const body = await response.json() as { error?: string; message?: string };
       setBusy(false);
       setMessage(response.ok ? body.message ?? "Recovery instructions sent." : body.error ?? "The details provided do not match our records.");
@@ -585,8 +585,7 @@ function AuthOverlay() {
     else if (mode === "login") {
       setEmail("");
       setPinState("");
-      const pinElement = document.getElementById("node-entry-7q4m") as HTMLInputElement | null;
-      if (pinElement) pinElement.value = "";
+      loginForm.current?.reset();
     }
   }
 
@@ -603,8 +602,7 @@ function AuthOverlay() {
     } else {
       setEmail("");
       setPinState("");
-      const pinElement = document.getElementById("node-entry-7q4m") as HTMLInputElement | null;
-      if (pinElement) pinElement.value = "";
+      loginForm.current?.reset();
     }
   }
 
@@ -614,8 +612,8 @@ function AuthOverlay() {
 
   if (signupVerification) return <main className="app-shell auth-shell"><div className="auth-panel otp-panel"><img className="shield-mark" src="/logo.png" alt="RTR Network shield" /><span className="eyebrow">REGISTRATION ACTIVATION</span><h1>Verify Your Account</h1><p>Enter the 6-digit verification code sent to {email}.</p><form onSubmit={verifySignupCode}><label className="otp-label">Security token<input className="otp-input" type="text" inputMode="numeric" maxLength={6} pattern="[0-9]*" value={enteredToken} onChange={(event) => setEnteredToken(event.target.value.replace(/\D/g, "").slice(0, 6))} required autoComplete="one-time-code" /></label>{message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={busy || enteredToken.length !== 6}>{busy ? <><span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>Authenticating token...</> : "Verify Code"}</button></form><p className="resend-status" aria-live="polite">{resendSeconds > 0 ? `Resend code in 00:${String(resendSeconds).padStart(2, "0")}` : "You can request a new code."}</p><button type="button" className="auth-switch" disabled={busy || resendSeconds > 0} onClick={() => void resendSignupCode()}>Resend Code</button><button type="button" className="auth-switch" onClick={() => { setSignupVerification(false); setMode("login"); setMessage(null); router.push("/login"); }}>← Back to Login</button></div></main>;
 
-  if (mode === "login") return <main className="app-shell auth-shell"><div className="auth-panel login-panel"><div className="auth-identity"><img className="auth-logo" src="/logo.png" alt="RTR Network shield" /><strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong><span>Secure node access</span></div><span className="eyebrow">SECURE NODE PLATFORM</span><h1>Welcome back</h1><p>Enter your 6-digit PIN to access your persistent node dashboard.</p><form autoComplete="off" action="javascript:void(0);" style={{ width: "100%" }} onSubmit={(event) => { event.preventDefault(); void submitLogin(pinState); }}>
-    <label>Email address<div className="email-input-wrap"><input id="login-user-email-address" name="email" type={emailVisible ? "email" : "text"} value={email} style={emailVisible ? undefined : { WebkitTextSecurity: "disc" } as React.CSSProperties} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="username" /><button type="button" className="pin-visibility" onClick={() => setEmailVisible((visible) => !visible)} aria-label={emailVisible ? "Hide email address" : "Show email address"}>{emailVisible ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
+  if (mode === "login") return <main className="app-shell auth-shell"><div className="auth-panel login-panel"><div className="auth-identity"><img className="auth-logo" src="/logo.png" alt="RTR Network shield" /><strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong><span>Secure node access</span></div><span className="eyebrow">SECURE NODE PLATFORM</span><h1>Welcome back</h1><p>Enter your 6-digit PIN to access your persistent node dashboard.</p><form ref={loginForm} autoComplete="off" action="javascript:void(0);" style={{ width: "100%" }} onSubmit={(event) => { event.preventDefault(); void submitLogin(pinState); }}>
+    <label>Email address<div className="email-input-wrap"><input id="login-user-email-address" name="email" type={emailVisible ? "email" : "password"} value={email} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="username" /><button type="button" className="pin-visibility" onClick={() => setEmailVisible((visible) => !visible)} aria-label={emailVisible ? "Hide email address" : "Show email address"}>{emailVisible ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
     <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} id="node-entry-7q4m" name="credential-fragment-x91k" className="pin-input" type={showPassword ? "text" : "password"} autoComplete="off" inputMode="numeric" maxLength={6} value={pinState} onKeyDown={(event) => { if (/^\d$/.test(event.key)) setIsUserTyping(true); }} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6 && isUserTyping) { void submitLogin(pin); setIsUserTyping(false); } }} pattern="[0-9]*" required /><button type="button" className="pin-visibility" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide PIN" : "Show PIN"}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
     {message && <div className="auth-message" role="alert">{message}</div>}
     {busy && <div className="login-status" aria-live="polite">Verifying secure PIN...</div>}
@@ -705,10 +703,10 @@ function MarketView({ market }: { market: MarketAsset[] }) {
   const [query, setQuery] = useState("");
 
   const normalizedQuery = query.trim().toLowerCase();
-  const pinnedAsset = market.find((asset) => asset.symbol === "RTR");
+  const pinnedAsset = market.find((asset) => asset.symbol === "RTR") ?? { id: "rtr-network", symbol: "RTR", name: "RTR Network", price: null, change: null, volume: null };
   const filteredAssets = market.filter((asset) => asset.symbol !== "RTR" && (!normalizedQuery || asset.symbol.toLowerCase().includes(normalizedQuery) || asset.name.toLowerCase().includes(normalizedQuery)));
   const renderAsset = (asset: MarketAsset, index: number) => <div className="market-row" key={`${asset.symbol}-${asset.name}-${index}`}><span><strong>{asset.symbol}</strong><small>{asset.name}</small></span><span>{formatMarketPrice(asset)}</span><span className={asset.change !== null && asset.change >= 0 ? "market-up" : "market-down"}>{asset.change === null ? "--" : `${asset.change >= 0 ? "+" : ""}${asset.change.toFixed(2)}%`}</span></div>;
-  return <div className="market-view"><div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and real-time movement across the RTR ecosystem.</p></div><label className="market-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search market assets</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by symbol or name" /></label><div className="market-table" aria-label="Base ecosystem market monitor"><div className="market-row market-header"><span>Asset</span><span>Spot price</span><span>Live Change</span></div>{market.length === 0 ? Array.from({ length: 6 }, (_, index) => <div className="market-row market-skeleton-row" key={`market-skeleton-${index}`} aria-label="Loading market data"><span /><span /><span /></div>) : <>{pinnedAsset && renderAsset(pinnedAsset, 0)}{filteredAssets.map((asset, index) => renderAsset(asset, index + 1))}</>}</div></div>;
+  return <div className="market-view"><div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and real-time movement across the RTR ecosystem.</p></div><label className="market-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search market assets</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by symbol or name" /></label><div className="market-table" aria-label="Base ecosystem market monitor"><div className="market-row market-header"><span>Asset</span><span>Spot price</span><span>Live Change</span></div>{renderAsset(pinnedAsset, 0)}{market.length === 0 ? Array.from({ length: 6 }, (_, index) => <div className="market-row market-skeleton-row" key={`market-skeleton-${index}`} aria-label="Loading market data"><span /><span /><span /></div>) : filteredAssets.map((asset, index) => renderAsset(asset, index + 1))}</div></div>;
 }
 
 function PlaceholderView({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) { return <div className="placeholder-view"><div className="placeholder-icon">{icon}</div><span className="eyebrow">COMING ONLINE</span><h2>{title}</h2><p>{text}</p><button className="primary-button">View protocol status <ArrowUpRight size={16} /></button></div>; }

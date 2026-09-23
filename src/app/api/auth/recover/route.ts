@@ -7,7 +7,12 @@ const invalidResponse = () => NextResponse.json({ error: "The details provided d
 const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
 
 export async function POST(request: Request) {
-  const body = await request.json() as { email?: unknown; dateOfBirth?: unknown };
+  let body: { email?: unknown; dateOfBirth?: unknown };
+  try {
+    body = await request.json() as { email?: unknown; dateOfBirth?: unknown };
+  } catch {
+    return invalidResponse();
+  }
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const dateOfBirth = typeof body.dateOfBirth === "string" ? normalizeDateOfBirth(body.dateOfBirth) : null;
   if (!email || !dateOfBirth) return invalidResponse();
@@ -15,8 +20,8 @@ export async function POST(request: Request) {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceKey) return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503 });
   const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
-  const { data: profile, error: profileError } = await supabase.from("profiles").select("id, date_of_birth").eq("email", email).maybeSingle();
-  if (profileError || !profile || profile.date_of_birth !== dateOfBirth) return invalidResponse();
+  const { data: profile, error: profileError } = await supabase.from("profiles").select("id").eq("email", email).eq("date_of_birth", dateOfBirth).maybeSingle();
+  if (profileError || !profile) return invalidResponse();
 
   const brevoApiKey = process.env.BREVO_API_KEY;
   const senderEmail = process.env.BREVO_SENDER_EMAIL;
