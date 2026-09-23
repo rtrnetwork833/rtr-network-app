@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { formatUnits, type Address } from "viem";
 import { usePathname, useRouter } from "next/navigation";
+import type { User } from "@supabase/supabase-js";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAccount, useBalance, useReadContract } from "wagmi";
 import { normalizeDateOfBirth } from "@/lib/date";
@@ -35,7 +36,7 @@ import { createClient } from "@/lib/supabase/client";
 
 type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "wallet";
 type Activation = { tier: string; activated_at: string; expires_at: string };
-type Profile = { full_name: string | null; avatar_url: string | null; balance: number | string | null };
+type Profile = { full_name?: string | null; avatar_url: string | null; balance: number | string | null };
 type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null };
 type PortfolioAsset = MarketAsset & { amount: number; value: number };
 type CoinGeckoAsset = { id?: string; symbol?: string; name?: string; current_price?: number; price_change_percentage_24h?: number; total_volume?: number };
@@ -118,11 +119,16 @@ function formatMarketPrice(asset: MarketAsset) {
   return `$${asset.price.toLocaleString(undefined, { minimumFractionDigits: stablecoin ? 4 : 0, maximumFractionDigits: stablecoin ? 4 : 4 })}`;
 }
 
+function displayNameFromUser(user: User | null) {
+  const displayName = user?.user_metadata?.display_name;
+  return typeof displayName === "string" && displayName.trim() ? displayName.trim() : null;
+}
+
 export default function Home() {
   const pathname = usePathname();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [, setPinState] = useState("");
   const [profileName, setProfileName] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -228,14 +234,15 @@ export default function Home() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user);
+      setProfileName(displayNameFromUser(data.user));
       setProfileLoading(Boolean(data.user));
       setAuthLoading(false);
       if (data.user) void loadActivation();
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      setProfileName(displayNameFromUser(session?.user ?? null));
       setProfileLoading(Boolean(session?.user));
-      if (!session?.user) setProfileName(null);
       setAuthLoading(false);
       if (session?.user) void loadActivation();
       else {
@@ -252,10 +259,9 @@ export default function Home() {
     let cancelled = false;
     async function loadProfile() {
       try {
-        const { data, error } = await supabase.from("profiles").select("full_name, avatar_url, balance").eq("id", userId).single<Profile>();
+        const { data, error } = await supabase.from("profiles").select("avatar_url, balance").eq("id", userId).single<Profile>();
         if (error) throw error;
         if (!cancelled) {
-          setProfileName(data?.full_name?.trim() || null);
           setAvatar(data?.avatar_url?.trim() || null);
           const nextBalance = Number(data?.balance ?? 0);
           setBalance(Number.isFinite(nextBalance) ? nextBalance : 0);
@@ -263,7 +269,6 @@ export default function Home() {
         }
       } catch {
         if (!cancelled) {
-          setProfileName(null);
           setBalance(null);
           setProfileLoading(false);
         }
@@ -369,7 +374,7 @@ export default function Home() {
 
       <section className="identity-row">
         <div className="greeting" aria-live="polite">
-          {profileLoading ? <span className="greeting-skeleton" aria-label="Loading profile name" /> : <h1>Hello, {profileName ?? "RTR Network member"}</h1>}
+          {profileLoading ? <span className="greeting-skeleton" aria-label="Loading profile name" /> : profileName ? <h1>Hello, {profileName}</h1> : <h1>Hello</h1>}
         </div>
         <div className="status-pill">{profileName && <strong>{profileName}</strong>}<span /> Node online</div>
       </section>
@@ -437,6 +442,7 @@ function AuthOverlay() {
   const [signupVerification, setSignupVerification] = useState(() => typeof window !== "undefined" && window.sessionStorage.getItem("rtr-signup-verification") === "true");
   const [enteredToken, setEnteredToken] = useState("");
   const [showDobInfo, setShowDobInfo] = useState(false);
+  const [emailVisible, setEmailVisible] = useState(() => typeof window === "undefined" || window.localStorage.getItem("rtr-email-visible") !== "false");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isUserTyping, setIsUserTyping] = useState(false);
@@ -449,6 +455,10 @@ function AuthOverlay() {
   useEffect(() => {
     window.sessionStorage.setItem("rtr-auth-view", mode);
   }, [mode]);
+
+  useEffect(() => {
+    window.localStorage.setItem("rtr-email-visible", String(emailVisible));
+  }, [emailVisible]);
 
   useEffect(() => {
     if (signupVerification) window.sessionStorage.setItem("rtr-signup-verification", "true");
@@ -558,7 +568,7 @@ function AuthOverlay() {
     }
     const result = mode === "login"
       ? await supabase.auth.signInWithPassword({ email, password: pinState })
-      : await supabase.auth.signUp({ email, password: pinState, options: { data: { full_name: fullName, date_of_birth: dateOfBirth } } });
+      : await supabase.auth.signUp({ email, password: pinState, options: { data: { display_name: fullName, date_of_birth: dateOfBirth } } });
     setBusy(false);
     if (result.error) setMessage(result.error.message);
     else if (mode === "signup" && result.data.user) {
@@ -587,7 +597,9 @@ function AuthOverlay() {
     if (busy || !email || pin.length !== 6) return;
     setBusy(true);
     setMessage(null);
-    const result = await supabase.auth.signInWithPassword({ email, password: pin });
+    let password = pin;
+    const result = await supabase.auth.signInWithPassword({ email, password });
+    password = "";
     setBusy(false);
     if (result.error) {
       setPinState("");
@@ -608,7 +620,7 @@ function AuthOverlay() {
   if (signupVerification) return <main className="app-shell auth-shell"><div className="auth-panel otp-panel"><img className="shield-mark" src="/logo.png" alt="RTR Network shield" /><span className="eyebrow">REGISTRATION ACTIVATION</span><h1>Verify Your Account</h1><p>Enter the 6-digit verification code sent to {email}.</p><form onSubmit={verifySignupCode}><label className="otp-label">Security token<input className="otp-input" type="text" inputMode="numeric" maxLength={6} pattern="[0-9]*" value={enteredToken} onChange={(event) => setEnteredToken(event.target.value.replace(/\D/g, "").slice(0, 6))} required autoComplete="one-time-code" /></label>{message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={busy || enteredToken.length !== 6}>{busy ? <><span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>Authenticating token...</> : "Verify Code"}</button></form><p className="resend-status" aria-live="polite">{resendSeconds > 0 ? `Resend code in 00:${String(resendSeconds).padStart(2, "0")}` : "You can request a new code."}</p><button type="button" className="auth-switch" disabled={busy || resendSeconds > 0} onClick={() => void resendSignupCode()}>Resend Code</button><button type="button" className="auth-switch" onClick={() => { setSignupVerification(false); setMode("login"); setMessage(null); router.push("/login"); }}>← Back to Login</button></div></main>;
 
   if (mode === "login") return <main className="app-shell auth-shell"><div className="auth-panel login-panel"><div className="auth-identity"><img className="auth-logo" src="/logo.png" alt="RTR Network shield" /><strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong><span>Secure node access</span></div><span className="eyebrow">SECURE NODE PLATFORM</span><h1>Welcome back</h1><p>Enter your 6-digit PIN to access your persistent node dashboard.</p><form ref={loginForm} autoComplete="off" action="javascript:void(0);" style={{ width: "100%" }} onSubmit={(event) => { event.preventDefault(); void submitLogin(pinState); }}>
-    <label>Email address<input id="login-user-email-address" name="email" type="email" value={email} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="username" /></label>
+    <label>Email address<div className="email-input-wrap"><input id="login-user-email-address" name="email" type={emailVisible ? "email" : "password"} value={email} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="username" /><button type="button" className="email-visibility" onClick={() => setEmailVisible((visible) => !visible)} aria-label={emailVisible ? "Hide email address" : "Show email address"}>{emailVisible ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
     <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} id="node-entry-7q4m" name="credential-fragment-x91k" className="pin-input" type="password" autoComplete="off" inputMode="numeric" maxLength={6} value={pinState} onKeyDown={(event) => { if (/^\d$/.test(event.key)) setIsUserTyping(true); }} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6 && isUserTyping) { void submitLogin(pin); setIsUserTyping(false); } }} pattern="[0-9]*" required /></div></label>
     {message && <div className="auth-message" role="alert">{message}</div>}
     {busy && <div className="login-status" aria-live="polite">Verifying secure PIN...</div>}

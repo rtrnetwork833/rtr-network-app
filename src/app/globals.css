@@ -78,6 +78,10 @@ button { font: inherit; }
 .login-panel > p { margin-bottom: 22px; }
 .login-panel form { text-align: left; }
 .pin-input-wrap { position: relative; }
+.email-input-wrap { position: relative; }
+.email-input-wrap input { padding-right: 43px; }
+.email-visibility { position: absolute; right: 8px; top: 50%; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; color: var(--muted); background: transparent; border: 0; transform: translateY(-50%); cursor: pointer; }
+.email-visibility:hover, .email-visibility:focus-visible { color: var(--green); }
 .pin-input-wrap input { padding-right: 43px; letter-spacing: .24em; }
 .login-status { text-align: center; }
 .auth-panel label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; }
