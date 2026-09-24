@@ -554,32 +554,6 @@ function AuthOverlay() {
     if (mode === "login" && pinState.length < 6) return;
     setBusy(true);
     setMessage(null);
-    if (mode === "recovery") {
-      const normalizedDate = normalizeDateOfBirth(dateOfBirth);
-      if (!normalizedDate) {
-        setBusy(false);
-        setMessage("Enter a valid date of birth.");
-        return;
-      }
- const response = await fetch("/api/auth/recover", { 
-      method: "POST", 
-      headers: { "Content-Type": "application/json" }, 
-      body: JSON.stringify({ email, dateOfBirth }) 
-    });
-    
-    if (response.ok) {
-      // Automatically redirect to the manual verify screen after 2 seconds on success
-      setTimeout(() => {
-        window.location.href = "/verify";
-      }, 2000);
-    } else {
-      alert("The details provided do not match our records.");
-    }
-      } finally {
-        setBusy(false);
-      }
-      return;
-    }
     const result = mode === "login"
       ? await supabase.auth.signInWithPassword({ email, password: pinState })
       : await supabase.auth.signUp({ email, password: pinState, options: { data: { display_name: fullName, date_of_birth: dateOfBirth } } });
