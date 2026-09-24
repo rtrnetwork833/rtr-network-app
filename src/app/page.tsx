@@ -561,17 +561,19 @@ function AuthOverlay() {
         setMessage("Enter a valid date of birth.");
         return;
       }
-      try {const response = await fetch("/api/auth/recover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, dateOfBirth: databaseDateOfBirth }) });
-    const body = await response.json() as { error?: string; message?: string };
+ const response = await fetch("/api/auth/recover", { 
+      method: "POST", 
+      headers: { "Content-Type": "application/json" }, 
+      body: JSON.stringify({ email, dateOfBirth }) 
+    });
     
     if (response.ok) {
-      setMessage(body.message ?? "Recovery code sent.");
-      // Automatically redirect to the manual 6-digit input screen after 2 seconds
+      // Automatically redirect to the manual verify screen after 2 seconds on success
       setTimeout(() => {
         window.location.href = "/verify";
       }, 2000);
     } else {
-      setError(body.error ?? "The details provided do not match our records.");
+      alert("The details provided do not match our records.");
     }
       } finally {
         setBusy(false);
