@@ -1,7 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { randomInt } from "node:crypto";
 import { NextResponse } from "next/server";
-import { normalizeDateOfBirth } from "@/lib/date";
 
 const invalidResponse = () => NextResponse.json({ error: "The details provided do not match our records." }, { status: 400 });
 const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
@@ -13,16 +12,46 @@ export async function POST(request: Request) {
   } catch {
     return invalidResponse();
   }
+
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-  const dateOfBirth = typeof body.dateOfBirth === "string" ? body.dateOfBirth : "";
-  if (!email || !dateOfBirth) return invalidResponse();
+  const rawDateOfBirth = typeof body.dateOfBirth === "string" ? body.dateOfBirth.trim() : "";
+  
+  if (!email || !rawDateOfBirth) return invalidResponse();
+
+  // Explicit, fail-proof translation from DD/MM/YYYY to YYYY-MM-DD
+  let databaseDateOfBirth = "";
+  const dateParts = rawDateOfBirth.split('/');
+  if (dateParts.length === 3) {
+    const [day, month, year] = dateParts;
+    // padStart ensures days like '5' become '05' and months like '9' become '09'
+    databaseDateOfBirth = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  } else {
+    // If it doesn't have slashes, check if it's already in YYYY-MM-DD dash format
+    const dashParts = rawDateOfBirth.split('-');
+    if (dashParts.length === 3) {
+      databaseDateOfBirth = rawDateOfBirth;
+    } else {
+      return invalidResponse();
+    }
+  }
 
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceKey) return NextResponse.json({ error: "Recovery is temporarily unavailable." }, { status: 503 });
-  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
-  const databaseDateOfBirth = normalizeDateOfBirth(dateOfBirth);
-  if (!databaseDateOfBirth) return invalidResponse();
-  const { data: profile, error: profileError } = await supabase.from("profiles").select("id").eq("email", email).eq("date_of_birth", databaseDateOfBirth).maybeSingle();
+  
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!, 
+    serviceKey, 
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+
+  // Queries the "profiles" table with the corrected date format
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("email", email)
+    .eq("date_of_birth", databaseDateOfBirth)
+    .maybeSingle();
+
   if (profileError || !profile) return invalidResponse();
 
   const brevoApiKey = process.env.BREVO_API_KEY;
@@ -49,9 +78,11 @@ export async function POST(request: Request) {
   } catch {
     emailSent = false;
   }
+  
   if (!emailSent) {
     await supabase.from("profiles").update({ recovery_code: null }).eq("id", profile.id);
     return NextResponse.json({ error: "Recovery email delivery is temporarily unavailable." }, { status: 503 });
   }
+
   return NextResponse.json({ message: "Recovery code sent." });
 }
