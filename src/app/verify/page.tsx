@@ -10,7 +10,8 @@ export default function VerifyRecoveryPage() {
   const [status, setStatus] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleVerifyAndReset = async (e: React.FormEvent) => {
+  // Fixed form handler type to satisfy Vercel compilation requirements
+  const handleVerifyAndReset = async (e: any) => {
     e.preventDefault();
     setStatus(null);
 
@@ -22,7 +23,6 @@ export default function VerifyRecoveryPage() {
     setLoading(true);
 
     try {
-      // Send the manually typed inputs to our secure verification endpoint
       const response = await fetch("/api/auth/verify-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
