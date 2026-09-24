@@ -28,6 +28,14 @@ body {
   position: relative;
 }
 
+html, body, #app-root, .app-shell, .content-scroll {
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar, body::-webkit-scrollbar, #app-root::-webkit-scrollbar, .app-shell::-webkit-scrollbar, .content-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 * { box-sizing: border-box; }
 #app-root { min-height: 100%; overflow-x: hidden; position: relative; width: 100%; }
 .google-translate-hidden { position: fixed; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
@@ -80,6 +88,8 @@ button { font: inherit; }
 .pin-input-wrap { position: relative; }
 .email-input-wrap { position: relative; }
 .email-input-wrap input { padding-right: 43px; }
+.email-mask { position: absolute; top: 50%; left: 13px; right: 43px; overflow: hidden; color: var(--foreground); pointer-events: none; transform: translateY(-50%); white-space: nowrap; }
+.email-is-masked input { color: transparent; caret-color: transparent; }
 .email-visibility { position: absolute; right: 8px; top: 50%; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; color: var(--muted); background: transparent; border: 0; transform: translateY(-50%); cursor: pointer; }
 .email-visibility:hover, .email-visibility:focus-visible { color: var(--green); }
 .pin-input-wrap input { padding-right: 43px; letter-spacing: .24em; }

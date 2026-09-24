@@ -451,6 +451,7 @@ function AuthOverlay() {
   const loginForm = useRef<HTMLFormElement>(null);
   const pinIsValid = /^\d{6}$/.test(pinState);
   const pinsMatch = pinIsValid && pinState === confirmPin;
+  const maskedEmail = email ? "•".repeat(email.length) : "";
 
   useEffect(() => {
     window.sessionStorage.setItem("rtr-auth-view", mode);
@@ -560,10 +561,15 @@ function AuthOverlay() {
         setMessage("Enter a valid date of birth.");
         return;
       }
-      const response = await fetch("/api/auth/recover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, dateOfBirth: normalizedDate }) });
-      const body = await response.json() as { error?: string; message?: string };
-      setBusy(false);
-      setMessage(response.ok ? body.message ?? "Recovery instructions sent." : body.error ?? "The details provided do not match our records.");
+      try {
+        const response = await fetch("/api/auth/recover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, dateOfBirth: normalizedDate }) });
+        const body = await response.json() as { error?: string; message?: string };
+        setMessage(response.ok ? body.message ?? "Recovery instructions sent." : body.error ?? "The details provided do not match our records.");
+      } catch {
+        setMessage("Recovery is temporarily unavailable. Please try again.");
+      } finally {
+        setBusy(false);
+      }
       return;
     }
     const result = mode === "login"
@@ -620,8 +626,8 @@ function AuthOverlay() {
   if (signupVerification) return <main className="app-shell auth-shell"><div className="auth-panel otp-panel"><img className="shield-mark" src="/logo.png" alt="RTR Network shield" /><span className="eyebrow">REGISTRATION ACTIVATION</span><h1>Verify Your Account</h1><p>Enter the 6-digit verification code sent to {email}.</p><form onSubmit={verifySignupCode}><label className="otp-label">Security token<input className="otp-input" type="text" inputMode="numeric" maxLength={6} pattern="[0-9]*" value={enteredToken} onChange={(event) => setEnteredToken(event.target.value.replace(/\D/g, "").slice(0, 6))} required autoComplete="one-time-code" /></label>{message && <div className="auth-message" role="alert">{message}</div>}<button className="primary-button auth-submit" disabled={busy || enteredToken.length !== 6}>{busy ? <><span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>Authenticating token...</> : "Verify Code"}</button></form><p className="resend-status" aria-live="polite">{resendSeconds > 0 ? `Resend code in 00:${String(resendSeconds).padStart(2, "0")}` : "You can request a new code."}</p><button type="button" className="auth-switch" disabled={busy || resendSeconds > 0} onClick={() => void resendSignupCode()}>Resend Code</button><button type="button" className="auth-switch" onClick={() => { setSignupVerification(false); setMode("login"); setMessage(null); router.push("/login"); }}>← Back to Login</button></div></main>;
 
   if (mode === "login") return <main className="app-shell auth-shell"><div className="auth-panel login-panel"><div className="auth-identity"><img className="auth-logo" src="/logo.png" alt="RTR Network shield" /><strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong><span>Secure node access</span></div><span className="eyebrow">SECURE NODE PLATFORM</span><h1>Welcome back</h1><p>Enter your 6-digit PIN to access your persistent node dashboard.</p><form ref={loginForm} autoComplete="off" action="javascript:void(0);" style={{ width: "100%" }} onSubmit={(event) => { event.preventDefault(); void submitLogin(pinState); }}>
-    <label>Email address<div className="email-input-wrap"><input id="login-user-email-address" name="email" type={emailVisible ? "email" : "password"} value={email} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="username" /><button type="button" className="email-visibility" onClick={() => setEmailVisible((visible) => !visible)} aria-label={emailVisible ? "Hide email address" : "Show email address"}>{emailVisible ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
-    <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} id="node-entry-7q4m" name="credential-fragment-x91k" className="pin-input" type="password" autoComplete="off" inputMode="numeric" maxLength={6} value={pinState} onKeyDown={(event) => { if (/^\d$/.test(event.key)) setIsUserTyping(true); }} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6 && isUserTyping) { void submitLogin(pin); setIsUserTyping(false); } }} pattern="[0-9]*" required /></div></label>
+    <label>User email<div className={`email-input-wrap${emailVisible ? "" : " email-is-masked"}`}><input id="user-email-address" name="user-email-address" type="email" value={email} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="username" aria-label="User email address" />{!emailVisible && <span className="email-mask" aria-hidden="true">{maskedEmail}</span>}<button type="button" className="email-visibility" onClick={() => setEmailVisible((visible) => !visible)} aria-label={emailVisible ? "Hide email address" : "Show email address"}>{emailVisible ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
+    <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} id="user-pin-code" name="user-pin-code" className="pin-input" type="password" autoComplete="off" inputMode="numeric" maxLength={6} value={pinState} onKeyDown={(event) => { if (/^\d$/.test(event.key)) setIsUserTyping(true); }} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6 && isUserTyping) { void submitLogin(pin); setIsUserTyping(false); } }} pattern="[0-9]{6}" required /></div></label>
     {message && <div className="auth-message" role="alert">{message}</div>}
     {busy && <div className="login-status" aria-live="polite">Verifying secure PIN...</div>}
   </form>

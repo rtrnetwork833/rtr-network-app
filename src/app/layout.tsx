@@ -29,8 +29,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <head>
         <link rel="icon" href="/logo.png" />
-        <link rel="shortcut icon" href="/logo.png" />
-        <link rel="apple-touch-icon" href="/logo.png" />
         <meta name="rtr-build" content={process.env.NEXT_PUBLIC_BUILD_TIMESTAMP} />
       </head>
       <body className="min-h-full flex flex-col">
