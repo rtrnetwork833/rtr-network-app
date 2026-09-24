@@ -34,15 +34,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "The recovery code or email address is incorrect." }, { status: 400 });
     }
 
-    // 2. Fetch the authentication user ID linked to this email address
-    const { data: authUser, error: authUserError } = await supabase.auth.admin.getUserByEmail(cleanEmail);
-    if (authUserError || !authUser?.user) {
+    // 2. Fetch the authentication user account safely using listUsers filtering
+    const { data: { users }, error: authUserError } = await supabase.auth.admin.listUsers();
+    
+    if (authUserError) {
+      return NextResponse.json({ error: "Database communication failure." }, { status: 500 });
+    }
+
+    const targetUser = users.find(u => u.email?.toLowerCase() === cleanEmail);
+    if (!targetUser) {
       return NextResponse.json({ error: "User account could not be located." }, { status: 404 });
     }
 
-    // 3. Force update the user's password using admin privileges (no links required!)
+    // 3. Force update the user's password using their structural account ID
     const { error: updateAuthError } = await supabase.auth.admin.updateUserById(
-      authUser.user.id,
+      targetUser.id,
       { password: newPassword }
     );
 
