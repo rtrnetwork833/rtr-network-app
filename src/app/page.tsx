@@ -561,12 +561,18 @@ function AuthOverlay() {
         setMessage("Enter a valid date of birth.");
         return;
       }
-      try {
-        const response = await fetch("/api/auth/recover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, dateOfBirth: normalizedDate }) });
-        const body = await response.json() as { error?: string; message?: string };
-        setMessage(response.ok ? body.message ?? "Recovery instructions sent." : body.error ?? "The details provided do not match our records.");
-      } catch {
-        setMessage("Recovery is temporarily unavailable. Please try again.");
+      try {const response = await fetch("/api/auth/recover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, dateOfBirth: databaseDateOfBirth }) });
+    const body = await response.json() as { error?: string; message?: string };
+    
+    if (response.ok) {
+      setMessage(body.message ?? "Recovery code sent.");
+      // Automatically redirect to the manual 6-digit input screen after 2 seconds
+      setTimeout(() => {
+        window.location.href = "/verify";
+      }, 2000);
+    } else {
+      setError(body.error ?? "The details provided do not match our records.");
+    }
       } finally {
         setBusy(false);
       }
