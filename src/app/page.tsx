@@ -389,6 +389,7 @@ export default function Home() {
 
   async function signOut() {
     setPinState("");
+    window.dispatchEvent(new Event("rtr-auth-reset"));
     setUser(null);
     setProfileName(null);
     setAvatar(null);
@@ -633,6 +634,8 @@ function AuthOverlay() {
         return;
       }
 
+      if (pinInput.current) pinInput.current.value = "";
+      setPinState("");
       loginForm.current?.reset();
     } catch {
       setMessage("Unable to sign in right now. Please try again.");
