@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowUpRight,
@@ -512,6 +512,15 @@ function AuthOverlay() {
   const pinIsValid = /^\d{6}$/.test(pinState);
   const pinsMatch = pinIsValid && pinState === confirmPin;
 
+  useLayoutEffect(() => {
+    if (!authPreferencesReady || mode !== "login" || signupVerification || recoveryVerification) return;
+    setPinState("");
+    if (pinInput.current) {
+      pinInput.current.value = "";
+      pinInput.current.setAttribute("autocomplete", "new-password");
+    }
+  }, [authPreferencesReady, mode, recoveryVerification, signupVerification]);
+
   useEffect(() => {
     const savedMode = window.sessionStorage.getItem("rtr-auth-view");
     setMode(savedMode === "signup" || savedMode === "recovery" ? savedMode : "login");
@@ -795,7 +804,7 @@ function AuthOverlay() {
           </label>
           <label>6-digit PIN
             <div className="pin-input-wrap">
-              <input ref={pinInput} id="user-pin-code" name="user-pin-code" className="pin-input" type="password" autoComplete="off" inputMode="numeric" maxLength={6} value={pinState} onKeyDown={(event) => { if (/^\d$/.test(event.key)) setIsUserTyping(true); }} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6 && isUserTyping) { void submitLogin(pin); setIsUserTyping(false); } }} pattern="[0-9]{6}" required />
+              <input ref={pinInput} id="user-pin-code" name="user-pin-code" className="pin-input" type="password" autoComplete="new-password" inputMode="numeric" maxLength={6} value={pinState} onKeyDown={(event) => { if (/^\d$/.test(event.key)) setIsUserTyping(true); }} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6 && isUserTyping) { void submitLogin(pin); setIsUserTyping(false); } }} pattern="[0-9]{6}" required />
             </div>
           </label>
           {message && <div className="auth-message" role="alert">{message}</div>}
