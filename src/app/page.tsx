@@ -723,6 +723,8 @@ function AuthOverlay() {
 function WalletView() {
   const { address } = useAccount();
   const { data: nativeBalance } = useBalance({ address });
+  const usdcTokenAddress = "0xd9AAEC86B65D86f6A7B5B1b0c42FFA531710b6CA" as Address;
+  const { data: usdcBalance } = useBalance({ address, token: usdcTokenAddress });
   const tokenAddress = process.env.NEXT_PUBLIC_RTR_TOKEN_ADDRESS as Address | undefined;
   const { data: rtrBalance } = useReadContract({
     address: tokenAddress,
@@ -754,7 +756,7 @@ function WalletView() {
   const shortenedAddress = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : null;
   const rtrAmount = typeof rtrBalance === "bigint" ? Number(formatUnits(rtrBalance, 18)) : 0;
   const ethAmount = nativeBalance ? Number(formatUnits(nativeBalance.value, nativeBalance.decimals)) : 0;
-  const usdcAmount = typeof usdcBalance === "bigint" ? Number(formatUnits(usdcBalance, 6)) : 0;
+  const usdcAmount = usdcBalance ? Number(formatUnits(usdcBalance.value, usdcBalance.decimals)) : 0;
   const priceFor = (symbol: string, fallback: number | null = null) => prices.find((asset) => asset.symbol === symbol)?.price ?? fallback;
   const portfolio: PortfolioAsset[] = [
     { symbol: "RTR", name: "RTR Network", price: priceFor("RTR"), change: null, amount: rtrAmount, value: rtrAmount * (priceFor("RTR") ?? 0) },
