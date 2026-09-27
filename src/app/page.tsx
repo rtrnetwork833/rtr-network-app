@@ -610,7 +610,7 @@ if (mode === "login") return <main className="app-shell auth-shell"><div classNa
   </form>
     <button className="auth-switch" onClick={() => { setMode("recovery"); setProfilePreview(null); setMessage(null); }}>Forgot password?</button>
     <button className="auth-switch" onClick={() => { setMode("signup"); setProfilePreview(null); setMessage(null); }}>Need an account? Sign up</button>
-  </div></main>;
+  </div></main>
   const { address } = useAccount();
   const { data: nativeBalance } = useBalance({ address });
   const tokenAddress = process.env.NEXT_PUBLIC_RTR_TOKEN_ADDRESS as Address | undefined;
