@@ -42,8 +42,15 @@ type PortfolioAsset = MarketAsset & { amount: number; value: number };
 type CoinGeckoAsset = { id?: string; symbol?: string; name?: string; current_price?: number; price_change_percentage_24h?: number; total_volume?: number };
 type CoinGeckoPrice = { usd?: number; usd_24h_change?: number };
 const supabase = createClient();
+const AUTH_EMAIL_STORAGE_KEY = "rtr-email";
 const BUILD_TIMESTAMP = process.env.NEXT_PUBLIC_BUILD_TIMESTAMP ?? "development";
 const rtrTokenAbi = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
+
+function readStoredEmail() {
+  if (typeof window === "undefined") return "";
+  const storedEmail = window.localStorage.getItem(AUTH_EMAIL_STORAGE_KEY) ?? "";
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(storedEmail) ? storedEmail : "";
+}
 
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 8000) {
   const controller = new AbortController();
@@ -418,23 +425,20 @@ function AccountSettings({ profileName, avatar, onBack, onSignOut }: { profileNa
 function AuthOverlay() {
   const router = useRouter();
   const [profilePreview, setProfilePreview] = useState<Profile | null>(null);
-  const [mode, setMode] = useState<"login" | "signup" | "recovery">(() => {
-    if (typeof window === "undefined") return "login";
-    const savedMode = window.sessionStorage.getItem("rtr-auth-view");
-    return savedMode === "signup" || savedMode === "recovery" ? savedMode : "login";
-  });
-  const [email, setEmail] = useState(() => typeof window === "undefined" ? "" : window.sessionStorage.getItem("rtr-signup-email") ?? "");
+  const [mode, setMode] = useState<"login" | "signup" | "recovery">("login");
+  const [email, setEmail] = useState("");
   const [pinState, setPinState] = useState("");
   const [fullName, setFullName] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
-  const [signupVerification, setSignupVerification] = useState(() => typeof window !== "undefined" && window.sessionStorage.getItem("rtr-signup-verification") === "true");
+  const [signupVerification, setSignupVerification] = useState(false);
   const [recoveryVerification, setRecoveryVerification] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState("");
   const [recoveryPassword, setRecoveryPassword] = useState("");
   const [enteredToken, setEnteredToken] = useState("");
   const [showDobInfo, setShowDobInfo] = useState(false);
-  const [emailVisible, setEmailVisible] = useState(() => typeof window === "undefined" || window.localStorage.getItem("rtr-email-visible") !== "false");
+  const [emailVisible, setEmailVisible] = useState(true);
+  const [authPreferencesReady, setAuthPreferencesReady] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isUserTyping, setIsUserTyping] = useState(false);
@@ -443,18 +447,32 @@ function AuthOverlay() {
   const loginForm = useRef<HTMLFormElement>(null);
   const pinIsValid = /^\d{6}$/.test(pinState);
   const pinsMatch = pinIsValid && pinState === confirmPin;
+
   useEffect(() => {
+    const savedMode = window.sessionStorage.getItem("rtr-auth-view");
+    setMode(savedMode === "signup" || savedMode === "recovery" ? savedMode : "login");
+    setEmail(readStoredEmail());
+    setSignupVerification(window.sessionStorage.getItem("rtr-signup-verification") === "true");
+    setEmailVisible(window.localStorage.getItem("rtr-email-visible") !== "false");
+    window.sessionStorage.removeItem("rtr-signup-email");
+    setAuthPreferencesReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!authPreferencesReady) return;
     window.sessionStorage.setItem("rtr-auth-view", mode);
-  }, [mode]);
+  }, [authPreferencesReady, mode]);
 
   useEffect(() => {
+    if (!authPreferencesReady) return;
     window.localStorage.setItem("rtr-email-visible", String(emailVisible));
-  }, [emailVisible]);
+  }, [authPreferencesReady, emailVisible]);
 
   useEffect(() => {
+    if (!authPreferencesReady) return;
     if (signupVerification) window.sessionStorage.setItem("rtr-signup-verification", "true");
     else window.sessionStorage.removeItem("rtr-signup-verification");
-  }, [signupVerification]);
+  }, [authPreferencesReady, signupVerification]);
 
   useEffect(() => {
     if (!signupVerification) return;
@@ -465,28 +483,23 @@ function AuthOverlay() {
   }, [signupVerification]);
 
   useEffect(() => {
-    const mountTimer = window.setTimeout(() => setPinState(""), 0);
-    return () => {
-      window.clearTimeout(mountTimer);
-      setPinState("");
-      if (pinInput.current) pinInput.current.value = "";
-    };
-  }, []);
-
-  useEffect(() => {
     const resetAuthForm = () => {
       setEmail("");
       setPinState("");
+      if (pinInput.current) pinInput.current.value = "";
       setFullName("");
       setDateOfBirth("");
       setConfirmPin("");
       setEnteredToken("");
       setRecoveryCode("");
       setRecoveryPassword("");
+      setSignupVerification(false);
+      setRecoveryVerification(false);
       setMessage(null);
       setProfilePreview(null);
       setBusy(false);
       setIsUserTyping(false);
+      window.localStorage.removeItem(AUTH_EMAIL_STORAGE_KEY);
       window.sessionStorage.removeItem("rtr-auth-view");
       window.sessionStorage.removeItem("rtr-signup-verification");
       window.sessionStorage.removeItem("rtr-signup-email");
@@ -558,7 +571,7 @@ function AuthOverlay() {
       }
 
       setEmail("");
-      window.localStorage.removeItem("rtr-email");
+      window.localStorage.removeItem(AUTH_EMAIL_STORAGE_KEY);
       loginForm.current?.reset();
     } catch {
       setMessage("Unable to sign in right now. Please try again.");
@@ -605,7 +618,7 @@ function AuthOverlay() {
       }
 
       const normalizedEmail = email.trim().toLowerCase();
-      window.sessionStorage.setItem("rtr-signup-email", normalizedEmail);
+      window.localStorage.setItem(AUTH_EMAIL_STORAGE_KEY, normalizedEmail);
       const { error: profileError } = await supabase.from("profiles").upsert({
         id: result.data.user.id,
         email: normalizedEmail,
@@ -656,6 +669,8 @@ function AuthOverlay() {
       setBusy(false);
     }
   }
+
+  if (!authPreferencesReady) return null;
 
   if (mode === "recovery" && recoveryVerification) return (
     <main className="app-shell auth-shell">
@@ -710,7 +725,7 @@ function AuthOverlay() {
         <form ref={loginForm} autoComplete="off" style={{ width: "100%" }} onSubmit={(event) => { event.preventDefault(); void submitLogin(pinState); }}>
           <label>User email
             <div className="email-input-wrap">
-              <input id="user-email-address" name="user-email-address" type={emailVisible ? "email" : "password"} value={email} onChange={(event) => { setEmail(event.target.value); setProfilePreview(null); }} required autoComplete="username" aria-label="User email address" />
+              <input id="user-email-address" name="user-email-address" type={emailVisible ? "email" : "password"} value={email} onChange={(event) => { setEmail(event.target.value); setProfilePreview(null); }} onBlur={() => window.localStorage.setItem(AUTH_EMAIL_STORAGE_KEY, email.trim())} required autoComplete="username" aria-label="User email address" />
               <button type="button" className="email-visibility" onClick={() => setEmailVisible((visible) => !visible)} aria-label={emailVisible ? "Hide email address" : "Show email address"}>{emailVisible ? <EyeOff size={16} /> : <Eye size={16} />}</button>
             </div>
           </label>
@@ -742,7 +757,7 @@ function AuthOverlay() {
         <p>{isRecovery ? "Verify your registered details to receive a secure password reset code." : "Create a secure account for your persistent node dashboard."}</p>
         <form autoComplete="off" onSubmit={submit}>
           {isSignup && <label>Full name<input type="text" value={fullName} onChange={(event) => setFullName(event.target.value)} required autoComplete="name" /></label>}
-          <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" /></label>
+          <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} onBlur={() => window.localStorage.setItem(AUTH_EMAIL_STORAGE_KEY, email.trim())} required autoComplete="email" /></label>
           <label className="date-field">Date of birth
             <div className="date-input-wrap">
               <input type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} required />
