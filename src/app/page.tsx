@@ -440,6 +440,9 @@ function AuthOverlay() {
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [signupVerification, setSignupVerification] = useState(() => typeof window !== "undefined" && window.sessionStorage.getItem("rtr-signup-verification") === "true");
+  const [recoveryVerification, setRecoveryVerification] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [recoveryPassword, setRecoveryPassword] = useState("");
   const [enteredToken, setEnteredToken] = useState("");
   const [showDobInfo, setShowDobInfo] = useState(false);
   const [emailVisible, setEmailVisible] = useState(() => typeof window === "undefined" || window.localStorage.getItem("rtr-email-visible") !== "false");
@@ -549,26 +552,23 @@ function AuthOverlay() {
 
   async function submitLogin(pin: string) {
     if (busy || !email.trim() || pin.length !== 6) return;
+    const submittedPin = pin;
+    if (pinInput.current) pinInput.current.value = "";
+    setPinState("");
     setBusy(true);
     setMessage(null);
     try {
-      const result = await supabase.auth.signInWithPassword({ email: email.trim(), password: pin });
+      const result = await supabase.auth.signInWithPassword({ email: email.trim(), password: submittedPin });
       if (result.error) {
-        setPinState("");
-        if (pinInput.current) pinInput.current.value = "";
         setMessage("Incorrect PIN. Try again.");
         window.requestAnimationFrame(() => pinInput.current?.focus());
         return;
       }
 
-      if (pinInput.current) pinInput.current.value = "";
-      setPinState("");
       setEmail("");
       window.localStorage.removeItem("rtr-email");
       loginForm.current?.reset();
     } catch {
-      setPinState("");
-      if (pinInput.current) pinInput.current.value = "";
       setMessage("Unable to sign in right now. Please try again.");
     } finally {
       setBusy(false);
@@ -592,7 +592,9 @@ function AuthOverlay() {
           setMessage(body.error || "The details provided do not match our records.");
           return;
         }
-        router.push("/verify");
+        setRecoveryCode("");
+        setRecoveryPassword("");
+        setRecoveryVerification(true);
         return;
       }
 
@@ -630,6 +632,53 @@ function AuthOverlay() {
       setBusy(false);
     }
   }
+
+  async function submitRecoveryVerification(event: React.FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetchWithTimeout("/api/auth/verify-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), code: recoveryCode, newPassword: recoveryPassword }),
+      });
+      const body = await response.json() as { error?: string; message?: string };
+      if (!response.ok) {
+        setMessage(body.error || "Recovery code verification failed.");
+        return;
+      }
+      setRecoveryVerification(false);
+      setRecoveryCode("");
+      setRecoveryPassword("");
+      setDateOfBirth("");
+      setMode("login");
+      setMessage(body.message || "Your password has been changed. You can now log in.");
+    } catch {
+      setMessage("Unable to verify your recovery code right now. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (mode === "recovery" && recoveryVerification) return (
+    <main className="app-shell auth-shell">
+      <div className="auth-panel">
+        <img className="shield-mark" src="/logo.png" alt="RTR Network shield" />
+        <span className="eyebrow">ACCOUNT RECOVERY</span>
+        <h1>Enter your recovery code</h1>
+        <p>Enter the code sent to {email}, then choose a new 6-digit PIN.</p>
+        <form autoComplete="off" onSubmit={submitRecoveryVerification}>
+          <label>6-digit recovery code<input type="text" inputMode="numeric" maxLength={6} pattern="[0-9]{6}" autoComplete="one-time-code" value={recoveryCode} onChange={(event) => setRecoveryCode(event.target.value.replace(/\D/g, "").slice(0, 6))} required /></label>
+          <label>New 6-digit PIN<input type="password" inputMode="numeric" maxLength={6} pattern="[0-9]{6}" autoComplete="new-password" value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value.replace(/\D/g, "").slice(0, 6))} required /></label>
+          {message && <div className="auth-message" role="alert">{message}</div>}
+          <button className="primary-button auth-submit" type="submit" disabled={busy || recoveryCode.length !== 6 || recoveryPassword.length !== 6}>{busy ? "Verifying recovery code..." : "Reset PIN"}</button>
+        </form>
+        <button type="button" className="auth-switch" disabled={busy} onClick={() => { setRecoveryVerification(false); setRecoveryCode(""); setRecoveryPassword(""); setMessage(null); }}>Back</button>
+      </div>
+    </main>
+  );
 
   if (signupVerification) return (
     <main className="app-shell auth-shell">
@@ -679,7 +728,7 @@ function AuthOverlay() {
           {busy && <div className="login-status" aria-live="polite">Verifying secure PIN...</div>}
           <button className="primary-button auth-submit" type="submit" disabled={busy || !pinIsValid}>{busy ? "Verifying secure PIN..." : "Log in"}</button>
         </form>
-        <button type="button" className="auth-switch" onClick={() => { setMode("recovery"); setMessage(null); setPinState(""); }}>Forgot your PIN?</button>
+        <button type="button" className="auth-switch" onClick={() => { setMode("recovery"); setRecoveryVerification(false); setRecoveryCode(""); setRecoveryPassword(""); setMessage(null); setPinState(""); }}>Forgot your PIN?</button>
         <button type="button" className="auth-switch" onClick={() => { setMode("signup"); setMessage(null); setPinState(""); }}>Need an account? Sign up</button>
       </div>
     </main>
