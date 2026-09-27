@@ -602,7 +602,7 @@ async function submitLogin(pin: string) {
     }
   
   }
- if (mode === "login") return <main className="app-shell auth-shell"><div className="auth-panel login-panel"><img className="auth-logo" src="/logo.png" alt="RTR Network shield" /><strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong><span>Secure node access</span></div><span className="eyebrow">SECURE NODE PLATFORM</span><h1>Welcome back</h1><p>Enter your 6-digit PIN to access your persistent node dashboard.</p><form ref={loginForm} autoComplete="off" action="javascript:void(0);" style={{ width: "100%" }} onSubmit={(event) => { event.preventDefault(); void submitLogin(pinState); }}>
+if (mode === "login") return <main className="app-shell auth-shell"><div className="auth-panel login-panel"><img className="auth-logo" src="/logo.png" alt="RTR Network shield" /><strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong><span>Secure node access</span></div><span className="eyebrow">SECURE NODE PLATFORM</span><h1>Welcome back</h1><p>Enter your 6-digit PIN to access your persistent node dashboard.</p><form ref={loginForm} autoComplete="off" action="javascript:void(0);" style={{ width: "100%" }} onSubmit={(event) => { event.preventDefault(); void submitLogin(pinState); }}>
     <label>User email<div className={`email-input-wrap${emailVisible ? "" : " email-is-masked"}`}><input id="user-email-address" name="user-email-address" type={emailVisible ? "email" : "password"} value={email} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="username" aria-label="User email address" /><button type="button" className="email-visibility" onClick={() => setEmailVisible((visible) => !visible)} aria-label={emailVisible ? "Hide email address" : "Show email address"}>{emailVisible ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
     <label>6-digit PIN<div className="pin-input-wrap"><input ref={pinInput} id="user-pin-code" name="user-pin-code" className="pin-input" type="password" autoComplete="off" inputMode="numeric" maxLength={6} value={pinState} onKeyDown={(event) => { if (/^\d\$/.test(event.key)) setIsUserTyping(true); }} onChange={(event) => { const pin = event.target.value.replace(/\D/g, "").slice(0, 6); setPinState(pin); if (pin.length === 6 && isUserTyping) { void submitLogin(pin); setIsUserTyping(false); } }} pattern="[0-9]{6}" required /></div></label>
     {message && <div className="auth-message" role="alert">{message}</div>}
@@ -610,8 +610,7 @@ async function submitLogin(pin: string) {
   </form>
     <button className="auth-switch" onClick={() => { setMode("recovery"); setProfilePreview(null); setMessage(null); }}>Forgot password?</button>
     <button className="auth-switch" onClick={() => { setMode("signup"); setProfilePreview(null); setMessage(null); }}>Need an account? Sign up</button>
-  </div></main>
-function WalletView() {
+  </div></main>;
   const { address } = useAccount();
   const { data: nativeBalance } = useBalance({ address });
   const tokenAddress = process.env.NEXT_PUBLIC_RTR_TOKEN_ADDRESS as Address | undefined;
@@ -619,15 +618,7 @@ function WalletView() {
     address: tokenAddress,
     abi: rtrTokenAbi,
     functionName: "balanceOf",
-    args: address ? [address] : undefined,
-    query: { enabled: Boolean(address && tokenAddress) },
-  });
-  const usdcAddress = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as Address;
-  const { data: usdcBalance } = useReadContract({
-    address: usdcAddress,
-    abi: rtrTokenAbi,
-    functionName: "balanceOf",
-    args: address ? [address] : undefined,
+    
     query: { enabled: Boolean(address) },
   });
   const [prices, setPrices] = useState<MarketAsset[]>([]);
