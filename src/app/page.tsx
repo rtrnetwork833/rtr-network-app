@@ -42,14 +42,70 @@ type PortfolioAsset = MarketAsset & { amount: number; value: number };
 type CoinGeckoAsset = { id?: string; symbol?: string; name?: string; current_price?: number; price_change_percentage_24h?: number; total_volume?: number };
 type CoinGeckoPrice = { usd?: number; usd_24h_change?: number };
 const supabase = createClient();
-const AUTH_EMAIL_STORAGE_KEY = "rtr-email";
+const AUTH_EMAIL_STORAGE_KEY = "user_email";
+const LEGACY_AUTH_EMAIL_STORAGE_KEY = "rtr-email";
+const MARKET_CACHE_KEY = "rtr-market-prices-v1";
+const MARKET_CACHE_LIMIT = 100;
 const BUILD_TIMESTAMP = process.env.NEXT_PUBLIC_BUILD_TIMESTAMP ?? "development";
 const rtrTokenAbi = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
 
 function readStoredEmail() {
   if (typeof window === "undefined") return "";
-  const storedEmail = window.localStorage.getItem(AUTH_EMAIL_STORAGE_KEY) ?? "";
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(storedEmail) ? storedEmail : "";
+  try {
+    const validEmail = (value: string | null) => value && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : "";
+    const storedEmail = validEmail(window.localStorage.getItem(AUTH_EMAIL_STORAGE_KEY));
+    if (storedEmail) {
+      window.localStorage.removeItem(LEGACY_AUTH_EMAIL_STORAGE_KEY);
+      return storedEmail;
+    }
+
+    const legacyEmail = validEmail(window.localStorage.getItem(LEGACY_AUTH_EMAIL_STORAGE_KEY));
+    if (legacyEmail) window.localStorage.setItem(AUTH_EMAIL_STORAGE_KEY, legacyEmail);
+    window.localStorage.removeItem(LEGACY_AUTH_EMAIL_STORAGE_KEY);
+    return legacyEmail;
+  } catch {
+    return "";
+  }
+}
+
+function saveStoredEmail(value: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const normalizedEmail = value.trim().toLowerCase();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      window.localStorage.setItem(AUTH_EMAIL_STORAGE_KEY, normalizedEmail);
+    } else {
+      window.localStorage.removeItem(AUTH_EMAIL_STORAGE_KEY);
+    }
+  } catch {
+    // Email persistence is optional; authentication uses the in-memory value.
+  }
+}
+
+function readMarketCache(): MarketAsset[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const cached: unknown = JSON.parse(window.localStorage.getItem(MARKET_CACHE_KEY) ?? "null");
+    if (!Array.isArray(cached)) return [];
+    return cached.slice(0, MARKET_CACHE_LIMIT).filter((asset): asset is MarketAsset =>
+      typeof asset === "object" && asset !== null &&
+      typeof asset.symbol === "string" && typeof asset.name === "string" &&
+      (typeof asset.price === "number" || asset.price === null) &&
+      (typeof asset.change === "number" || asset.change === null),
+    );
+  } catch {
+    return [];
+  }
+}
+
+function writeMarketCache(assets: MarketAsset[]) {
+  if (typeof window === "undefined") return;
+  try {
+    const compactCache = assets.slice(0, MARKET_CACHE_LIMIT).map(({ id, symbol, name, price, change }) => ({ id, symbol, name, price, change }));
+    window.localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify(compactCache));
+  } catch {
+    // Price cache is optional; the live market query remains authoritative.
+  }
 }
 
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 8000) {
@@ -82,7 +138,9 @@ async function fetchMarketRows(): Promise<MarketAsset[]> {
   const rtrSimplePrice = rtrPrices["rtr-network"];
   if (fetched.length === 0) throw new Error("market unavailable");
   const rtr = { id: "rtr-network", symbol: "RTR", name: rtrAsset?.name || "RTR Network", price: rtrAsset?.current_price ?? rtrSimplePrice?.usd ?? null, change: rtrAsset?.price_change_percentage_24h ?? rtrSimplePrice?.usd_24h_change ?? null, volume: rtrAsset?.total_volume ?? null };
-  return [rtr, ...fetched.slice(0, 999)];
+  const marketRows = [rtr, ...fetched.slice(0, 999)];
+  writeMarketCache(marketRows);
+  return marketRows;
 }
 
 const tiers = [
@@ -134,9 +192,11 @@ export default function Home() {
   const [activation, setActivation] = useState<Activation | null>(null);
   const [remaining, setRemaining] = useState(0);
   const [balance, setBalance] = useState<number | null>(null);
+  const [marketCacheReady, setMarketCacheReady] = useState(false);
   const marketQuery = useQuery({
     queryKey: ["market-assets"],
     queryFn: fetchMarketRows,
+    enabled: marketCacheReady,
     staleTime: 30000,
     refetchInterval: 30000,
     retry: 1,
@@ -149,9 +209,12 @@ export default function Home() {
   const [splashExiting, setSplashExiting] = useState(false);
 
   useEffect(() => {
+    const cachedMarket = readMarketCache();
+    if (cachedMarket.length) queryClient.setQueryData(["market-assets"], cachedMarket);
+    setMarketCacheReady(true);
     window.localStorage.removeItem("rtr-market-assets-v1");
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     let cancelled = false;
@@ -336,7 +399,7 @@ export default function Home() {
       await supabase.auth.signOut();
     } finally {
       window.localStorage.removeItem("active_tab");
-      window.localStorage.removeItem("rtr-email");
+      window.localStorage.removeItem(LEGACY_AUTH_EMAIL_STORAGE_KEY);
       window.localStorage.removeItem("rtr-balance-visible");
       window.sessionStorage.removeItem("rtr-auth-view");
       window.sessionStorage.removeItem("rtr-signup-verification");
@@ -499,7 +562,7 @@ function AuthOverlay() {
       setProfilePreview(null);
       setBusy(false);
       setIsUserTyping(false);
-      window.localStorage.removeItem(AUTH_EMAIL_STORAGE_KEY);
+      window.localStorage.removeItem(LEGACY_AUTH_EMAIL_STORAGE_KEY);
       window.sessionStorage.removeItem("rtr-auth-view");
       window.sessionStorage.removeItem("rtr-signup-verification");
       window.sessionStorage.removeItem("rtr-signup-email");
@@ -570,8 +633,6 @@ function AuthOverlay() {
         return;
       }
 
-      setEmail("");
-      window.localStorage.removeItem(AUTH_EMAIL_STORAGE_KEY);
       loginForm.current?.reset();
     } catch {
       setMessage("Unable to sign in right now. Please try again.");
@@ -618,7 +679,7 @@ function AuthOverlay() {
       }
 
       const normalizedEmail = email.trim().toLowerCase();
-      window.localStorage.setItem(AUTH_EMAIL_STORAGE_KEY, normalizedEmail);
+      saveStoredEmail(normalizedEmail);
       const { error: profileError } = await supabase.from("profiles").upsert({
         id: result.data.user.id,
         email: normalizedEmail,
@@ -725,7 +786,7 @@ function AuthOverlay() {
         <form ref={loginForm} autoComplete="off" style={{ width: "100%" }} onSubmit={(event) => { event.preventDefault(); void submitLogin(pinState); }}>
           <label>User email
             <div className="email-input-wrap">
-              <input id="user-email-address" name="user-email-address" type={emailVisible ? "email" : "password"} value={email} onChange={(event) => { setEmail(event.target.value); setProfilePreview(null); }} onBlur={() => window.localStorage.setItem(AUTH_EMAIL_STORAGE_KEY, email.trim())} required autoComplete="username" aria-label="User email address" />
+              <input id="user-email-address" name="user-email-address" type={emailVisible ? "email" : "password"} value={email} onChange={(event) => { setEmail(event.target.value); setProfilePreview(null); }} onBlur={() => saveStoredEmail(email)} required autoComplete="username" aria-label="User email address" />
               <button type="button" className="email-visibility" onClick={() => setEmailVisible((visible) => !visible)} aria-label={emailVisible ? "Hide email address" : "Show email address"}>{emailVisible ? <EyeOff size={16} /> : <Eye size={16} />}</button>
             </div>
           </label>
@@ -757,7 +818,7 @@ function AuthOverlay() {
         <p>{isRecovery ? "Verify your registered details to receive a secure password reset code." : "Create a secure account for your persistent node dashboard."}</p>
         <form autoComplete="off" onSubmit={submit}>
           {isSignup && <label>Full name<input type="text" value={fullName} onChange={(event) => setFullName(event.target.value)} required autoComplete="name" /></label>}
-          <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} onBlur={() => window.localStorage.setItem(AUTH_EMAIL_STORAGE_KEY, email.trim())} required autoComplete="email" /></label>
+          <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} onBlur={() => saveStoredEmail(email)} required autoComplete="email" /></label>
           <label className="date-field">Date of birth
             <div className="date-input-wrap">
               <input type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} required />
