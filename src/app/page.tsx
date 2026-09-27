@@ -42,19 +42,8 @@ type PortfolioAsset = MarketAsset & { amount: number; value: number };
 type CoinGeckoAsset = { id?: string; symbol?: string; name?: string; current_price?: number; price_change_percentage_24h?: number; total_volume?: number };
 type CoinGeckoPrice = { usd?: number; usd_24h_change?: number };
 const supabase = createClient();
-const MARKET_CACHE_KEY = "rtr-market-assets-v1";
 const BUILD_TIMESTAMP = process.env.NEXT_PUBLIC_BUILD_TIMESTAMP ?? "development";
 const rtrTokenAbi = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
-
-function readMarketCache(): MarketAsset[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const cached = JSON.parse(window.localStorage.getItem(MARKET_CACHE_KEY) ?? "[]") as unknown;
-    return Array.isArray(cached) ? cached as MarketAsset[] : [];
-  } catch {
-    return [];
-  }
-}
 
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 8000) {
   const controller = new AbortController();
@@ -86,9 +75,7 @@ async function fetchMarketRows(): Promise<MarketAsset[]> {
   const rtrSimplePrice = rtrPrices["rtr-network"];
   if (fetched.length === 0) throw new Error("market unavailable");
   const rtr = { id: "rtr-network", symbol: "RTR", name: rtrAsset?.name || "RTR Network", price: rtrAsset?.current_price ?? rtrSimplePrice?.usd ?? null, change: rtrAsset?.price_change_percentage_24h ?? rtrSimplePrice?.usd_24h_change ?? null, volume: rtrAsset?.total_volume ?? null };
-  const nextMarket = [rtr, ...fetched.slice(0, 999)];
-  window.localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify(nextMarket));
-  return nextMarket;
+  return [rtr, ...fetched.slice(0, 999)];
 }
 
 const tiers = [
@@ -143,7 +130,6 @@ export default function Home() {
   const marketQuery = useQuery({
     queryKey: ["market-assets"],
     queryFn: fetchMarketRows,
-    initialData: readMarketCache,
     staleTime: 30000,
     refetchInterval: 30000,
     retry: 1,
@@ -156,6 +142,7 @@ export default function Home() {
   const [splashExiting, setSplashExiting] = useState(false);
 
   useEffect(() => {
+    window.localStorage.removeItem("rtr-market-assets-v1");
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
   }, []);
 
@@ -171,9 +158,7 @@ export default function Home() {
         const quotes = Object.assign({}, ...quotePages);
         if (cancelled) return;
         queryClient.setQueryData<MarketAsset[]>(["market-assets"], (previousMarket = []) => {
-          const nextMarket = previousMarket.map((asset) => asset.id && quotes[asset.id] ? { ...asset, price: quotes[asset.id].usd ?? asset.price, change: quotes[asset.id].usd_24h_change ?? asset.change } : asset);
-          window.localStorage.setItem(MARKET_CACHE_KEY, JSON.stringify(nextMarket));
-          return nextMarket;
+          return previousMarket.map((asset) => asset.id && quotes[asset.id] ? { ...asset, price: quotes[asset.id].usd ?? asset.price, change: quotes[asset.id].usd_24h_change ?? asset.change } : asset);
         });
       } catch {
         // Keep cached rows and the last known quote when the feed is unavailable.
@@ -333,18 +318,22 @@ export default function Home() {
   }
 
   async function signOut() {
+    setPinState("");
     setUser(null);
     setProfileName(null);
     setAvatar(null);
     setActivation(null);
     setActive(false);
     setBalance(0);
-    setPinState("");
     try {
       await supabase.auth.signOut();
     } finally {
-      window.localStorage.clear();
-      window.sessionStorage.clear();
+      window.localStorage.removeItem("active_tab");
+      window.localStorage.removeItem("rtr-email");
+      window.localStorage.removeItem("rtr-balance-visible");
+      window.sessionStorage.removeItem("rtr-auth-view");
+      window.sessionStorage.removeItem("rtr-signup-verification");
+      window.sessionStorage.removeItem("rtr-signup-email");
       document.cookie.split(";").forEach((cookie) => {
         const name = cookie.split("=")[0]?.trim();
         if (name) document.cookie = `${name}=; Max-Age=0; path=/`;
@@ -434,7 +423,7 @@ function AuthOverlay() {
     const savedMode = window.sessionStorage.getItem("rtr-auth-view");
     return savedMode === "signup" || savedMode === "recovery" ? savedMode : "login";
   });
-  const [email, setEmail] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem("rtr-email") ?? window.sessionStorage.getItem("rtr-signup-email") ?? "");
+  const [email, setEmail] = useState(() => typeof window === "undefined" ? "" : window.sessionStorage.getItem("rtr-signup-email") ?? "");
   const [pinState, setPinState] = useState("");
   const [fullName, setFullName] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
@@ -480,6 +469,7 @@ function AuthOverlay() {
     return () => {
       window.clearTimeout(mountTimer);
       setPinState("");
+      if (pinInput.current) pinInput.current.value = "";
     };
   }, []);
 
@@ -491,6 +481,8 @@ function AuthOverlay() {
       setDateOfBirth("");
       setConfirmPin("");
       setEnteredToken("");
+      setRecoveryCode("");
+      setRecoveryPassword("");
       setMessage(null);
       setProfilePreview(null);
       setBusy(false);
@@ -649,6 +641,9 @@ function AuthOverlay() {
         setMessage(body.error || "Recovery code verification failed.");
         return;
       }
+      setPinState("");
+      if (pinInput.current) pinInput.current.value = "";
+      setConfirmPin("");
       setRecoveryVerification(false);
       setRecoveryCode("");
       setRecoveryPassword("");
@@ -715,7 +710,7 @@ function AuthOverlay() {
         <form ref={loginForm} autoComplete="off" style={{ width: "100%" }} onSubmit={(event) => { event.preventDefault(); void submitLogin(pinState); }}>
           <label>User email
             <div className="email-input-wrap">
-              <input id="user-email-address" name="user-email-address" type={emailVisible ? "email" : "password"} value={email} onChange={(event) => { setEmail(event.target.value); window.localStorage.setItem("rtr-email", event.target.value); setProfilePreview(null); }} required autoComplete="username" aria-label="User email address" />
+              <input id="user-email-address" name="user-email-address" type={emailVisible ? "email" : "password"} value={email} onChange={(event) => { setEmail(event.target.value); setProfilePreview(null); }} required autoComplete="username" aria-label="User email address" />
               <button type="button" className="email-visibility" onClick={() => setEmailVisible((visible) => !visible)} aria-label={emailVisible ? "Hide email address" : "Show email address"}>{emailVisible ? <EyeOff size={16} /> : <Eye size={16} />}</button>
             </div>
           </label>
@@ -747,7 +742,7 @@ function AuthOverlay() {
         <p>{isRecovery ? "Verify your registered details to receive a secure password reset code." : "Create a secure account for your persistent node dashboard."}</p>
         <form autoComplete="off" onSubmit={submit}>
           {isSignup && <label>Full name<input type="text" value={fullName} onChange={(event) => setFullName(event.target.value)} required autoComplete="name" /></label>}
-          <label>Email address<input type="email" value={email} onChange={(event) => { setEmail(event.target.value); if (isSignup) window.sessionStorage.setItem("rtr-signup-email", event.target.value); }} required autoComplete="email" /></label>
+          <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" /></label>
           <label className="date-field">Date of birth
             <div className="date-input-wrap">
               <input type="date" value={dateOfBirth} onChange={(event) => setDateOfBirth(event.target.value)} required />
