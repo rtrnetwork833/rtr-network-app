@@ -77,7 +77,11 @@ button { font: inherit; }
 .auth-panel > p { color: var(--muted); font-size: 12px; line-height: 1.6; margin-bottom: 24px; }
 .auth-panel form { display: grid; gap: 15px; }
 .login-panel { text-align: center; }
-.auth-identity { display: grid; justify-items: center; gap: 6px; margin-bottom: 26px; }
+.auth-identity { display: grid; justify-items: center; gap: 8px; margin-bottom: 26px; }
+.login-auth-identity { width: 100%; text-align: center; }
+.login-auth-identity .eyebrow { display: block; margin-top: 4px; }
+.login-auth-identity h1 { margin: 5px 0 0; }
+.login-auth-identity p { max-width: 330px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .auth-avatar { width: 76px; height: 76px; display: grid; place-items: center; margin-bottom: 5px; color: #aeb8c4; background: #243447; border: 1px solid rgba(197,255,82,.35); border-radius: 50%; box-shadow: 0 0 0 7px rgba(197,255,82,.06); }
 .auth-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .auth-logo { width: 76px; height: 76px; object-fit: contain; margin-bottom: 5px; }

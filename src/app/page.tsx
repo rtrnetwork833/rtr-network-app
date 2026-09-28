@@ -789,12 +789,14 @@ function AuthOverlay() {
   if (mode === "login") return (
     <main className="app-shell auth-shell">
       <div className="auth-panel login-panel">
-        <img className="auth-logo" src="/logo.png" alt="RTR Network shield" />
-        <strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong>
-        <span>Secure node access</span>
-        <span className="eyebrow">SECURE NODE PLATFORM</span>
-        <h1>Welcome back</h1>
-        <p>Enter your 6-digit PIN to access your persistent node dashboard.</p>
+        <div className="auth-identity login-auth-identity">
+          <img className="auth-logo" src="/logo.png" alt="RTR Network shield" />
+          <strong>{profilePreview?.full_name?.trim() || "RTR Network member"}</strong>
+          <span className="auth-identity-subtitle">Secure node access</span>
+          <span className="eyebrow">SECURE NODE PLATFORM</span>
+          <h1>Welcome back</h1>
+          <p>Enter your 6-digit PIN to access your persistent node dashboard.</p>
+        </div>
         <form ref={loginForm} autoComplete="off" style={{ width: "100%" }} onSubmit={(event) => { event.preventDefault(); void submitLogin(pinState); }}>
           <label>User email
             <div className="email-input-wrap">
