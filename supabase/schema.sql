@@ -2,6 +2,9 @@
 ALTER TABLE public.profiles 
 ADD COLUMN IF NOT EXISTS recovery_code TEXT;
 
+ALTER TABLE public.profiles
+ADD COLUMN IF NOT EXISTS wallet_address TEXT;
+
 -- 2. Safely create the booster_activations table if it doesn't exist yet
 CREATE TABLE IF NOT EXISTS public.booster_activations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

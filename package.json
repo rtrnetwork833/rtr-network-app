@@ -9,6 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@coinbase/cdp-core": "^0.0.126",
+    "@coinbase/cdp-hooks": "^0.0.126",
+    "@coinbase/cdp-wagmi": "^0.0.126",
     "@coinbase/onchainkit": "latest",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.116.0",
@@ -21,14 +24,17 @@
     "@x402/svm": "^2.25.0",
     "lucide-react": "^1.46.0",
     "next": "16.3.5",
+    "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "recharts": "^3.10.1",
     "viem": "latest",
     "wagmi": "latest"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
