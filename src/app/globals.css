@@ -388,6 +388,40 @@ p, small, label, .eyebrow, .market-row span, .tier-details span, .portfolio-hold
 .nav-item.active { position: relative; color: #edf2f7; }
 .nav-item.active svg { color: #e4ebf3; filter: drop-shadow(0 0 4px rgba(203,215,229,.34)); }
 .nav-item.active::after { width: 13px; height: 2px; margin-top: -2px; background: linear-gradient(90deg, transparent, #cbd5e1, transparent); border-radius: 2px; box-shadow: 0 0 8px rgba(203,215,229,.34); content: ""; }
+
+html, body { background: linear-gradient(135deg, #020617 0%, #0B1528 50%, #02040A 100%) !important; }
+.app-shell { background: linear-gradient(135deg, #020617 0%, #0B1528 50%, #02040A 100%); }
+.portfolio-value-card {
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+}
+.portfolio-value-card::before { background: linear-gradient(135deg, rgba(255,255,255,.06), transparent 56%); }
+.portfolio-value-label, .portfolio-estimate-label, .portfolio-trend-heading .eyebrow { color: #CBD5E1; }
+.portfolio-total, .portfolio-section-heading h3 { color: #FFFFFF; font-weight: 700; }
+.portfolio-action {
+  min-height: 60px;
+  color: #FFFFFF;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  box-shadow: 0 8px 20px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.06);
+}
+.portfolio-action:hover:not(:disabled) { color: #fff; background: rgba(51, 65, 85, .72); border-color: rgba(255,255,255,.34); box-shadow: 0 0 18px rgba(203,213,225,.15); }
+.portfolio-action:active:not(:disabled) { background: rgba(71, 85, 105, .7); transform: translateY(1px); }
+.portfolio-action svg { color: #FFFFFF; stroke: #FFFFFF; filter: drop-shadow(0 0 4px rgba(56, 189, 248, 0.3)); }
+.portfolio-range-tabs button { color: #CBD5E1; background: transparent; border: 1px solid rgba(203, 213, 225, .42); }
+.portfolio-range-tabs button:hover { color: #fff; border-color: rgba(255,255,255,.75); background: rgba(255,255,255,.07); }
+.portfolio-range-tabs button.active { color: #0F172A; background: #F8FAFC; border-color: #FFFFFF; box-shadow: 0 0 14px rgba(255,255,255,.25); }
+.nav-item.active { color: #FFFFFF; text-shadow: 0 0 10px rgba(255,255,255,.22); }
+.nav-item.active svg { color: #FFFFFF; filter: drop-shadow(0 0 6px rgba(255,255,255,.48)); }
+.nav-item.active::after { background: linear-gradient(90deg, transparent, #fff, transparent); box-shadow: 0 0 10px rgba(255,255,255,.58); }
+
+@media (min-width: 451px) {
+  body { background: linear-gradient(135deg, #020617 0%, #0B1528 50%, #02040A 100%) !important; }
+}
 .avatar-button { color: #edf2f7; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15); }
 .settings-signout, .settings-signout svg, .pin-error { color: #e2b5b5; }
 .auth-message, .error-banner { color: #e9c3c3; background: rgba(119,53,53,.16); border-color: rgba(213,153,153,.22); }
