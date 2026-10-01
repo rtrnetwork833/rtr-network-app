@@ -596,3 +596,87 @@ body {
   body { background: #030811; }
   .app-shell { box-shadow: 0 28px 90px rgba(0,0,0,.54); }
 }
+
+:root {
+  --background: #071326;
+  --foreground: #F7F9FC;
+  --muted: #A8B7CC;
+  --line: rgba(177, 194, 219, .13);
+  --panel: #111E32;
+  --panel-soft: #17263D;
+  --green: #D7B36A;
+  --green-deep: #AD8542;
+  --orange: #E3A5A0;
+  --glass-background: rgba(14, 26, 46, .92);
+  --glass-border: rgba(178, 195, 219, .15);
+}
+
+html, body { min-height: 100%; }
+body {
+  color: #F7F9FC;
+  background: radial-gradient(ellipse at 12% 9%, rgba(44,86,153,.2), transparent 38%), radial-gradient(ellipse at 91% 26%, rgba(47,129,126,.105), transparent 35%), linear-gradient(145deg, #071326 0%, #040B18 51%, #02060D 100%) !important;
+  font-family: var(--font-ui);
+}
+.app-shell {
+  isolation: isolate;
+  background: radial-gradient(ellipse at 8% 5%, rgba(57,102,176,.2), transparent 39%), radial-gradient(ellipse at 94% 22%, rgba(43,133,125,.1), transparent 34%), linear-gradient(155deg, #08152A 0%, #050C19 52%, #02070E 100%);
+}
+.topbar { background: rgba(7,17,33,.9); border-color: rgba(184,199,221,.12); }
+.content-scroll { padding: 24px 20px 112px; }
+
+.balance-card, .tier-card, .wallet-card, .portfolio-value-card, .portfolio-trend-section, .onramp-banner, .auth-panel, .market-table, .profile-menu, .dob-tooltip, .portfolio-modal, .settings-row, .portfolio-holding-row {
+  background: linear-gradient(145deg, #14233B, #0B1729 72%);
+  border: 1px solid rgba(174,193,219,.16);
+  border-radius: 22px;
+  box-shadow: 0 16px 36px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.04);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.portfolio-value-card { position: relative; overflow: hidden; background: linear-gradient(137deg, #1B2E4B, #101D33 58%, #10283A); border-color: rgba(215,179,106,.36); box-shadow: 0 22px 46px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.1), 0 0 34px rgba(49,95,146,.13); }
+.portfolio-value-card::before { position: absolute; inset: 0; border-radius: inherit; background: radial-gradient(ellipse at 88% 8%, rgba(215,179,106,.14), transparent 35%), linear-gradient(120deg, rgba(255,255,255,.055), transparent 46%); content: ""; pointer-events: none; }
+.portfolio-value-label, .portfolio-estimate-label, .portfolio-trend-heading .eyebrow { position: relative; color: #D0DBE9; }
+h1, h2, h3, h4, strong, .portfolio-total, .portfolio-section-heading h3, .portfolio-holding-row strong { color: #F8FAFD; font-weight: 700; }
+p, small, label, .eyebrow, .page-intro p, .tier-details span, .portfolio-chart-note, .portfolio-holding-row small, .portfolio-holding-value small, .portfolio-address-line { color: #A8B7CC; font-weight: 500; }
+.portfolio-trend-section { background: linear-gradient(145deg, #111F34, #09111F); border-color: rgba(166,190,218,.15); }
+.portfolio-holding-row, .portfolio-holding-row.portfolio-primary-asset { background: linear-gradient(112deg, #14243B, #0D192B); border-color: rgba(162,185,214,.17); }
+.portfolio-holding-row.portfolio-primary-asset { border-color: rgba(215,179,106,.36); box-shadow: 0 8px 24px rgba(0,0,0,.24), inset 3px 0 0 rgba(215,179,106,.78); }
+.portfolio-holding-row .asset-logo, .portfolio-holding-row .asset-eth, .portfolio-holding-row .asset-cbbtc, .portfolio-holding-row .asset-usdc, .portfolio-holding-row .asset-wsol, .portfolio-holding-row .asset-wbnb { color: #F5F7FB; background: linear-gradient(145deg, #263B59, #17263D); border-color: rgba(183,202,227,.19); }
+.portfolio-holding-row .asset-rtr { color: #F6E5BD; background: linear-gradient(145deg, #9E773A, #4A3A25); border-color: rgba(229,190,113,.5); }
+.portfolio-value-card .portfolio-privacy { color: #D7B36A; border-color: rgba(215,179,106,.3); background: rgba(215,179,106,.07); }
+
+.tier-card, .wallet-card, .auth-panel, .balance-card, .onramp-banner, .market-table, .settings-row, .portfolio-modal { background: linear-gradient(145deg, #14233A, #0C1729); border-color: rgba(171,191,219,.16); }
+.tier-card.featured { background: linear-gradient(145deg, #1A2B43, #101D30); border-color: rgba(215,179,106,.3); }
+.tier-number, .featured-label, .tier-speed, .delta, .status-pill, .live-dot { color: #D7B36A; }
+.featured-label { background: rgba(215,179,106,.1); border: 1px solid rgba(215,179,106,.2); }
+.status-pill { border-color: rgba(215,179,106,.24); background: rgba(215,179,106,.06); }
+.balance-icon, .mini-avatar, .settings-avatar { color: #E6D1A6; background: linear-gradient(145deg, rgba(215,179,106,.16), rgba(215,179,106,.06)); border-color: rgba(215,179,106,.22); }
+.auth-panel input, .market-search input, .portfolio-transfer-form input, .cdp-access-panel input { color: #F7F9FC; background: #0A1424; border-color: #2B3A50; }
+.auth-panel input:focus, .market-search input:focus, .portfolio-transfer-form input:focus, .cdp-access-panel input:focus { border-color: #D7B36A; box-shadow: 0 0 0 3px rgba(215,179,106,.13); }
+
+.tier-button, .collect-button, .primary-button, .auth-submit, .onramp-fund-card button { color: #17130B; background: linear-gradient(135deg, #E3C27D, #C99C50); border: 1px solid rgba(245,218,159,.55); border-radius: 9999px; font-weight: 700; box-shadow: 0 8px 22px rgba(177,132,57,.18), inset 0 1px 0 rgba(255,255,255,.36); }
+.tier-button:hover, .collect-button:hover, .primary-button:hover, .onramp-fund-card button:hover { color: #0D1118; background: linear-gradient(135deg, #F0D394, #DDB66E); border-color: #F0D394; box-shadow: 0 10px 26px rgba(177,132,57,.25); }
+.tier-button svg, .collect-button svg { color: #2A2112; stroke: #2A2112; filter: none; }
+.portfolio-action, .secondary-button, .portfolio-copy-button, .cdp-google-button { color: #EEF3FA; background: linear-gradient(145deg, #1A2A42, #121F32); border: 1px solid rgba(163,185,213,.22); box-shadow: 0 8px 22px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.05); }
+.portfolio-action { min-height: 60px; border-radius: 17px; }
+.portfolio-action svg { color: #D7B36A; stroke: #D7B36A; filter: drop-shadow(0 0 4px rgba(215,179,106,.2)); }
+.portfolio-action:hover:not(:disabled), .secondary-button:hover, .portfolio-copy-button:hover, .cdp-google-button:hover { color: #fff; background: linear-gradient(145deg, #243955, #172840); border-color: rgba(215,179,106,.4); }
+.portfolio-action:disabled { color: #718198; background: #111B2B; border-color: #25344A; }
+.portfolio-range-tabs { background: rgba(5,12,23,.75); border-color: rgba(177,194,219,.16); }
+.portfolio-range-tabs button { color: #AFBED1; border-color: rgba(170,190,216,.26); }
+.portfolio-range-tabs button:hover { color: #F8FAFD; border-color: rgba(215,179,106,.6); background: rgba(215,179,106,.07); }
+.portfolio-range-tabs button.active { color: #20190C; background: linear-gradient(135deg, #E3C27D, #C99C50); border-color: #E3C27D; box-shadow: 0 4px 13px rgba(177,132,57,.22); }
+.portfolio-chart .recharts-area-curve { stroke: #8BDAC8 !important; filter: drop-shadow(0 0 5px rgba(139,218,200,.34)); }
+.portfolio-chart .recharts-area-area { fill: rgba(139,218,200,.1); }
+.bottom-nav { background: linear-gradient(180deg, rgba(15,27,45,.97), rgba(7,14,26,.98)); border-color: rgba(175,194,218,.15); border-top-color: rgba(202,215,233,.2); box-shadow: 0 12px 32px rgba(0,0,0,.42), inset 0 1px rgba(255,255,255,.035); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+.nav-item { color: #9EADC2; }
+.nav-item.active { color: #E6CA8D; }
+.nav-item.active svg { color: #E6CA8D; filter: drop-shadow(0 0 6px rgba(215,179,106,.36)); }
+.nav-item.active::after { background: linear-gradient(90deg, transparent, #E6CA8D, transparent); box-shadow: 0 0 8px rgba(215,179,106,.36); }
+.avatar-button { color: #F7F9FC; background: linear-gradient(145deg, #243955, #14233A); border-color: rgba(177,194,219,.22); }
+.settings-row:hover { background: linear-gradient(145deg, #1A2A42, #121F32); border-color: rgba(215,179,106,.28); }
+.settings-row svg { color: #D7B36A; }
+
+@media (min-width: 451px) {
+  body { background: #030811; }
+  .app-shell { box-shadow: 0 28px 90px rgba(0,0,0,.54); }
+}
