@@ -49,7 +49,6 @@ type Activation = { tier: string; activated_at: string; expires_at: string };
 type Profile = { full_name?: string | null; avatar_url: string | null; balance: number | string | null };
 type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null; sparkline?: number[] };
 type PortfolioAsset = MarketAsset & { amount: number; value: number };
-type CoinGeckoAsset = { id?: string; symbol?: string; name?: string; current_price?: number; price_change_percentage_24h?: number; total_volume?: number; sparkline_in_7d?: { price?: number[] } };
 const supabase = createClient();
 const AUTH_EMAIL_STORAGE_KEY = "user_email";
 const LEGACY_AUTH_EMAIL_STORAGE_KEY = "rtr-email";
@@ -137,24 +136,10 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}
 }
 
 async function fetchMarketRows(): Promise<MarketAsset[]> {
-  const timestamp = Date.now();
-  const ids = marketWatchlist.map((asset) => asset.id).join(",");
-  const assets = await fetchWithTimeout(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&sparkline=true&price_change_percentage=24h&timestamp=${timestamp}`)
-    .then((response) => response.ok ? response.json() as Promise<CoinGeckoAsset[]> : Promise.reject(new Error("market unavailable")));
-  if (assets.length === 0) throw new Error("market unavailable");
-  const byId = new Map(assets.map((asset) => [asset.id, asset]));
-  const marketRows = marketWatchlist.map((item) => {
-    const asset = byId.get(item.id);
-    return {
-      id: item.id,
-      symbol: item.symbol,
-      name: item.name,
-      price: typeof asset?.current_price === "number" ? asset.current_price : null,
-      change: typeof asset?.price_change_percentage_24h === "number" ? asset.price_change_percentage_24h : null,
-      volume: typeof asset?.total_volume === "number" ? asset.total_volume : null,
-      sparkline: asset?.sparkline_in_7d?.price ?? [],
-    };
-  });
+  const response = await fetchWithTimeout("/api/market");
+  if (!response.ok) throw new Error("market unavailable");
+  const marketRows = await response.json() as MarketAsset[];
+  if (!Array.isArray(marketRows)) throw new Error("market unavailable");
   writeMarketCache(marketRows);
   return marketRows;
 }

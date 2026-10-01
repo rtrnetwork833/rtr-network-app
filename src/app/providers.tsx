@@ -1,9 +1,9 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { CDPHooksProvider } from "@coinbase/cdp-hooks";
 import { createCDPEmbeddedWalletConnector } from "@coinbase/cdp-wagmi";
 import { OnchainKitProvider } from "@coinbase/onchainkit";
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { http } from "viem";
 import { createConfig, WagmiProvider, useAccount } from "wagmi";
@@ -11,6 +11,10 @@ import { base } from "wagmi/chains";
 import { createClient } from "@/lib/supabase/client";
 
 const projectId = process.env.NEXT_PUBLIC_CDP_PROJECT_ID ?? "";
+const ClientCDPHooksProvider = dynamic(
+  () => import("@coinbase/cdp-hooks").then((module) => module.CDPHooksProvider),
+  { ssr: false },
+);
 const cdpConfig = {
   projectId,
   ethereum: { createOnLogin: "smart" as const },
@@ -30,7 +34,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
 
   return (
-    <CDPHooksProvider config={cdpConfig}>
+    <ClientCDPHooksProvider config={cdpConfig}>
       <WagmiProvider config={wagmiConfig}>
         <QueryClientProvider client={queryClient}>
           <OnchainKitProvider
@@ -43,7 +47,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           </OnchainKitProvider>
         </QueryClientProvider>
       </WagmiProvider>
-    </CDPHooksProvider>
+    </ClientCDPHooksProvider>
   );
 }
 
