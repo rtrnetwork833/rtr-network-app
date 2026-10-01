@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 const historyAssets = ["ethereum", "coinbase-wrapped-btc", "wrapped-solana", "wbnb", "usd-coin"] as const;
-const supportedPeriods = new Set([7, 18, 30, 380]);
+const supportedPeriods = new Set([7, 30, 180, 360]);
 
 type CoinGeckoHistory = { prices?: [number, number][] };
 

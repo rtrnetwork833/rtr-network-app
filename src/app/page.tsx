@@ -933,7 +933,7 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
   const [transferAmount, setTransferAmount] = useState("");
   const [transferMessage, setTransferMessage] = useState("");
   const [transferHash, setTransferHash] = useState("");
-  const [period, setPeriod] = useState<"7D" | "30D" | "18D" | "380D">("7D");
+  const [period, setPeriod] = useState<"7D" | "30D" | "180D" | "360D">("7D");
   const [historicalPrices, setHistoricalPrices] = useState<Record<string, number[]>>({});
 
   useEffect(() => {
@@ -983,7 +983,7 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
 
   const priceFor = (symbol: string, fallback: number | null = null) => market.find((asset) => asset.symbol === symbol)?.price ?? fallback;
   const sparklineFor = (symbol: string) => market.find((asset) => asset.symbol === symbol)?.sparkline ?? [];
-  const rtrAmount = typeof rtrBalance === "bigint" ? Number(formatUnits(rtrBalance, 18)) : walletAddress && tokenAddress ? 0 : null;
+  const rtrAmount = typeof rtrBalance === "bigint" ? Number(formatUnits(rtrBalance, 18)) : 0;
   const ethAmount = nativeBalance ? Number(formatUnits(nativeBalance.value, nativeBalance.decimals)) : walletAddress ? 0 : null;
   const usdcAmount = usdcBalance ? Number(formatUnits(usdcBalance.value, usdcBalance.decimals)) : walletAddress ? 0 : null;
   const cbBtcAmount = cbBtcBalance ? Number(formatUnits(cbBtcBalance.value, cbBtcBalance.decimals)) : walletAddress ? 0 : null;
@@ -1058,7 +1058,7 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
     </div>
 
     <section className="portfolio-trend-section">
-      <div className="section-heading portfolio-section-heading"><div><span className="eyebrow">BASE NETWORK</span><h3>Asset Trend</h3></div></div>
+      <div className="portfolio-trend-heading"><div className="section-heading portfolio-section-heading"><div><span className="eyebrow">BASE NETWORK</span><h3>Asset Trend</h3></div></div><div className="portfolio-range-tabs" aria-label="Asset trend date range">{(["7D", "30D", "180D", "360D"] as const).map((range) => <button type="button" key={range} aria-pressed={period === range} className={period === range ? "active" : ""} onClick={() => setPeriod(range)}>{range}</button>)}</div></div>
       <div className="portfolio-chart" aria-label="Estimated portfolio value trend over the last seven days">
         <ResponsiveContainer width="100%" height={174}>
           <AreaChart data={trend} margin={{ top: 12, right: 2, left: 2, bottom: 0 }}>
@@ -1070,11 +1070,10 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
           </AreaChart>
         </ResponsiveContainer>
       </div>
-      <div className="portfolio-range-tabs" aria-label="Asset trend date range">{(["7D", "30D", "18D", "380D"] as const).map((range) => <button type="button" key={range} aria-pressed={period === range} className={period === range ? "active" : ""} onClick={() => setPeriod(range)}>{range}</button>)}</div>
     </section>
 
     <section className="portfolio-holdings" aria-label="Portfolio holdings">
-      {portfolio.map((asset) => <div className={`portfolio-holding-row${asset.symbol === "RTR" ? " portfolio-primary-asset" : ""}`} key={asset.symbol}><span><i className={`asset-logo asset-${asset.symbol.toLowerCase()}`}>{asset.symbol === "RTR" ? "R" : asset.symbol.slice(0, 1)}</i><span><strong>{asset.name}</strong><small>{asset.symbol}</small></span></span><span className="portfolio-holding-value"><strong className={`portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{asset.amount === null ? "—" : `${asset.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${asset.symbol}`}</strong><small className={`portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{asset.value === null ? "$—" : `$${asset.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</small></span></div>)}
+      {portfolio.filter((asset) => asset.symbol === "RTR" || (asset.amount !== null && asset.amount > 0)).map((asset) => <div className={`portfolio-holding-row${asset.symbol === "RTR" ? " portfolio-primary-asset" : ""}`} key={asset.symbol}><span><i className={`asset-logo asset-${asset.symbol.toLowerCase()}`}>{asset.symbol === "RTR" ? "R" : asset.symbol.slice(0, 1)}</i><span><strong>{asset.name}</strong><small>{asset.symbol}</small></span></span><span className="portfolio-holding-value"><strong className={`portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{asset.amount === null ? "—" : `${asset.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${asset.symbol}`}</strong><small className={`portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{asset.value === null ? "$—" : `$${asset.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</small></span></div>)}
     </section>
 
     {activeModal === "deposit" && <div className="portfolio-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setActiveModal(null); }}><section className="portfolio-modal" role="dialog" aria-modal="true" aria-labelledby="deposit-title"><div className="portfolio-modal-header"><div><span className="eyebrow">BASE MAINNET</span><h3 id="deposit-title">Top Up</h3></div><button type="button" className="modal-close" aria-label="Close deposit dialog" onClick={() => setActiveModal(null)}><X size={18} /></button></div><p className="portfolio-modal-caption">Deposit Crypto (No verification required)</p><div className="portfolio-qr-frame">{qrCode ? <Image src={qrCode} width={202} height={202} unoptimized alt="QR code for the Base wallet address" /> : <span className="portfolio-qr-placeholder" role="status"><span className="sr-only">Resolving secure wallet address</span></span>}</div>{walletAddress && <><div className="portfolio-full-address">{walletAddress}</div><button type="button" className="portfolio-copy-button" onClick={() => void copyAddress()}><Copy size={15} />{copyStatus || "Click to Copy"}</button></>}</section></div>}
