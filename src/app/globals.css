@@ -269,6 +269,10 @@ button { font: inherit; }
 .portfolio-qr-frame img { width: 100%; height: 100%; image-rendering: pixelated; }
 .portfolio-qr-frame [role="img"], .portfolio-qr-frame svg { width: 100%; height: 100%; display: block; }
 .portfolio-qr-frame > span { color: #0A1424; font-size: 10px; }
+.portfolio-wallet-connect { position: relative; width: 100%; margin-top: 14px; animation: portfolio-wallet-reveal .24s ease-out both; }
+.portfolio-wallet-connect [data-testid="ockConnectWallet_Container"] { width: 100%; }
+.portfolio-wallet-connect .portfolio-connect-button { width: 100%; min-height: 42px; color: #FFFFFF; background: rgba(0, 184, 123, 0.18); border: 1px solid rgba(0, 184, 123, 0.42); border-radius: 9px; font-family: inherit; font-size: 11px; font-weight: 650; cursor: pointer; }
+.portfolio-wallet-connect .portfolio-connect-button:hover { background: rgba(0, 184, 123, 0.28); border-color: rgba(0, 184, 123, 0.7); }
 .portfolio-full-address { padding: 10px 9px; overflow-wrap: anywhere; color: #FFFFFF; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 5px; font-family: var(--font-geist-mono), monospace; font-size: 9px; line-height: 1.5; text-align: center; }
 .portfolio-copy-button { width: 100%; min-height: 39px; display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 9px; color: #FFFFFF; background: rgba(13, 27, 46, 0.8); border: 1px solid rgba(0, 184, 123, 0.3); border-radius: 6px; font-size: 10px; cursor: pointer; box-shadow: 0 0 0 1px rgba(0, 184, 123, 0.2); transition: all 0.2s ease; }
 .portfolio-copy-button:hover { background: rgba(0, 184, 123, 0.15); border-color: #00B87B; box-shadow: 0 0 0 2px rgba(0, 184, 123, 0.5), 0 0 15px rgba(0, 184, 123, 0.3); }
@@ -283,21 +287,8 @@ button { font: inherit; }
 .portfolio-tx-link { display: flex; align-items: center; gap: 6px; color: #00B87B; font-size: 10px; text-decoration: none; }
 
 .onramp-banner { display: grid; gap: 13px; margin: 0 0 19px; padding: 16px; background: linear-gradient(115deg, rgba(13, 27, 46, 0.7), rgba(8, 16, 32, 0.9)); border: 1px solid rgba(0, 184, 123, 0.2); border-radius: 9px; box-shadow: inset 0 1px rgba(255,255,255,.035); }
-.cdp-access-panel { display: grid; gap: 10px; padding-top: 11px; border-top: 1px solid rgba(255, 255, 255, 0.1); }
-.portfolio-value-card .cdp-access-panel { position: relative; margin-top: 14px; padding-top: 13px; animation: portfolio-wallet-reveal .24s ease-out both; }
-.portfolio-value-card .cdp-verified-state { display: grid; gap: 8px; }
-.portfolio-value-card .cdp-verified-state p { margin: 0; color: #CBD5E1; font-size: 10px; line-height: 1.5; }
 .portfolio-connected-state { position: relative; animation: portfolio-wallet-reveal .24s ease-out both; }
 @keyframes portfolio-wallet-reveal { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-.cdp-access-panel > .eyebrow { color: #94A3B8; }
-.cdp-access-panel form { display: grid; gap: 8px; }
-.cdp-access-panel label { display: grid; gap: 6px; color: #94A3B8; font-size: 10px; }
-.cdp-access-panel input { width: 100%; min-height: 38px; padding: 9px 10px; color: #FFFFFF; background: #0A1424; border: 1px solid rgba(0, 184, 123, 0.2); border-radius: 5px; outline: none; font-size: 11px; }
-.cdp-access-panel input:focus { border-color: #00B87B; box-shadow: 0 0 0 3px rgba(0, 184, 123, 0.15); }
-.cdp-resend-button { justify-self: start; padding: 3px 0; color: #94A3B8; background: transparent; border: 0; font-size: 9px; cursor: pointer; }
-.cdp-google-button { min-height: 36px; color: #FFFFFF; background: rgba(13, 27, 46, 0.8); border: 1px solid rgba(0, 184, 123, 0.3); border-radius: 5px; font-size: 10px; cursor: pointer; box-shadow: 0 0 0 1px rgba(0, 184, 123, 0.2); transition: all 0.2s ease; }
-.cdp-google-button:hover { background: rgba(0, 184, 123, 0.15); border-color: #00B87B; box-shadow: 0 0 0 2px rgba(0, 184, 123, 0.5), 0 0 15px rgba(0, 184, 123, 0.3); }
-.cdp-access-panel button:disabled { opacity: .55; cursor: wait; }
 .onramp-banner-heading h3 { margin-top: 5px; color: #FFFFFF; font-size: 15px; }
 .onramp-fund-card { color: #FFFFFF; }
 .onramp-fund-card button { min-height: 42px; padding: 0 13px; color: #FFFFFF; background: #00B87B; border: 1px solid #00B87B; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; }
@@ -342,8 +333,8 @@ button { font: inherit; }
 .portfolio-trend-section { padding: 18px 16px 14px; }
 .market-table { overflow: hidden; }
 .auth-panel { background: rgba(13, 27, 46, 0.9); }
-.auth-panel input, .market-search input, .portfolio-transfer-form input, .cdp-access-panel input { color: #FFFFFF; background: #0A1424; border-color: rgba(255, 255, 255, 0.15); border-radius: 12px; }
-.auth-panel input:focus, .market-search input:focus, .portfolio-transfer-form input:focus, .cdp-access-panel input:focus { border-color: #00B87B; box-shadow: 0 0 0 3px rgba(0, 184, 123, 0.15); }
+.auth-panel input, .market-search input, .portfolio-transfer-form input { color: #FFFFFF; background: #0A1424; border-color: rgba(255, 255, 255, 0.15); border-radius: 12px; }
+.auth-panel input:focus, .market-search input:focus, .portfolio-transfer-form input:focus { border-color: #00B87B; box-shadow: 0 0 0 3px rgba(0, 184, 123, 0.15); }
 .eyebrow, .tier-details span, .page-intro p, .portfolio-chart-note { color: #94A3B8; }
 .tier-number, .featured-label, .tier-speed, .delta, .status-pill, .live-dot, .nav-item.active, .settings-row svg { color: #00B87B; }
 .status-pill { border-color: rgba(0, 184, 123, 0.3); background: rgba(0, 184, 123, 0.1); }

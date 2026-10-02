@@ -25,20 +25,20 @@ import {
   Sparkles,
   TrendingUp,
   UserRound,
-  Wallet,
+  Wallet as WalletIcon,
   X,
   Zap,
 } from "lucide-react";
 import { formatUnits, getAddress, isAddress, parseEther, type Address } from "viem";
 import { base } from "wagmi/chains";
-import { useSignInWithEmail, useSignInWithOAuth, useVerifyEmailOTP } from "@coinbase/cdp-hooks";
 import { FundCard } from "@coinbase/onchainkit/fund";
+import { ConnectWallet, Wallet as OnchainWallet } from "@coinbase/onchainkit/wallet";
 import QRCode from "qrcode";
 import { Area, AreaChart, Line, LineChart, ResponsiveContainer } from "recharts";
 import { usePathname, useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAccount, useBalance, useConnect, useReadContract, useSendTransaction, useSwitchChain } from "wagmi";
+import { useAccount, useBalance, useReadContract, useSendTransaction, useSwitchChain } from "wagmi";
 import { normalizeDateOfBirth } from "@/lib/date";
 import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/client";
@@ -425,7 +425,7 @@ export default function Home() {
         {view === "market" && <MarketView market={market} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
         {view === "game" && <PlaceholderView icon={<Gamepad2 />} title="Node quests" text="Complete community missions to unlock bonus points." />}
-        {view === "wallet" && <PortfolioView market={market} email={user.email ?? ""} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} />}
+        {view === "wallet" && <PortfolioView market={market} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} />}
       </section>
 
       <nav className="bottom-nav" aria-label="Primary navigation">
@@ -434,7 +434,7 @@ export default function Home() {
         <NavItem icon={<TrendingUp />} label="Market" active={view === "market"} onClick={() => setView("market")} />
         <NavItem icon={<Activity />} label="Trading" active={view === "trading"} onClick={() => setView("trading")} />
         <NavItem icon={<Gamepad2 />} label="Game" active={view === "game"} onClick={() => setView("game")} />
-        <NavItem icon={<Wallet />} label="Portfolio" active={view === "wallet"} onClick={() => setView("wallet")} />
+        <NavItem icon={<WalletIcon />} label="Portfolio" active={view === "wallet"} onClick={() => setView("wallet")} />
       </nav>
 
     </main>
@@ -833,128 +833,8 @@ function AuthOverlay() {
   );
 }
 
-function EmbeddedWalletAccess({ email }: { email: string }) {
-  const { signInWithEmail } = useSignInWithEmail();
-  const { verifyEmailOTP } = useVerifyEmailOTP();
-  const { signInWithOAuth } = useSignInWithOAuth();
-  const { address } = useAccount();
-  const { connectors, connectAsync } = useConnect();
-  const [emailInput, setEmailInput] = useState("");
-  const accountEmail = email || emailInput;
-  const [flowId, setFlowId] = useState("");
-  const [otp, setOtp] = useState("");
-  const [emailVerified, setEmailVerified] = useState(false);
-  const [feedback, setFeedback] = useState("");
-  const [isBusy, setIsBusy] = useState(false);
-
-  useEffect(() => {
-    if (address) return;
-    let cancelled = false;
-    let connecting = false;
-    const reconnectAuthorizedWallet = async () => {
-      if (connecting) return;
-      const connector = connectors.find((item) => item.id === "cdp-embedded-wallet");
-      if (!connector) return;
-      try {
-        if (await connector.isAuthorized() && !cancelled) {
-          connecting = true;
-          await connectAsync({ connector, chainId: base.id });
-        }
-      } catch {
-        // Keep the auth controls available if silent reconnection is unavailable.
-      } finally {
-        connecting = false;
-      }
-    };
-    const handleFocus = () => { void reconnectAuthorizedWallet(); };
-    void reconnectAuthorizedWallet();
-    window.addEventListener("focus", handleFocus);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("focus", handleFocus);
-    };
-  }, [address, connectors, connectAsync]);
-
-  async function connectWallet() {
-    setIsBusy(true);
-    setFeedback("");
-    try {
-      const connector = connectors.find((item) => item.id === "cdp-embedded-wallet");
-      if (!connector) throw new Error("The Coinbase embedded wallet connector is unavailable.");
-      await connectAsync({ connector, chainId: base.id });
-      setFeedback("Wallet connected to Base.");
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Wallet verified, but connection failed. Try again.");
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function startEmailSignIn(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setFeedback("");
-    setIsBusy(true);
-    try {
-      const result = await signInWithEmail({ email: accountEmail.trim().toLowerCase() });
-      setFlowId(result.flowId);
-      setFeedback(result.message || "A verification code has been sent.");
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Unable to send the verification code.");
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function verifyEmail(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setFeedback("");
-    setIsBusy(true);
-    try {
-      await verifyEmailOTP({ flowId, otp });
-      setEmailVerified(true);
-      setIsBusy(false);
-      await connectWallet();
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "That code could not be verified.");
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function continueWithGoogle() {
-    setFeedback("");
-    setIsBusy(true);
-    try {
-      await signInWithOAuth("google");
-      setFeedback("Complete sign-in to connect your Base wallet.");
-    } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Google sign-in could not be started.");
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  return <div className="cdp-access-panel">
-    <span className="eyebrow">COINBASE EMBEDDED WALLET</span>
-    {!flowId ? <form onSubmit={(event) => void startEmailSignIn(event)}>
-      <label>Email address<input type="email" value={accountEmail} onChange={(event) => setEmailInput(event.target.value)} readOnly={Boolean(email)} autoComplete="email" required /></label>
-      <button type="submit" className="portfolio-copy-button" disabled={isBusy}>{isBusy ? "Sending code..." : "Create wallet with email"}</button>
-    </form> : emailVerified ? <div className="cdp-verified-state">
-      <p>Confirm the Coinbase wallet connection to finish setup.</p>
-      <button type="button" className="portfolio-copy-button" onClick={() => void connectWallet()} disabled={isBusy}>{isBusy ? "Connecting wallet..." : "Connect wallet"}</button>
-    </div> : <form onSubmit={(event) => void verifyEmail(event)}>
-      <label>6-digit email code<input type="text" value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" maxLength={6} required /></label>
-      <button type="submit" className="portfolio-copy-button" disabled={isBusy || otp.length !== 6}>{isBusy ? "Verifying..." : "Verify and create wallet"}</button>
-      <button type="button" className="cdp-resend-button" onClick={() => { setFlowId(""); setOtp(""); setEmailVerified(false); setFeedback(""); }}>Use a different email</button>
-    </form>}
-    <button type="button" className="cdp-google-button" onClick={() => void continueWithGoogle()} disabled={isBusy}>Continue with Google</button>
-    {feedback && <p className="portfolio-feedback" role="status">{feedback}</p>}
-  </div>;
-}
-
-function PortfolioView({ market, email, isBalanceHidden, onToggleBalance }: { market: MarketAsset[]; email: string; isBalanceHidden: boolean; onToggleBalance: () => void }) {
-  const { address, chainId } = useAccount();
-  const { connectors, connectAsync } = useConnect();
+function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: MarketAsset[]; isBalanceHidden: boolean; onToggleBalance: () => void }) {
+  const { address, chainId, isConnected } = useAccount();
   const { sendTransactionAsync, isPending: isSending } = useSendTransaction();
   const { switchChainAsync } = useSwitchChain();
   const [profileAddress, setProfileAddress] = useState<Address>();
@@ -1000,13 +880,13 @@ function PortfolioView({ market, email, isBalanceHidden, onToggleBalance }: { ma
   }, []);
 
   useEffect(() => {
-    if (!address || activeModal !== "deposit") return;
+    if (!isConnected || !address || activeModal !== "deposit") return;
     let cancelled = false;
     QRCode.toString(address, { type: "svg", width: 220, margin: 1, errorCorrectionLevel: "M", color: { dark: "#071a30", light: "#ffffff" } })
       .then((svg) => { if (!cancelled) setQrCodeSvg(svg); })
       .catch(() => { if (!cancelled) setQrCodeSvg(""); });
     return () => { cancelled = true; };
-  }, [address, activeModal]);
+  }, [address, activeModal, isConnected]);
 
   useEffect(() => {
     if (period === "7D") return;
@@ -1074,7 +954,7 @@ function PortfolioView({ market, email, isBalanceHidden, onToggleBalance }: { ma
   }
 
   async function copyAddress() {
-    if (!address) return;
+    if (!isConnected || !address) return;
     try {
       await navigator.clipboard.writeText(address);
       setCopyStatus("Copied");
@@ -1084,7 +964,7 @@ function PortfolioView({ market, email, isBalanceHidden, onToggleBalance }: { ma
   }
 
   async function openDeposit() {
-    if (!address) return;
+    if (!isConnected || !address) return;
     setActiveModal("deposit");
     setCopyStatus("");
     try {
@@ -1098,15 +978,15 @@ function PortfolioView({ market, email, isBalanceHidden, onToggleBalance }: { ma
   return <div className="wallet-view portfolio-view">
     <section className="portfolio-value-card">
       <div className="portfolio-value-label"><span>Est. Total Value</span><button className="balance-toggle portfolio-privacy" type="button" onClick={onToggleBalance} aria-label={isBalanceHidden ? "Show portfolio values" : "Hide portfolio values"}>{isBalanceHidden ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
-      {!address ? <EmbeddedWalletAccess email={email} /> : <div className="portfolio-connected-state">
+      {!isConnected || !address ? <OnchainWallet draggable={false} className="portfolio-wallet-connect"><ConnectWallet className="portfolio-connect-button" disconnectedLabel="Connect Coinbase Wallet" /></OnchainWallet> : <div className="portfolio-connected-state">
         <strong className={`portfolio-total portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{`$${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</strong>
         <a className="portfolio-address-line" href={`https://basescan.org/address/${address}`} target="_blank" rel="noreferrer">{formattedAddress}<ExternalLink size={12} /></a>
       </div>}
     </section>
 
     <div className="portfolio-actions">
-      <button type="button" className="portfolio-action" onClick={() => { setTransferMessage(""); setTransferHash(""); setActiveModal("withdraw"); }} disabled={!address}><ArrowUpRight size={16} />Withdraw</button>
-      <button type="button" className="portfolio-action" onClick={() => void openDeposit()} disabled={!address}><ArrowDownLeft size={16} />Top Up</button>
+      <button type="button" className="portfolio-action" onClick={() => { setTransferMessage(""); setTransferHash(""); setActiveModal("withdraw"); }} disabled={!isConnected || !address}><ArrowUpRight size={16} />Withdraw</button>
+      <button type="button" className="portfolio-action" onClick={() => void openDeposit()} disabled={!isConnected || !address}><ArrowDownLeft size={16} />Top Up</button>
     </div>
 
     <section className="portfolio-trend-section">
