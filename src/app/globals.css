@@ -382,6 +382,50 @@ button { font: inherit; }
 .nav-item.active svg { color: #00B87B; filter: drop-shadow(0 0 4px rgba(0, 184, 123, 0.4)); }
 .nav-item.active::after { width: 13px; height: 2px; margin-top: -2px; background: linear-gradient(90deg, transparent, #00B87B, transparent); border-radius: 2px; box-shadow: 0 0 8px rgba(0, 184, 123, 0.4); content: ""; }
 
+.portfolio-value-card { background: linear-gradient(145deg, rgba(24, 20, 37, 0.88), rgba(12, 17, 29, 0.91) 62%, rgba(13, 29, 37, 0.86)); border-color: rgba(198, 123, 255, 0.24); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 18px 44px rgba(0, 0, 0, 0.36), 0 0 26px rgba(154, 86, 255, 0.12); }
+.portfolio-value-card::before { background: radial-gradient(ellipse at 10% 0%, rgba(188, 92, 255, 0.14), transparent 52%), linear-gradient(135deg, rgba(255, 255, 255, 0.045), transparent 48%, rgba(43, 229, 203, 0.045)); }
+.portfolio-value-label { color: #E9E6F1; font-size: 12px; }
+.portfolio-privacy { color: #D9BCFF; border-color: rgba(198, 123, 255, 0.34); }
+.portfolio-privacy:hover { color: #FFFFFF; background: rgba(172, 99, 255, 0.13); }
+.portfolio-total { font-size: 42px; }
+.portfolio-wallet-empty { position: relative; display: grid; gap: 9px; margin-top: 16px; padding-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.1); animation: portfolio-wallet-reveal .24s ease-out both; }
+.portfolio-wallet-empty > .eyebrow { color: #D8B5FF; }
+.portfolio-wallet-empty p { max-width: 280px; margin: 0; color: #B5B2C2; font-size: 11px; line-height: 1.55; }
+.portfolio-wallet-connect { margin-top: 2px; }
+.portfolio-wallet-connect .portfolio-connect-button { min-height: 46px; background: linear-gradient(110deg, #8C42D8, #5F50D6 56%, #168D87); border: 1px solid rgba(221, 187, 255, 0.48); border-radius: 9px; box-shadow: 0 0 18px rgba(151, 82, 233, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.18); font-size: 12px; }
+.portfolio-wallet-connect .portfolio-connect-button:hover { background: linear-gradient(110deg, #A04DEB, #735FE8 56%, #20A89F); box-shadow: 0 0 23px rgba(151, 82, 233, 0.32); }
+.portfolio-actions { margin-top: 14px; }
+.portfolio-action { background: linear-gradient(#10111B, #10111B) padding-box, linear-gradient(110deg, #C044FF, #8859F5 52%, #36E6CB) border-box; border: 1px solid transparent; box-shadow: 0 0 17px rgba(153, 83, 238, 0.22), 0 0 0 1px rgba(192, 68, 255, 0.16), inset 0 0 14px rgba(132, 95, 229, 0.07); }
+.portfolio-action:hover:not(:disabled) { background: linear-gradient(#171421, #171421) padding-box, linear-gradient(110deg, #E06EFF, #9D76FF 52%, #58F3DE) border-box; box-shadow: 0 0 24px rgba(153, 83, 238, 0.36), 0 0 0 2px rgba(192, 68, 255, 0.22); }
+.portfolio-action svg { color: #D9B5FF; filter: drop-shadow(0 0 5px rgba(177, 102, 255, 0.55)); }
+.portfolio-action-notice { margin: -13px 2px 22px; color: #E5C8FF; font-size: 11px; line-height: 1.45; }
+.portfolio-trend-section { background: linear-gradient(145deg, rgba(23, 21, 34, 0.82), rgba(11, 18, 28, 0.88) 70%, rgba(12, 30, 33, 0.82)); border-color: rgba(173, 128, 230, 0.22); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055), 0 14px 32px rgba(0, 0, 0, 0.24); }
+.portfolio-chart { border-bottom-color: rgba(255, 255, 255, 0.055); }
+.portfolio-chart .recharts-area-curve { filter: drop-shadow(0 0 5px rgba(191, 96, 255, 0.72)) drop-shadow(0 0 12px rgba(44, 225, 199, 0.22)); }
+.portfolio-range-tabs { justify-content: center; gap: 5px; margin-top: 11px; padding: 0; background: transparent; border: 0; }
+.portfolio-range-tabs button { min-width: 49px; min-height: 30px; color: #A8A5B4; border-color: rgba(255, 255, 255, 0.08); font-size: 9px; }
+.portfolio-range-tabs button.active { color: #FFFFFF; background: linear-gradient(105deg, rgba(177, 91, 244, 0.22), rgba(56, 216, 193, 0.12)); border-color: rgba(194, 135, 255, 0.38); box-shadow: 0 0 12px rgba(153, 83, 238, 0.16); }
+.portfolio-holdings { margin-top: 17px; }
+.portfolio-holding-row { min-height: 68px; padding: 10px 12px; background: linear-gradient(110deg, rgba(26, 25, 38, 0.82), rgba(12, 21, 31, 0.78)); border-color: rgba(255, 255, 255, 0.095); border-radius: 12px; }
+.portfolio-holding-row.portfolio-primary-asset { background: linear-gradient(110deg, rgba(94, 47, 128, 0.28), rgba(21, 25, 38, 0.88) 64%, rgba(12, 44, 44, 0.68)); border-color: rgba(202, 132, 255, 0.32); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 7px 20px rgba(0, 0, 0, 0.22); }
+.portfolio-holding-row .asset-logo { overflow: hidden; }
+.portfolio-holding-row .asset-logo img { width: 100%; height: 100%; display: block; object-fit: contain; }
+.portfolio-modal-backdrop { background: rgba(7, 8, 14, 0.78); }
+.portfolio-modal { background: linear-gradient(150deg, rgba(28, 23, 41, 0.98), rgba(11, 18, 29, 0.99)); border-color: rgba(190, 126, 255, 0.28); }
+.portfolio-copy-button { background: rgba(119, 72, 173, 0.17); border-color: rgba(195, 136, 255, 0.33); }
+.portfolio-copy-button:hover { background: rgba(146, 91, 214, 0.24); border-color: #C88AFF; box-shadow: 0 0 0 2px rgba(176, 110, 255, 0.3), 0 0 15px rgba(154, 86, 255, 0.2); }
+.portfolio-withdraw-backdrop { justify-items: end; padding: 0; }
+.portfolio-withdraw-drawer { width: min(100%, 440px); height: 100%; align-self: stretch; border-radius: 18px 0 0 18px; animation: portfolio-drawer-in .25s cubic-bezier(.2,.8,.2,1); }
+.portfolio-amount-label { display: flex; align-items: center; justify-content: space-between; color: #E4E0EA; }
+.portfolio-amount-label button { padding: 3px 8px; color: #E2C5FF; background: rgba(157, 91, 222, 0.14); border: 1px solid rgba(195, 136, 255, 0.25); border-radius: 5px; font-size: 9px; font-weight: 700; cursor: pointer; }
+.portfolio-amount-label button:hover { background: rgba(157, 91, 222, 0.25); }
+.portfolio-transfer-form input { border-color: rgba(177, 133, 212, 0.2); }
+.portfolio-transfer-form input:focus { border-color: #B978F0; box-shadow: 0 0 0 3px rgba(171, 104, 231, 0.14); }
+
+@media (max-width: 480px) {
+  .portfolio-withdraw-drawer { width: 100%; border-radius: 16px 16px 0 0; }
+}
+
 
 
 

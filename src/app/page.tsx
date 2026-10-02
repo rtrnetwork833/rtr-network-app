@@ -33,6 +33,7 @@ import { formatUnits, getAddress, isAddress, parseEther, type Address } from "vi
 import { base } from "wagmi/chains";
 import { FundCard } from "@coinbase/onchainkit/fund";
 import { ConnectWallet, Wallet as OnchainWallet } from "@coinbase/onchainkit/wallet";
+import Image from "next/image";
 import QRCode from "qrcode";
 import { Area, AreaChart, Line, LineChart, ResponsiveContainer } from "recharts";
 import { usePathname, useRouter } from "next/navigation";
@@ -838,7 +839,6 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
   const { sendTransactionAsync, isPending: isSending } = useSendTransaction();
   const { switchChainAsync } = useSwitchChain();
   const [profileAddress, setProfileAddress] = useState<Address>();
-  const [profileAddressLoading, setProfileAddressLoading] = useState(true);
   const walletAddress = address ?? profileAddress;
   const { data: nativeBalance } = useBalance({ address: walletAddress });
   const usdcTokenAddress = "0xd9AAEC86B65D86f6A7B5B1b0c42FFA531710b6CA" as Address;
@@ -864,6 +864,7 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
   const [transferAmount, setTransferAmount] = useState("");
   const [transferMessage, setTransferMessage] = useState("");
   const [transferHash, setTransferHash] = useState("");
+  const [actionNotice, setActionNotice] = useState("");
   const [period, setPeriod] = useState<"7D" | "30D" | "180D" | "360D">("7D");
   const [historicalPrices, setHistoricalPrices] = useState<Record<string, number[]>>({});
 
@@ -874,8 +875,7 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
       .then((profile) => {
         if (!cancelled && profile?.walletAddress && isAddress(profile.walletAddress)) setProfileAddress(getAddress(profile.walletAddress));
       })
-      .catch(() => undefined)
-      .finally(() => { if (!cancelled) setProfileAddressLoading(false); });
+      .catch(() => undefined);
     return () => { cancelled = true; };
   }, []);
 
@@ -920,6 +920,9 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
     makeAsset("USDC", "Bridged USDC", usdcAmount, 1),
   ];
   const totalValue = portfolio.reduce((total, asset) => total + (asset.value ?? 0), 0);
+  const ethPrice = priceFor("ETH");
+  const ethBalance = nativeBalance ? Number(formatUnits(nativeBalance.value, nativeBalance.decimals)) : 0;
+  const maxTransferUsd = ethPrice && ethPrice > 0 ? Math.max(0, (ethBalance - 0.0001) * ethPrice) : 0;
   const historyFor = (asset: PortfolioAsset) => period === "7D" ? asset.sparkline ?? [] : historicalPrices[asset.id ?? ""] ?? [];
   const historyLength = Math.max(24, ...portfolio.map((asset) => historyFor(asset).length));
   const trend = Array.from({ length: historyLength }, (_, index) => {
@@ -932,25 +935,55 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
   });
   const formattedAddress = walletAddress ? `${walletAddress.slice(0, 8)}...${walletAddress.slice(-6)}` : "";
 
+  function requireWallet(action: "deposit" | "withdraw") {
+    if (isConnected && address) {
+      setActionNotice("");
+      return true;
+    }
+    setActionNotice(`Create your wallet above before you can ${action === "deposit" ? "receive" : "send"} crypto.`);
+    return false;
+  }
+
+  function openWithdraw() {
+    if (!requireWallet("withdraw")) return;
+    setTransferMessage("");
+    setTransferHash("");
+    setActiveModal("withdraw");
+  }
+
   async function submitTransfer(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setTransferMessage("");
     setTransferHash("");
+    if (!requireWallet("withdraw")) return;
     if (!isAddress(destination)) {
       setTransferMessage("Enter a valid destination wallet address.");
       return;
     }
     try {
-      const value = parseEther(transferAmount);
-      const valueString = value.toString();
-      if (valueString === "0" || valueString.startsWith("-")) throw new Error("Enter an amount greater than zero.");
+      const amountUsd = Number(transferAmount);
+      if (!Number.isFinite(amountUsd) || amountUsd <= 0) throw new Error("Enter a USD amount greater than zero.");
+      if (!ethPrice || ethPrice <= 0) throw new Error("The live ETH price is unavailable. Try again when market data loads.");
+      const amountEth = amountUsd / ethPrice;
+      if (amountEth + 0.0001 > ethBalance) throw new Error("Insufficient ETH. The maximum reserves a small amount for Base network fees.");
+      const value = parseEther(amountEth.toFixed(18));
       if (chainId !== base.id) await switchChainAsync({ chainId: base.id });
       const hash = await sendTransactionAsync({ to: getAddress(destination), value, chainId: base.id });
       setTransferHash(hash);
-      setTransferMessage("Transaction submitted to Base.");
+      setTransferMessage(`Transaction submitted to Base for approximately $${amountUsd.toFixed(2)} (${amountEth.toFixed(6)} ETH).`);
     } catch (error) {
       setTransferMessage(error instanceof Error ? error.message : "The transfer could not be submitted.");
     }
+  }
+
+  function setMaximumTransfer() {
+    if (!requireWallet("withdraw")) return;
+    if (!maxTransferUsd) {
+      setTransferMessage(ethPrice ? "There is no transferable ETH balance after the network-fee reserve." : "The live ETH price is unavailable.");
+      return;
+    }
+    setTransferMessage("");
+    setTransferAmount(maxTransferUsd.toFixed(2));
   }
 
   async function copyAddress() {
@@ -964,11 +997,15 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
   }
 
   async function openDeposit() {
-    if (!isConnected || !address) return;
+    const depositAddress = address;
+    if (!isConnected || !depositAddress) {
+      requireWallet("deposit");
+      return;
+    }
     setActiveModal("deposit");
     setCopyStatus("");
     try {
-      await navigator.clipboard.writeText(address);
+      await navigator.clipboard.writeText(depositAddress);
       setCopyStatus("Address copied");
     } catch {
       setCopyStatus("Clipboard unavailable");
@@ -978,39 +1015,41 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
   return <div className="wallet-view portfolio-view">
     <section className="portfolio-value-card">
       <div className="portfolio-value-label"><span>Est. Total Value</span><button className="balance-toggle portfolio-privacy" type="button" onClick={onToggleBalance} aria-label={isBalanceHidden ? "Show portfolio values" : "Hide portfolio values"}>{isBalanceHidden ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
-      {!isConnected || !address ? <OnchainWallet draggable={false} className="portfolio-wallet-connect"><ConnectWallet className="portfolio-connect-button" disconnectedLabel="Connect Coinbase Wallet" /></OnchainWallet> : <div className="portfolio-connected-state">
+      {!isConnected || !address ? <div className="portfolio-wallet-empty"><span className="eyebrow">BASE EMBEDDED WALLET</span><p>Create a secure wallet to view live assets and use network actions.</p><OnchainWallet draggable={false} className="portfolio-wallet-connect"><ConnectWallet className="portfolio-connect-button" disconnectedLabel="Create Your Wallet" /></OnchainWallet></div> : <div className="portfolio-connected-state">
         <strong className={`portfolio-total portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{`$${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</strong>
         <a className="portfolio-address-line" href={`https://basescan.org/address/${address}`} target="_blank" rel="noreferrer">{formattedAddress}<ExternalLink size={12} /></a>
       </div>}
     </section>
 
     <div className="portfolio-actions">
-      <button type="button" className="portfolio-action" onClick={() => { setTransferMessage(""); setTransferHash(""); setActiveModal("withdraw"); }} disabled={!isConnected || !address}><ArrowUpRight size={16} />Withdraw</button>
-      <button type="button" className="portfolio-action" onClick={() => void openDeposit()} disabled={!isConnected || !address}><ArrowDownLeft size={16} />Top Up</button>
+      <button type="button" className="portfolio-action" onClick={openWithdraw}><ArrowUpRight size={16} />Withdraw</button>
+      <button type="button" className="portfolio-action" onClick={() => void openDeposit()}><ArrowDownLeft size={16} />Top Up</button>
     </div>
+    {actionNotice && <p className="portfolio-action-notice" role="status">{actionNotice}</p>}
 
     <section className="portfolio-trend-section">
-      <div className="portfolio-trend-heading"><div className="section-heading portfolio-section-heading"><div><span className="eyebrow">BASE NETWORK</span><h3>Asset Trend</h3></div></div><div className="portfolio-range-tabs" aria-label="Asset trend date range">{(["7D", "30D", "180D", "360D"] as const).map((range) => <button type="button" key={range} aria-pressed={period === range} className={period === range ? "active" : ""} onClick={() => setPeriod(range)}>{range}</button>)}</div></div>
+      <div className="portfolio-trend-heading"><div className="section-heading portfolio-section-heading"><div><span className="eyebrow">BASE NETWORK</span><h3>Asset Trend</h3></div></div></div>
       <div className="portfolio-chart" aria-label="Estimated portfolio value trend over the last seven days">
         <ResponsiveContainer width="100%" height={174}>
           <AreaChart data={trend} margin={{ top: 12, right: 2, left: 2, bottom: 0 }}>
             <defs>
-              <linearGradient id="portfolio-line" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#c679ff" /><stop offset="55%" stopColor="#9b6bff" /><stop offset="100%" stopColor="#48e4d0" /></linearGradient>
-              <linearGradient id="portfolio-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#9270ca" stopOpacity={0.19} /><stop offset="100%" stopColor="#14121e" stopOpacity={0} /></linearGradient>
+              <linearGradient id="portfolio-line" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#c044ff" /><stop offset="54%" stopColor="#a15cff" /><stop offset="100%" stopColor="#38eed0" /></linearGradient>
+              <linearGradient id="portfolio-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#a15cff" stopOpacity={0.2} /><stop offset="100%" stopColor="#13121c" stopOpacity={0.015} /></linearGradient>
             </defs>
-            <Area type="monotone" dataKey="value" stroke="url(#portfolio-line)" strokeWidth={2.5} fill="url(#portfolio-fill)" dot={false} activeDot={false} isAnimationActive={false} />
+            <Area type="monotone" dataKey="value" stroke="url(#portfolio-line)" strokeWidth={3} fill="url(#portfolio-fill)" dot={false} activeDot={false} isAnimationActive={false} />
           </AreaChart>
         </ResponsiveContainer>
       </div>
+      <div className="portfolio-range-tabs" aria-label="Asset trend date range">{(["7D", "30D", "180D", "360D"] as const).map((range) => <button type="button" key={range} aria-pressed={period === range} className={period === range ? "active" : ""} onClick={() => setPeriod(range)}>{range}</button>)}</div>
     </section>
 
     <section className="portfolio-holdings" aria-label="Portfolio holdings">
-      {portfolio.filter((asset) => asset.symbol === "RTR" || (asset.amount !== null && asset.amount > 0)).map((asset) => <div className={`portfolio-holding-row${asset.symbol === "RTR" ? " portfolio-primary-asset" : ""}`} key={asset.symbol}><span><i className={`asset-logo asset-${asset.symbol.toLowerCase()}`}>{asset.symbol === "RTR" ? "R" : asset.symbol.slice(0, 1)}</i><span><strong>{asset.name}</strong><small>{asset.symbol}</small></span></span><span className="portfolio-holding-value"><strong className={`portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{asset.amount === null ? "—" : `${asset.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${asset.symbol}`}</strong><small className={`portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{asset.value === null ? "$—" : `$${asset.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</small></span></div>)}
+      {portfolio.slice(0, 3).map((asset, index) => <article className={`portfolio-holding-row${index === 0 ? " portfolio-primary-asset" : ""}`} key={asset.symbol}><span><i className={`asset-logo asset-${asset.symbol.toLowerCase()}`}>{asset.symbol === "RTR" ? <Image src="/logo.png" width={34} height={34} alt="" /> : asset.symbol.slice(0, 1)}</i><span><strong>{asset.name}</strong><small>{asset.symbol}</small></span></span><span className="portfolio-holding-value"><strong className={`portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{asset.amount === null ? "—" : `${asset.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${asset.symbol}`}</strong><small className={`portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{asset.value === null ? "$—" : `$${asset.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</small></span></article>)}
     </section>
 
-    {activeModal === "deposit" && address && <div className="portfolio-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setActiveModal(null); }}><section className="portfolio-modal" role="dialog" aria-modal="true" aria-labelledby="deposit-title"><div className="portfolio-modal-header"><div><span className="eyebrow">BASE MAINNET</span><h3 id="deposit-title">Top Up</h3></div><button type="button" className="modal-close" aria-label="Close deposit dialog" onClick={() => setActiveModal(null)}><X size={18} /></button></div><p className="portfolio-modal-caption">Deposit Crypto (No verification required)</p><div className="portfolio-qr-frame">{qrCodeSvg ? <div role="img" aria-label="QR code for the connected Base wallet address" dangerouslySetInnerHTML={{ __html: qrCodeSvg }} /> : <span className="portfolio-qr-placeholder" role="status"><span className="sr-only">Resolving secure wallet address</span></span>}</div><div className="portfolio-full-address">{address}</div><button type="button" className="portfolio-copy-button" onClick={() => void copyAddress()}><Copy size={15} />{copyStatus || "Click to Copy"}</button></section></div>}
+    {activeModal === "deposit" && isConnected && address && <div className="portfolio-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setActiveModal(null); }}><section className="portfolio-modal" role="dialog" aria-modal="true" aria-labelledby="deposit-title"><div className="portfolio-modal-header"><div><span className="eyebrow">BASE MAINNET</span><h3 id="deposit-title">Top Up</h3></div><button type="button" className="modal-close" aria-label="Close deposit dialog" onClick={() => setActiveModal(null)}><X size={18} /></button></div><p className="portfolio-modal-caption">Scan the code or copy your public wallet address.</p><div className="portfolio-qr-frame">{qrCodeSvg ? <div role="img" aria-label="QR code for the connected Base wallet address" dangerouslySetInnerHTML={{ __html: qrCodeSvg }} /> : <span className="portfolio-qr-placeholder" role="status"><span className="sr-only">Resolving secure wallet address</span></span>}</div><div className="portfolio-full-address">{address}</div><button type="button" className="portfolio-copy-button" onClick={() => void copyAddress()}><Copy size={15} />{copyStatus || "Copy Address"}</button></section></div>}
 
-    {activeModal === "withdraw" && <div className="portfolio-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setActiveModal(null); }}><section className="portfolio-modal portfolio-withdraw-drawer" role="dialog" aria-modal="true" aria-labelledby="withdraw-title"><div className="portfolio-modal-header"><div><span className="eyebrow">BASE MAINNET · ETH</span><h3 id="withdraw-title">Withdraw</h3></div><button type="button" className="modal-close" aria-label="Close withdraw dialog" onClick={() => setActiveModal(null)}><X size={18} /></button></div><form className="portfolio-transfer-form" onSubmit={(event) => void submitTransfer(event)}><label>Destination Wallet Address<input value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="0x..." autoComplete="off" required /></label><label>Amount to Transfer<input value={transferAmount} onChange={(event) => setTransferAmount(event.target.value)} placeholder="0.00" type="number" min="0" step="any" inputMode="decimal" required /><small>Native ETH on Base</small></label><button type="submit" className="portfolio-action portfolio-submit" disabled={isSending || !address}>{isSending ? "Confirm in wallet..." : "Review and send"}</button>{transferMessage && <p className="portfolio-feedback" role="status">{transferMessage}</p>}{transferHash && <a className="portfolio-tx-link" href={`https://basescan.org/tx/${transferHash}`} target="_blank" rel="noreferrer">View transaction on BaseScan <ExternalLink size={13} /></a>}</form></section></div>}
+    {activeModal === "withdraw" && isConnected && address && <div className="portfolio-modal-backdrop portfolio-withdraw-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setActiveModal(null); }}><section className="portfolio-modal portfolio-withdraw-drawer" role="dialog" aria-modal="true" aria-labelledby="withdraw-title"><div className="portfolio-modal-header"><div><span className="eyebrow">BASE MAINNET · ETH</span><h3 id="withdraw-title">Withdraw</h3></div><button type="button" className="modal-close" aria-label="Close withdraw dialog" onClick={() => setActiveModal(null)}><X size={18} /></button></div><form className="portfolio-transfer-form" onSubmit={(event) => void submitTransfer(event)}><label>Destination 0x Wallet Address<input value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="0x..." autoComplete="off" required /></label><label><span className="portfolio-amount-label">Amount (USD)<button type="button" onClick={setMaximumTransfer}>MAX</button></span><input value={transferAmount} onChange={(event) => { setTransferAmount(event.target.value); setTransferMessage(""); }} placeholder="0.00" type="number" min="0.01" step="0.01" inputMode="decimal" required /><small>{ethPrice ? `Approximately ${(Number(transferAmount || 0) / ethPrice).toFixed(6)} ETH. A small ETH amount is reserved for Base fees.` : "Waiting for live ETH pricing."}</small></label><button type="submit" className="portfolio-action portfolio-submit" disabled={isSending}>{isSending ? "Confirm in wallet..." : "Confirm Asset Transfer"}</button>{transferMessage && <p className="portfolio-feedback" role="status">{transferMessage}</p>}{transferHash && <a className="portfolio-tx-link" href={`https://basescan.org/tx/${transferHash}`} target="_blank" rel="noreferrer">View transaction on BaseScan <ExternalLink size={13} /></a>}</form></section></div>}
   </div>;
 }
 
