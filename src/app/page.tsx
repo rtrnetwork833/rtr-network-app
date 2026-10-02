@@ -33,7 +33,6 @@ import { formatUnits, getAddress, isAddress, parseEther, type Address } from "vi
 import { base } from "wagmi/chains";
 import { useSignInWithEmail, useSignInWithOAuth, useVerifyEmailOTP } from "@coinbase/cdp-hooks";
 import { FundCard } from "@coinbase/onchainkit/fund";
-import Image from "next/image";
 import QRCode from "qrcode";
 import { Area, AreaChart, Line, LineChart, ResponsiveContainer } from "recharts";
 import { usePathname, useRouter } from "next/navigation";
@@ -423,10 +422,10 @@ export default function Home() {
         {error && <div className="error-banner" role="alert">{error}</div>}
         {view === "dashboard" && <Dashboard balance={balance} balanceLoading={profileLoading} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} active={active} tier={activation?.tier} progress={progress} remaining={remaining} onStart={startCollection} />}
         {view === "upgrades" && <Upgrades onPurchase={purchase} />}
-        {view === "market" && <MarketView market={market} userEmail={user.email ?? ""} />}
+        {view === "market" && <MarketView market={market} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
         {view === "game" && <PlaceholderView icon={<Gamepad2 />} title="Node quests" text="Complete community missions to unlock bonus points." />}
-        {view === "wallet" && <PortfolioView market={market} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} />}
+        {view === "wallet" && <PortfolioView market={market} email={user.email ?? ""} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} />}
       </section>
 
       <nav className="bottom-nav" aria-label="Primary navigation">
@@ -838,12 +837,58 @@ function EmbeddedWalletAccess({ email }: { email: string }) {
   const { signInWithEmail } = useSignInWithEmail();
   const { verifyEmailOTP } = useVerifyEmailOTP();
   const { signInWithOAuth } = useSignInWithOAuth();
+  const { address } = useAccount();
+  const { connectors, connectAsync } = useConnect();
   const [emailInput, setEmailInput] = useState("");
   const accountEmail = email || emailInput;
   const [flowId, setFlowId] = useState("");
   const [otp, setOtp] = useState("");
+  const [emailVerified, setEmailVerified] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [isBusy, setIsBusy] = useState(false);
+
+  useEffect(() => {
+    if (address) return;
+    let cancelled = false;
+    let connecting = false;
+    const reconnectAuthorizedWallet = async () => {
+      if (connecting) return;
+      const connector = connectors.find((item) => item.id === "cdp-embedded-wallet");
+      if (!connector) return;
+      try {
+        if (await connector.isAuthorized() && !cancelled) {
+          connecting = true;
+          await connectAsync({ connector, chainId: base.id });
+        }
+      } catch {
+        // Keep the auth controls available if silent reconnection is unavailable.
+      } finally {
+        connecting = false;
+      }
+    };
+    const handleFocus = () => { void reconnectAuthorizedWallet(); };
+    void reconnectAuthorizedWallet();
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [address, connectors, connectAsync]);
+
+  async function connectWallet() {
+    setIsBusy(true);
+    setFeedback("");
+    try {
+      const connector = connectors.find((item) => item.id === "cdp-embedded-wallet");
+      if (!connector) throw new Error("The Coinbase embedded wallet connector is unavailable.");
+      await connectAsync({ connector, chainId: base.id });
+      setFeedback("Wallet connected to Base.");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Wallet verified, but connection failed. Try again.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
 
   async function startEmailSignIn(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -866,7 +911,9 @@ function EmbeddedWalletAccess({ email }: { email: string }) {
     setIsBusy(true);
     try {
       await verifyEmailOTP({ flowId, otp });
-      setFeedback("Verified. Your Base smart wallet is connecting.");
+      setEmailVerified(true);
+      setIsBusy(false);
+      await connectWallet();
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "That code could not be verified.");
     } finally {
@@ -879,8 +926,10 @@ function EmbeddedWalletAccess({ email }: { email: string }) {
     setIsBusy(true);
     try {
       await signInWithOAuth("google");
+      setFeedback("Complete sign-in to connect your Base wallet.");
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Google sign-in could not be started.");
+    } finally {
       setIsBusy(false);
     }
   }
@@ -890,24 +939,26 @@ function EmbeddedWalletAccess({ email }: { email: string }) {
     {!flowId ? <form onSubmit={(event) => void startEmailSignIn(event)}>
       <label>Email address<input type="email" value={accountEmail} onChange={(event) => setEmailInput(event.target.value)} readOnly={Boolean(email)} autoComplete="email" required /></label>
       <button type="submit" className="portfolio-copy-button" disabled={isBusy}>{isBusy ? "Sending code..." : "Create wallet with email"}</button>
-    </form> : <form onSubmit={(event) => void verifyEmail(event)}>
+    </form> : emailVerified ? <div className="cdp-verified-state">
+      <p>Confirm the Coinbase wallet connection to finish setup.</p>
+      <button type="button" className="portfolio-copy-button" onClick={() => void connectWallet()} disabled={isBusy}>{isBusy ? "Connecting wallet..." : "Connect wallet"}</button>
+    </div> : <form onSubmit={(event) => void verifyEmail(event)}>
       <label>6-digit email code<input type="text" value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" maxLength={6} required /></label>
       <button type="submit" className="portfolio-copy-button" disabled={isBusy || otp.length !== 6}>{isBusy ? "Verifying..." : "Verify and create wallet"}</button>
-      <button type="button" className="cdp-resend-button" onClick={() => { setFlowId(""); setOtp(""); setFeedback(""); }}>Use a different email</button>
+      <button type="button" className="cdp-resend-button" onClick={() => { setFlowId(""); setOtp(""); setEmailVerified(false); setFeedback(""); }}>Use a different email</button>
     </form>}
     <button type="button" className="cdp-google-button" onClick={() => void continueWithGoogle()} disabled={isBusy}>Continue with Google</button>
     {feedback && <p className="portfolio-feedback" role="status">{feedback}</p>}
   </div>;
 }
 
-function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: MarketAsset[]; isBalanceHidden: boolean; onToggleBalance: () => void }) {
+function PortfolioView({ market, email, isBalanceHidden, onToggleBalance }: { market: MarketAsset[]; email: string; isBalanceHidden: boolean; onToggleBalance: () => void }) {
   const { address, chainId } = useAccount();
   const { connectors, connectAsync } = useConnect();
   const { sendTransactionAsync, isPending: isSending } = useSendTransaction();
   const { switchChainAsync } = useSwitchChain();
   const [profileAddress, setProfileAddress] = useState<Address>();
   const [profileAddressLoading, setProfileAddressLoading] = useState(true);
-  const silentReconnectAttempted = useRef(false);
   const walletAddress = address ?? profileAddress;
   const { data: nativeBalance } = useBalance({ address: walletAddress });
   const usdcTokenAddress = "0xd9AAEC86B65D86f6A7B5B1b0c42FFA531710b6CA" as Address;
@@ -927,7 +978,7 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
   const { data: wsolBalance } = useBalance({ address: walletAddress, token: wsolAddress, query: { enabled: Boolean(walletAddress && wsolAddress) } });
   const { data: wbnbBalance } = useBalance({ address: walletAddress, token: wbnbAddress, query: { enabled: Boolean(walletAddress && wbnbAddress) } });
   const [activeModal, setActiveModal] = useState<"deposit" | "withdraw" | null>(null);
-  const [qrCode, setQrCode] = useState("");
+  const [qrCodeSvg, setQrCodeSvg] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
   const [destination, setDestination] = useState("");
   const [transferAmount, setTransferAmount] = useState("");
@@ -949,27 +1000,13 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
   }, []);
 
   useEffect(() => {
-    if (address || silentReconnectAttempted.current) return;
-    const cdpConnector = connectors.find((connector) => connector.id === "cdp-embedded-wallet");
-    if (!cdpConnector) return;
-    silentReconnectAttempted.current = true;
+    if (!address || activeModal !== "deposit") return;
     let cancelled = false;
-    void cdpConnector.isAuthorized()
-      .then((authorized) => {
-        if (authorized && !cancelled) return connectAsync({ connector: cdpConnector, chainId: base.id });
-      })
-      .catch(() => undefined);
+    QRCode.toString(address, { type: "svg", width: 220, margin: 1, errorCorrectionLevel: "M", color: { dark: "#071a30", light: "#ffffff" } })
+      .then((svg) => { if (!cancelled) setQrCodeSvg(svg); })
+      .catch(() => { if (!cancelled) setQrCodeSvg(""); });
     return () => { cancelled = true; };
-  }, [address, connectors, connectAsync]);
-
-  useEffect(() => {
-    if (!walletAddress || activeModal !== "deposit") return;
-    let cancelled = false;
-    QRCode.toDataURL(walletAddress, { width: 220, margin: 1, errorCorrectionLevel: "M", color: { dark: "#071a30", light: "#ffffff" } })
-      .then((dataUrl) => { if (!cancelled) setQrCode(dataUrl); })
-      .catch(() => { if (!cancelled) setQrCode(""); });
-    return () => { cancelled = true; };
-  }, [walletAddress, activeModal]);
+  }, [address, activeModal]);
 
   useEffect(() => {
     if (period === "7D") return;
@@ -1025,7 +1062,8 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
     }
     try {
       const value = parseEther(transferAmount);
-      if (value.toString() === "0") throw new Error("Enter an amount greater than zero.");
+      const valueString = value.toString();
+      if (valueString === "0" || valueString.startsWith("-")) throw new Error("Enter an amount greater than zero.");
       if (chainId !== base.id) await switchChainAsync({ chainId: base.id });
       const hash = await sendTransactionAsync({ to: getAddress(destination), value, chainId: base.id });
       setTransferHash(hash);
@@ -1036,25 +1074,39 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
   }
 
   async function copyAddress() {
-    if (!walletAddress) return;
+    if (!address) return;
     try {
-      await navigator.clipboard.writeText(walletAddress);
+      await navigator.clipboard.writeText(address);
       setCopyStatus("Copied");
     } catch {
       setCopyStatus("Copy unavailable");
     }
   }
 
+  async function openDeposit() {
+    if (!address) return;
+    setActiveModal("deposit");
+    setCopyStatus("");
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopyStatus("Address copied");
+    } catch {
+      setCopyStatus("Clipboard unavailable");
+    }
+  }
+
   return <div className="wallet-view portfolio-view">
     <section className="portfolio-value-card">
       <div className="portfolio-value-label"><span>Est. Total Value</span><button className="balance-toggle portfolio-privacy" type="button" onClick={onToggleBalance} aria-label={isBalanceHidden ? "Show portfolio values" : "Hide portfolio values"}>{isBalanceHidden ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
-      <strong className={`portfolio-total portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{walletAddress || profileAddressLoading ? `$${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}</strong>
-      {walletAddress && <a className="portfolio-address-line" href={`https://basescan.org/address/${walletAddress}`} target="_blank" rel="noreferrer">{formattedAddress}<ExternalLink size={12} /></a>}
+      {!address ? <EmbeddedWalletAccess email={email} /> : <div className="portfolio-connected-state">
+        <strong className={`portfolio-total portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{`$${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</strong>
+        <a className="portfolio-address-line" href={`https://basescan.org/address/${address}`} target="_blank" rel="noreferrer">{formattedAddress}<ExternalLink size={12} /></a>
+      </div>}
     </section>
 
     <div className="portfolio-actions">
       <button type="button" className="portfolio-action" onClick={() => { setTransferMessage(""); setTransferHash(""); setActiveModal("withdraw"); }} disabled={!address}><ArrowUpRight size={16} />Withdraw</button>
-      <button type="button" className="portfolio-action" onClick={() => { setCopyStatus(""); setActiveModal("deposit"); }} disabled={!walletAddress}><ArrowDownLeft size={16} />Top Up</button>
+      <button type="button" className="portfolio-action" onClick={() => void openDeposit()} disabled={!address}><ArrowDownLeft size={16} />Top Up</button>
     </div>
 
     <section className="portfolio-trend-section">
@@ -1076,14 +1128,13 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
       {portfolio.filter((asset) => asset.symbol === "RTR" || (asset.amount !== null && asset.amount > 0)).map((asset) => <div className={`portfolio-holding-row${asset.symbol === "RTR" ? " portfolio-primary-asset" : ""}`} key={asset.symbol}><span><i className={`asset-logo asset-${asset.symbol.toLowerCase()}`}>{asset.symbol === "RTR" ? "R" : asset.symbol.slice(0, 1)}</i><span><strong>{asset.name}</strong><small>{asset.symbol}</small></span></span><span className="portfolio-holding-value"><strong className={`portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{asset.amount === null ? "—" : `${asset.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${asset.symbol}`}</strong><small className={`portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{asset.value === null ? "$—" : `$${asset.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</small></span></div>)}
     </section>
 
-    {activeModal === "deposit" && <div className="portfolio-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setActiveModal(null); }}><section className="portfolio-modal" role="dialog" aria-modal="true" aria-labelledby="deposit-title"><div className="portfolio-modal-header"><div><span className="eyebrow">BASE MAINNET</span><h3 id="deposit-title">Top Up</h3></div><button type="button" className="modal-close" aria-label="Close deposit dialog" onClick={() => setActiveModal(null)}><X size={18} /></button></div><p className="portfolio-modal-caption">Deposit Crypto (No verification required)</p><div className="portfolio-qr-frame">{qrCode ? <Image src={qrCode} width={202} height={202} unoptimized alt="QR code for the Base wallet address" /> : <span className="portfolio-qr-placeholder" role="status"><span className="sr-only">Resolving secure wallet address</span></span>}</div>{walletAddress && <><div className="portfolio-full-address">{walletAddress}</div><button type="button" className="portfolio-copy-button" onClick={() => void copyAddress()}><Copy size={15} />{copyStatus || "Click to Copy"}</button></>}</section></div>}
+    {activeModal === "deposit" && address && <div className="portfolio-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setActiveModal(null); }}><section className="portfolio-modal" role="dialog" aria-modal="true" aria-labelledby="deposit-title"><div className="portfolio-modal-header"><div><span className="eyebrow">BASE MAINNET</span><h3 id="deposit-title">Top Up</h3></div><button type="button" className="modal-close" aria-label="Close deposit dialog" onClick={() => setActiveModal(null)}><X size={18} /></button></div><p className="portfolio-modal-caption">Deposit Crypto (No verification required)</p><div className="portfolio-qr-frame">{qrCodeSvg ? <div role="img" aria-label="QR code for the connected Base wallet address" dangerouslySetInnerHTML={{ __html: qrCodeSvg }} /> : <span className="portfolio-qr-placeholder" role="status"><span className="sr-only">Resolving secure wallet address</span></span>}</div><div className="portfolio-full-address">{address}</div><button type="button" className="portfolio-copy-button" onClick={() => void copyAddress()}><Copy size={15} />{copyStatus || "Click to Copy"}</button></section></div>}
 
     {activeModal === "withdraw" && <div className="portfolio-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setActiveModal(null); }}><section className="portfolio-modal portfolio-withdraw-drawer" role="dialog" aria-modal="true" aria-labelledby="withdraw-title"><div className="portfolio-modal-header"><div><span className="eyebrow">BASE MAINNET · ETH</span><h3 id="withdraw-title">Withdraw</h3></div><button type="button" className="modal-close" aria-label="Close withdraw dialog" onClick={() => setActiveModal(null)}><X size={18} /></button></div><form className="portfolio-transfer-form" onSubmit={(event) => void submitTransfer(event)}><label>Destination Wallet Address<input value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="0x..." autoComplete="off" required /></label><label>Amount to Transfer<input value={transferAmount} onChange={(event) => setTransferAmount(event.target.value)} placeholder="0.00" type="number" min="0" step="any" inputMode="decimal" required /><small>Native ETH on Base</small></label><button type="submit" className="portfolio-action portfolio-submit" disabled={isSending || !address}>{isSending ? "Confirm in wallet..." : "Review and send"}</button>{transferMessage && <p className="portfolio-feedback" role="status">{transferMessage}</p>}{transferHash && <a className="portfolio-tx-link" href={`https://basescan.org/tx/${transferHash}`} target="_blank" rel="noreferrer">View transaction on BaseScan <ExternalLink size={13} /></a>}</form></section></div>}
   </div>;
 }
 
-function MarketView({ market, userEmail }: { market: MarketAsset[]; userEmail: string }) {
-  const { address } = useAccount();
+function MarketView({ market }: { market: MarketAsset[] }) {
   const [query, setQuery] = useState("");
   const [country] = useState(() => {
     if (typeof navigator === "undefined") return "US";
@@ -1102,7 +1153,6 @@ function MarketView({ market, userEmail }: { market: MarketAsset[]; userEmail: s
     <div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and real-time movement across the RTR ecosystem.</p></div>
     <section className="onramp-banner" aria-label="Buy crypto">
       <div className="onramp-banner-heading"><span className="eyebrow">FUND YOUR BASE WALLET</span><h3>Move from fiat to onchain.</h3></div>
-      {!address && <EmbeddedWalletAccess email={userEmail} />}
       <FundCard country={country} assetSymbol="ETH" headerText="Buy crypto on Base" buttonText="Buy Crypto with Card / Bank" className="onramp-fund-card" />
       <p className="onramp-disclaimer">Secure processing powered safely by Coinbase Onramp. Quick identity check or log-in may be required for first-time fiat processing.</p>
     </section>
