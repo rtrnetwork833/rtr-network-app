@@ -42,6 +42,7 @@ import { useAccount, useBalance, useReadContract, useSendTransaction, useSwitchC
 import { normalizeDateOfBirth } from "@/lib/date";
 import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/client";
+import { fetchProfileWalletAddress, profileWalletQueryKey } from "@/lib/wallet-profile";
 
 type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "wallet";
 type Activation = { tier: string; activated_at: string; expires_at: string };
@@ -425,7 +426,7 @@ export default function Home() {
         {view === "market" && <MarketView market={market} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
         {view === "game" && <PlaceholderView icon={<Gamepad2 />} title="Node quests" text="Complete community missions to unlock bonus points." />}
-        {view === "wallet" && <PortfolioView market={market} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} />}
+        {view === "wallet" && <PortfolioView userId={user.id} market={market} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} />}
       </section>
 
       <nav className="bottom-nav" aria-label="Primary navigation">
@@ -833,12 +834,18 @@ function AuthOverlay() {
   );
 }
 
-function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: MarketAsset[]; isBalanceHidden: boolean; onToggleBalance: () => void }) {
+function PortfolioView({ userId, market, isBalanceHidden, onToggleBalance }: { userId: string; market: MarketAsset[]; isBalanceHidden: boolean; onToggleBalance: () => void }) {
   const { address, chainId, isConnected } = useAccount();
   const { sendTransactionAsync, isPending: isSending } = useSendTransaction();
   const { switchChainAsync } = useSwitchChain();
-  const [profileAddress, setProfileAddress] = useState<Address>();
-  const [profileAddressLoading, setProfileAddressLoading] = useState(true);
+  const profileWalletQuery = useQuery({
+    queryKey: profileWalletQueryKey(userId),
+    queryFn: fetchProfileWalletAddress,
+    staleTime: Infinity,
+    retry: 1,
+  });
+  const profileAddress = profileWalletQuery.data ?? undefined;
+  const profileAddressLoading = profileWalletQuery.isPending;
   const walletAddress = address ?? profileAddress;
   const { data: nativeBalance } = useBalance({ address: walletAddress });
   const usdcTokenAddress = "0xd9AAEC86B65D86f6A7B5B1b0c42FFA531710b6CA" as Address;
@@ -867,18 +874,6 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
   const [actionNotice, setActionNotice] = useState("");
   const [period, setPeriod] = useState<"7D" | "30D" | "180D" | "360D">("7D");
   const [historicalPrices, setHistoricalPrices] = useState<Record<string, number[]>>({});
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetch("/api/profile/wallet", { cache: "no-store" })
-      .then(async (response) => response.ok ? await response.json() as { walletAddress?: string | null } : null)
-      .then((profile) => {
-        if (!cancelled && profile?.walletAddress && isAddress(profile.walletAddress)) setProfileAddress(getAddress(profile.walletAddress));
-      })
-      .catch(() => undefined)
-      .finally(() => { if (!cancelled) setProfileAddressLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
 
   useEffect(() => {
     if (!walletAddress || activeModal !== "deposit") return;
