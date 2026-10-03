@@ -211,7 +211,18 @@ export default function PortfolioTab() {
           {!activeAddress ? (
             <div className="w-full theme-neon premium-btn-wrapper">
               <Wallet>
-                <ConnectWallet disconnectedLabel="Create & Initialize Wallet" className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-teal-500 hover:from-purple-500 hover:to-teal-400 text-white font-bold text-sm transition-all duration-200 justify-center shadow-[0_4px_15px_rgba(168,85,247,0.4)]" />
+                <ConnectWallet
+                  disconnectedLabel="Create & Initialize Wallet"
+                  render={({ onClick }) => (
+                    <button
+                      type="button"
+                      onClick={onClick}
+                      className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-teal-500 hover:from-purple-500 hover:to-teal-400 text-white font-bold text-sm transition-all duration-200 justify-center shadow-[0_4px_15px_rgba(168,85,247,0.4)]"
+                    >
+                      Create & Initialize Wallet
+                    </button>
+                  )}
+                />
               </Wallet>
             </div>
           ) : (
