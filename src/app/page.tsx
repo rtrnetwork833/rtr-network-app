@@ -4,9 +4,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowUpRight,
+  ArrowDownLeft,
   Bell,
   Check,
   ChevronRight,
+  Copy,
   Crown,
   Eye,
   EyeOff,
@@ -35,12 +37,20 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { normalizeDateOfBirth } from "@/lib/date";
 import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/client";
+import { useAccount, useBalance, useReadContract, useSendTransaction, useSwitchChain } from 'wagmi';
+import { Wallet, ConnectWallet } from '@coinbase/onchainkit/wallet';
+import { formatUnits, getAddress, isAddress, parseEther, type Address } from 'viem';
+import { base } from 'wagmi/chains';
+import QRCode from 'qrcode';
+import Image from 'next/image';
+import { fetchProfileWalletAddress, profileWalletQueryKey, saveProfileWalletAddress } from "@/lib/wallet-profile";
 
-type View = "dashboard" | "upgrades" | "market" | "trading" | "game";
+type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "portfolio";
 type Activation = { tier: string; activated_at: string; expires_at: string };
 type Profile = { full_name?: string | null; avatar_url: string | null; balance: number | string | null };
 type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null; sparkline?: number[] };
 const supabase = createClient();
+const rtrTokenAbi = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
 const AUTH_EMAIL_STORAGE_KEY = "user_email";
 const LEGACY_AUTH_EMAIL_STORAGE_KEY = "rtr-email";
 const MARKET_CACHE_KEY = "rtr-market-prices-v1";
@@ -219,7 +229,7 @@ export default function Home() {
   useEffect(() => {
     const mountTimer = window.setTimeout(() => {
       const savedView = window.localStorage.getItem("active_tab");
-      if (savedView === "dashboard" || savedView === "upgrades" || savedView === "market" || savedView === "trading" || savedView === "game") {
+      if (savedView === "dashboard" || savedView === "upgrades" || savedView === "market" || savedView === "trading" || savedView === "game" || savedView === "portfolio") {
         setView(savedView);
       }
       setNavigationReady(true);
@@ -414,6 +424,7 @@ export default function Home() {
         {view === "market" && <MarketView market={market} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
         {view === "game" && <PlaceholderView icon={<Gamepad2 />} title="Node quests" text="Complete community missions to unlock bonus points." />}
+        {view === "portfolio" && <PortfolioView market={market} />}
       </section>
 
       <nav className="bottom-nav" aria-label="Primary navigation">
@@ -422,7 +433,7 @@ export default function Home() {
         <NavItem icon={<TrendingUp />} label="Market" active={view === "market"} onClick={() => setView("market")} />
         <NavItem icon={<Activity />} label="Trading" active={view === "trading"} onClick={() => setView("trading")} />
         <NavItem icon={<Gamepad2 />} label="Game" active={view === "game"} onClick={() => setView("game")} />
-        <NavItem icon={<WalletIcon />} label="Portfolio" active={pathname === "/portfolio"} onClick={() => router.push("/portfolio")} />
+        <NavItem icon={<WalletIcon />} label="Portfolio" active={view === "portfolio"} onClick={() => setView("portfolio")} />
       </nav>
 
     </main>
@@ -438,6 +449,291 @@ function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, 
     <button className="collect-button" onClick={onStart}><span className="pulse" />{active ? "Collection active" : "Start 24-hour free node"}<ChevronRight size={18} /></button>
     <div className="metric-grid"><div><span>Network</span><strong>Base Mainnet</strong></div><div><span>Protocol</span><strong>v2.4.8</strong></div><div><span>Multiplier</span><strong>1.0x</strong><small>Standard Hashrate Protocol</small></div></div>
   </div>;
+}
+
+function PortfolioView({ market }: { market: MarketAsset[] }) {
+  const { address, chainId, isConnected } = useAccount();
+  const { sendTransactionAsync, isPending: isSending } = useSendTransaction();
+  const { switchChainAsync } = useSwitchChain();
+  const queryClient = useQueryClient();
+  const [userId, setUserId] = useState("");
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [activeRange, setActiveRange] = useState('7D');
+  const [showTopUp, setShowTopUp] = useState(false);
+  const [showWithdraw, setShowWithdraw] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [qrCodeSvg, setQrCodeSvg] = useState("");
+  const [destination, setDestination] = useState("");
+  const [amountEth, setAmountEth] = useState("");
+  const [transferNotice, setTransferNotice] = useState("");
+  const [transactionHash, setTransactionHash] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+    void supabase.auth.getUser().then(({ data }) => {
+      if (mounted) setUserId(data.user?.id ?? "");
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserId(session?.user.id ?? "");
+    });
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const profileWalletQuery = useQuery({
+    queryKey: profileWalletQueryKey(userId),
+    queryFn: fetchProfileWalletAddress,
+    enabled: Boolean(userId),
+    staleTime: Infinity,
+    retry: 1,
+  });
+  const dbWalletAddress = profileWalletQuery.data;
+  const activeAddress = address ?? dbWalletAddress ?? undefined;
+  const nativeBalance = useBalance({ address: activeAddress });
+  const cbBtcTokenAddress = (process.env.NEXT_PUBLIC_BASE_CBBTC_TOKEN_ADDRESS ?? "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf") as Address;
+  const cbBtcBalance = useBalance({ address: activeAddress, token: cbBtcTokenAddress, query: { enabled: Boolean(activeAddress) } });
+  const rtrTokenAddress = process.env.NEXT_PUBLIC_RTR_TOKEN_ADDRESS as Address | undefined;
+  const rtrBalance = useReadContract({
+    address: rtrTokenAddress,
+    abi: rtrTokenAbi,
+    functionName: "balanceOf",
+    args: activeAddress ? [activeAddress] : undefined,
+    query: { enabled: Boolean(activeAddress && rtrTokenAddress) },
+  });
+  const priceFor = (symbol: string) => market.find((asset) => asset.symbol === symbol)?.price ?? null;
+  const rtrAmount = typeof rtrBalance.data === "bigint" ? Number(formatUnits(rtrBalance.data, 18)) : activeAddress ? 0 : null;
+  const ethAmount = nativeBalance.data ? Number(formatUnits(nativeBalance.data.value, nativeBalance.data.decimals)) : activeAddress ? 0 : null;
+  const cbBtcAmount = cbBtcBalance.data ? Number(formatUnits(cbBtcBalance.data.value, cbBtcBalance.data.decimals)) : activeAddress ? 0 : null;
+  const rtrValue = rtrAmount !== null && priceFor("RTR") !== null ? rtrAmount * (priceFor("RTR") ?? 0) : null;
+  const ethValue = ethAmount !== null && priceFor("ETH") !== null ? ethAmount * (priceFor("ETH") ?? 0) : null;
+  const cbBtcValue = cbBtcAmount !== null && priceFor("cbBTC") !== null ? cbBtcAmount * (priceFor("cbBTC") ?? 0) : null;
+  const totalValue = [rtrValue, ethValue, cbBtcValue].reduce<number>((sum, value) => sum + (value ?? 0), 0);
+
+  useEffect(() => {
+    if (!userId || !isConnected || !address || chainId !== base.id || dbWalletAddress?.toLowerCase() === address.toLowerCase()) return;
+    let active = true;
+    void saveProfileWalletAddress(getAddress(address)).then(() => {
+      if (active) queryClient.setQueryData(profileWalletQueryKey(userId), getAddress(address));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [address, chainId, dbWalletAddress, isConnected, queryClient, userId]);
+
+  useEffect(() => {
+    if (!activeAddress || !showTopUp) return;
+    let active = true;
+    void QRCode.toString(activeAddress, { type: "svg", width: 220, margin: 1, errorCorrectionLevel: "M", color: { dark: "#10101b", light: "#ffffff" } })
+      .then((svg) => { if (active) setQrCodeSvg(svg); })
+      .catch(() => { if (active) setQrCodeSvg(""); });
+    return () => { active = false; };
+  }, [activeAddress, showTopUp]);
+
+  const ethPrice = priceFor("ETH");
+  const maxEth = Math.max(0, (ethAmount ?? 0) - 0.0001);
+
+  const handleCopyAddress = () => {
+    if (!activeAddress) return;
+    void navigator.clipboard.writeText(activeAddress)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => window.alert("Clipboard access is unavailable in this browser."));
+  };
+
+  async function submitWithdraw(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setTransferNotice("");
+    setTransactionHash("");
+    if (!isConnected || !address) {
+      window.alert("Connect your Coinbase wallet before signing a transfer.");
+      return;
+    }
+    if (!isAddress(destination)) {
+      setTransferNotice("Enter a valid destination 0x wallet address.");
+      return;
+    }
+    const valueEth = Number(amountEth);
+    if (!Number.isFinite(valueEth) || valueEth <= 0) {
+      setTransferNotice("Enter an ETH amount greater than zero.");
+      return;
+    }
+    if (valueEth > maxEth) {
+      setTransferNotice("Insufficient ETH after reserving a small amount for Base network fees.");
+      return;
+    }
+    try {
+      if (chainId !== base.id) await switchChainAsync({ chainId: base.id });
+      const hash = await sendTransactionAsync({ to: getAddress(destination), value: parseEther(amountEth), chainId: base.id });
+      setTransactionHash(hash);
+      setTransferNotice("Transaction submitted to Base.");
+    } catch (error) {
+      setTransferNotice(error instanceof Error ? error.message : "The transaction could not be submitted.");
+    }
+  }
+
+  function formatUsd(value: number | null) {
+    if (value === null || !Number.isFinite(value)) return "$—";
+    return value.toLocaleString(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function AssetTrendChart({ values }: { values: number[] }) {
+    const samples = values.length > 1 ? values : [0, 1, 0.5, 1.5];
+    const minimum = Math.min(...samples);
+    const maximum = Math.max(...samples);
+    const spread = maximum - minimum || 1;
+    const points = samples.map((value, index) => `${(index / (samples.length - 1)) * 400},${88 - ((value - minimum) / spread) * 72}`).join(" ");
+    const firstPoint = points.split(" ")[0];
+    const lastPoint = points.split(" ").at(-1);
+    const fillPath = `M ${firstPoint} L ${points.replaceAll(" ", " L ")} L 400 100 L 0 100 Z`;
+
+    return <div className="w-full h-32 relative mt-4 overflow-hidden rounded-xl bg-slate-950/20">
+      <svg className="w-full h-full" viewBox="0 0 400 100" preserveAspectRatio="none" aria-label="Portfolio asset trend">
+        <defs>
+          <linearGradient id="tracerGradient" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#a855f7" /><stop offset="100%" stopColor="#14b8a6" /></linearGradient>
+          <linearGradient id="fillGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#a855f7" stopOpacity="0.25" /><stop offset="100%" stopColor="#020617" stopOpacity="0" /></linearGradient>
+        </defs>
+        <path d={fillPath} fill="url(#fillGradient)" />
+        <polyline points={points} fill="none" stroke="url(#tracerGradient)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        <title>{`Portfolio trend ending at ${lastPoint ?? "current value"}`}</title>
+      </svg>
+    </div>;
+  }
+
+  return (
+    <div className="portfolio-view">
+      <div className="portfolio-value-block">
+        <div className="portfolio-title-row">
+          <div>
+            <span className="portfolio-estimate-label">EST. TOTAL VALUE</span>
+            <span className="portfolio-total portfolio-blur-target" data-private={isPrivate}>{isPrivate ? "••••••" : activeAddress ? formatUsd(totalValue) : profileWalletQuery.isPending ? "Loading..." : "—"}</span>
+          </div>
+          <button className="portfolio-privacy" type="button" onClick={() => setIsPrivate(!isPrivate)} aria-label={isPrivate ? "Show balance" : "Hide balance"}>{isPrivate ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+        </div>
+        <div className="portfolio-address-line">
+          {activeAddress ? (
+            <>
+              <span className="portfolio-blur-target" data-private={isPrivate}>{`${activeAddress.slice(0, 6)}...${activeAddress.slice(-4)}`}</span>
+              <button onClick={handleCopyAddress} className="portfolio-connect">{copied ? <Check size={12} /> : <Copy size={12} />}{copied ? "Copied" : "Copy"}</button>
+            </>
+          ) : (
+            <div className="portfolio-connected-state">
+              <Wallet>
+                <ConnectWallet
+                  disconnectedLabel="Create & Initialize Wallet"
+                  render={({ onClick }) => (
+                    <button
+                      type="button"
+                      onClick={onClick}
+                      className="portfolio-wallet-init-button"
+                    >
+                      Create & Initialize Wallet
+                    </button>
+                  )}
+                />
+              </Wallet>
+            </div>
+          )}
+        </div>
+        <div className="portfolio-actions">
+          <button className="portfolio-action" onClick={() => {
+            if (!activeAddress) window.alert("No wallet address is linked to this profile.");
+            else if (!isConnected) window.alert("Reconnect your Coinbase wallet before signing a withdrawal.");
+            else setShowWithdraw(true);
+          }}>
+            <ArrowUpRight size={18} />Withdraw
+          </button>
+          <button className="portfolio-action" onClick={() => activeAddress ? setShowTopUp(true) : window.alert("No wallet address is linked to this profile.")}>
+            <ArrowDownLeft size={18} />Top Up
+          </button>
+        </div>
+      </div>
+
+      <div className="portfolio-section-heading">
+        <h3>Asset Trend</h3>
+        <span className="portfolio-period">Base Network Execution Layer</span>
+      </div>
+      <div className="portfolio-chart">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={market.find((asset) => asset.symbol === "ETH")?.sparkline?.map((val, i) => ({ value: val })) ?? []}>
+            <defs>
+              <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/>
+                <stop offset="95%" stopColor="#a855f7" stopOpacity={0}/>
+              </linearGradient>
+            </defs>
+            <Area type="monotone" dataKey="value" stroke="#a855f7" strokeWidth={2} fillOpacity={1} fill="url(#colorValue)" />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="portfolio-range-tabs">
+        {['7D', '30D', '180D', '360D'].map((range) => (
+          <button key={range} onClick={() => setActiveRange(range)} className={activeRange === range ? 'active' : ''}>{range}</button>
+        ))}
+      </div>
+
+      <div className="portfolio-section-heading">
+        <h3>Assets Breakdown</h3>
+      </div>
+      <div className="portfolio-holdings">
+        <div className="portfolio-holding-row portfolio-rtr-row">
+          <span><div className="asset-logo">R</div><div><strong>RTR Network</strong><small>RTR</small></div></span>
+          <strong className="portfolio-blur-target" data-private={isPrivate}>{isPrivate ? "••••" : rtrAmount === null ? "—" : `${rtrAmount.toLocaleString(undefined, { maximumFractionDigits: 6 })} RTR`}</strong>
+          <small className="portfolio-blur-target" data-private={isPrivate}>{isPrivate ? "••••" : formatUsd(rtrValue)}</small>
+        </div>
+        {[
+          { symbol: "ETH", name: "Ethereum", amount: ethAmount, value: ethValue },
+          { symbol: "cbBTC", name: "Coinbase Wrapped Bitcoin", amount: cbBtcAmount, value: cbBtcValue },
+        ].map((asset) => (
+          <div key={asset.symbol} className="portfolio-holding-row">
+            <span><div className="asset-logo asset-eth">{asset.symbol.slice(0, 1)}</div><div><strong>{asset.name}</strong><small>{asset.symbol}</small></div></span>
+            <strong className="portfolio-blur-target" data-private={isPrivate}>{isPrivate ? "••••" : asset.amount === null ? "—" : `${asset.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${asset.symbol}`}</strong>
+            <small className="portfolio-blur-target" data-private={isPrivate}>{isPrivate ? "••••" : formatUsd(asset.value)}</small>
+          </div>
+        ))}
+      </div>
+
+      {showTopUp && activeAddress && (
+        <div className="portfolio-modal-backdrop">
+          <div className="portfolio-modal">
+            <div className="portfolio-modal-header">
+              <h3>Network Deposit</h3>
+              <button onClick={() => setShowTopUp(false)} className="modal-close"><X size={16} /></button>
+            </div>
+            <p className="portfolio-modal-caption">Send supported Base network assets to this address.</p>
+            <div className="portfolio-qr-frame">
+              {qrCodeSvg ? <div role="img" aria-label="QR code for your wallet address" dangerouslySetInnerHTML={{ __html: qrCodeSvg }} /> : <span>Generating QR...</span>}
+            </div>
+            <div className="portfolio-full-address">{activeAddress}</div>
+            <button className="portfolio-copy-button" onClick={handleCopyAddress}>{copied ? <Check size={12} /> : <Copy size={12} />}{copied ? "Copied" : "Copy Address"}</button>
+          </div>
+        </div>
+      )}
+
+      {showWithdraw && activeAddress && isConnected && (
+        <div className="portfolio-modal-backdrop portfolio-withdraw-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowWithdraw(false); }}>
+          <section className="portfolio-withdraw-drawer" role="dialog" aria-modal="true" aria-labelledby="withdraw-title">
+            <div className="mb-5 flex items-center justify-between">
+              <h3 id="withdraw-title">Withdraw</h3>
+              <button type="button" onClick={() => setShowWithdraw(false)} className="modal-close"><X size={16} /></button>
+            </div>
+            <form onSubmit={(event) => void submitWithdraw(event)}>
+              <label className="portfolio-transfer-form label">Destination 0x Wallet Address
+                <input type="text" value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="0x..." autoComplete="off" required />
+              </label>
+              <label className="portfolio-transfer-form label">Amount (ETH)
+                <span className="flex gap-2"><input type="number" min="0" step="any" value={amountEth} onChange={(event) => setAmountEth(event.target.value)} placeholder="0.00" required /><button type="button" onClick={() => setAmountEth(maxEth.toString())} className="secondary-button">MAX</button></span>
+              </label>
+              <button type="submit" disabled={isSending} className="portfolio-submit primary-button">{isSending ? "Confirm in wallet..." : "Confirm Asset Transfer"}</button>
+              {transferNotice && <p className="portfolio-feedback" role="status">{transferNotice}</p>}
+              {transactionHash && <a className="portfolio-tx-link" href={`https://basescan.org/tx/${transactionHash}`} target="_blank" rel="noreferrer">View on BaseScan <ExternalLink size={12} /></a>}
+            </form>
+          </section>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function SplashGate({ exiting }: { exiting: boolean }) {
