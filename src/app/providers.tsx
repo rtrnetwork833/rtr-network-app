@@ -8,10 +8,12 @@ import { createCDPEmbeddedWalletConnector } from '@coinbase/cdp-wagmi';
 import { createConfig, http } from 'wagmi';
 import { base } from 'wagmi/chains';
 
-const projectId = process.env.NEXT_PUBLIC_CDP_PROJECT_ID ?? "";
+const cdpProjectId = process.env.NEXT_PUBLIC_CDP_PROJECT_ID || "";
+const reownProjectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID || "";
+const cdpApiKey = process.env.NEXT_PUBLIC_CDP_API_KEY || "";
 
 const cdpConfig = {
-  projectId,
+  projectId: cdpProjectId,
   ethereum: { createOnLogin: "smart" as const },
 };
 
@@ -38,8 +40,8 @@ export function Providers({ children }: { children: ReactNode }) {
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         <OnchainKitProvider
-          apiKey={process.env.NEXT_PUBLIC_CDP_API_KEY}
-          projectId={process.env.NEXT_PUBLIC_REOWN_PROJECT_ID || process.env.NEXT_PUBLIC_CDP_PROJECT_ID}
+          apiKey={cdpApiKey}
+          projectId={reownProjectId}
           chain={base}
         >
           {children}
