@@ -31,7 +31,7 @@ const wagmiConfig = createConfig({
   ssr: true,
 });
 
-export default function Providers({ children }: { children: ReactNode }) {
+export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
 
   return (
@@ -39,7 +39,7 @@ export default function Providers({ children }: { children: ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <OnchainKitProvider
           apiKey={process.env.NEXT_PUBLIC_CDP_API_KEY}
-          projectId={projectId}
+          projectId={process.env.NEXT_PUBLIC_REOWN_PROJECT_ID || process.env.NEXT_PUBLIC_CDP_PROJECT_ID}
           chain={base}
         >
           {children}
