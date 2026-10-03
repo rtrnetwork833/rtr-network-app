@@ -12,3 +12,12 @@ export async function fetchProfileWalletAddress(): Promise<Address | null> {
     ? getAddress(body.walletAddress)
     : null;
 }
+
+export async function saveProfileWalletAddress(walletAddress: Address): Promise<void> {
+  const response = await fetch("/api/profile/wallet", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ walletAddress }),
+  });
+  if (!response.ok) throw new Error("Unable to link this wallet to the profile.");
+}

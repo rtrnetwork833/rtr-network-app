@@ -38,11 +38,11 @@ import { Area, AreaChart, Line, LineChart, ResponsiveContainer } from "recharts"
 import { usePathname, useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAccount, useBalance, useReadContract, useSendTransaction, useSwitchChain } from "wagmi";
+import { useAccount, useBalance, useConnect, useReadContract, useSendTransaction, useSwitchChain } from "wagmi";
 import { normalizeDateOfBirth } from "@/lib/date";
 import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/client";
-import { fetchProfileWalletAddress, profileWalletQueryKey } from "@/lib/wallet-profile";
+import { fetchProfileWalletAddress, profileWalletQueryKey, saveProfileWalletAddress } from "@/lib/wallet-profile";
 
 type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "wallet";
 type Activation = { tier: string; activated_at: string; expires_at: string };
@@ -836,6 +836,8 @@ function AuthOverlay() {
 
 function PortfolioView({ userId, market, isBalanceHidden, onToggleBalance }: { userId: string; market: MarketAsset[]; isBalanceHidden: boolean; onToggleBalance: () => void }) {
   const { address, chainId, isConnected } = useAccount();
+  const { connectors, connectAsync, isPending: isConnectingWallet } = useConnect();
+  const queryClient = useQueryClient();
   const { sendTransactionAsync, isPending: isSending } = useSendTransaction();
   const { switchChainAsync } = useSwitchChain();
   const profileWalletQuery = useQuery({
@@ -872,6 +874,7 @@ function PortfolioView({ userId, market, isBalanceHidden, onToggleBalance }: { u
   const [transferMessage, setTransferMessage] = useState("");
   const [transferHash, setTransferHash] = useState("");
   const [actionNotice, setActionNotice] = useState("");
+  const [isSavingProfileWallet, setIsSavingProfileWallet] = useState(false);
   const [period, setPeriod] = useState<"7D" | "30D" | "180D" | "360D">("7D");
   const [historicalPrices, setHistoricalPrices] = useState<Record<string, number[]>>({});
 
@@ -949,6 +952,31 @@ function PortfolioView({ userId, market, isBalanceHidden, onToggleBalance }: { u
     setActiveModal("withdraw");
   }
 
+  async function initializeWallet() {
+    setActionNotice("");
+    const cdpConnector = connectors.find((connector) => connector.id === "cdp-embedded-wallet");
+    if (!cdpConnector) {
+      setActionNotice("Coinbase wallet connection is unavailable. Please try again later.");
+      return;
+    }
+    try {
+      const connection = await connectAsync({ connector: cdpConnector, chainId: base.id });
+      const connectedAddress = connection.accounts[0];
+      if (!connectedAddress || !isAddress(connectedAddress)) throw new Error("Coinbase did not return a valid wallet address.");
+      const normalizedAddress = getAddress(connectedAddress);
+      setIsSavingProfileWallet(true);
+      await saveProfileWalletAddress(normalizedAddress);
+      queryClient.setQueryData(profileWalletQueryKey(userId), normalizedAddress);
+      setActionNotice("");
+    } catch (error) {
+      setActionNotice(error instanceof Error
+        ? `Wallet initialization failed: ${error.message}`
+        : "Wallet initialization failed. Complete Coinbase authentication and try again.");
+    } finally {
+      setIsSavingProfileWallet(false);
+    }
+  }
+
   async function submitTransfer(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setTransferMessage("");
@@ -1017,6 +1045,7 @@ function PortfolioView({ userId, market, isBalanceHidden, onToggleBalance }: { u
       <div className="portfolio-connected-state">
         {profileAddressLoading && !address ? <span className="portfolio-balance-skeleton" aria-label="Loading portfolio balance" /> : <strong className={`portfolio-total portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{walletAddress ? `$${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}</strong>}
         {walletAddress && <a className="portfolio-address-line" href={`https://basescan.org/address/${walletAddress}`} target="_blank" rel="noreferrer">{formattedAddress}<ExternalLink size={12} /></a>}
+        {!profileAddress && !profileAddressLoading && <button type="button" className="portfolio-wallet-init-button" onClick={() => void initializeWallet()} disabled={isConnectingWallet || isSavingProfileWallet}>{isConnectingWallet ? "Connecting to Coinbase..." : isSavingProfileWallet ? "Linking wallet to profile..." : "Create & Initialize Wallet"}</button>}
       </div>
     </section>
 

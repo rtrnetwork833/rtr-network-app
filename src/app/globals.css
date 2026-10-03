@@ -286,6 +286,10 @@ button { font: inherit; }
 
 .onramp-banner { display: grid; gap: 13px; margin: 0 0 19px; padding: 16px; background: linear-gradient(115deg, rgba(13, 27, 46, 0.7), rgba(8, 16, 32, 0.9)); border: 1px solid rgba(0, 184, 123, 0.2); border-radius: 9px; box-shadow: inset 0 1px rgba(255,255,255,.035); }
 .portfolio-connected-state { position: relative; animation: portfolio-wallet-reveal .24s ease-out both; }
+.portfolio-wallet-init-button { width: 100%; min-height: 46px; display: flex; align-items: center; justify-content: center; margin-top: 15px; padding: 0 14px; color: #FFFFFF; background: linear-gradient(110deg, #8C42D8, #5F50D6 56%, #168D87); border: 1px solid rgba(221, 187, 255, 0.48); border-radius: 9px; box-shadow: 0 0 18px rgba(151, 82, 233, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.18); font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: box-shadow .2s ease, filter .2s ease; }
+.portfolio-wallet-init-button:hover:not(:disabled) { filter: brightness(1.1); box-shadow: 0 0 23px rgba(151, 82, 233, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.22); }
+.portfolio-wallet-init-button:focus-visible { outline: 2px solid #E2C5FF; outline-offset: 3px; }
+.portfolio-wallet-init-button:disabled { opacity: .7; cursor: wait; }
 @keyframes portfolio-wallet-reveal { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 .onramp-banner-heading h3 { margin-top: 5px; color: #FFFFFF; font-size: 15px; }
 .onramp-fund-card { color: #FFFFFF; }

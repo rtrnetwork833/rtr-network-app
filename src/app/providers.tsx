@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { getAddress, http, type Address } from "viem";
 import { createConfig, WagmiProvider, useAccount } from "wagmi";
 import { base } from "wagmi/chains";
-import { fetchProfileWalletAddress, profileWalletQueryKey } from "@/lib/wallet-profile";
+import { fetchProfileWalletAddress, profileWalletQueryKey, saveProfileWalletAddress } from "@/lib/wallet-profile";
 import { createClient } from "@/lib/supabase/client";
 
 const projectId = process.env.NEXT_PUBLIC_CDP_PROJECT_ID ?? "";
@@ -75,12 +75,8 @@ export function useSyncUserWallet() {
         if (inFlight.current.has(syncKey)) return;
         inFlight.current.add(syncKey);
         acquiredSyncKey = syncKey;
-        const response = await fetch("/api/profile/wallet", {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ walletAddress: activeAddress }),
-        });
-        if (active && response.ok) queryClient.setQueryData(queryKey, activeAddress);
+        await saveProfileWalletAddress(activeAddress);
+        if (active) queryClient.setQueryData(queryKey, activeAddress);
       } catch {
         // A later auth or wallet event retries the profile sync.
       } finally {
