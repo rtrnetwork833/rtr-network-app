@@ -37,6 +37,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           apiKey={process.env.NEXT_PUBLIC_CDP_API_KEY}
           projectId={projectId}
           chain={base}
+          url="https://rtrnetwork.com"
         >
           <WalletAddressSync />
           {children}
