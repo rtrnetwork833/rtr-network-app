@@ -43,7 +43,7 @@ import { base } from 'wagmi/chains';
 import QRCode from 'qrcode';
 import Image from 'next/image';
 import { fetchProfileWalletAddress, profileWalletQueryKey, saveProfileWalletAddress } from "@/lib/wallet-profile";
-import { useAppKit } from '@reown/appkit/react';
+import { useWallet } from '@coinbase/onchainkit/wallet';
 
 type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "portfolio";
 type Activation = { tier: string; activated_at: string; expires_at: string };
@@ -455,7 +455,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
   const { address, chainId, isConnected } = useAccount();
   const { sendTransactionAsync, isPending: isSending } = useSendTransaction();
   const { switchChainAsync } = useSwitchChain();
-  const { open } = useAppKit();
+  const { connect } = useWallet();
   const queryClient = useQueryClient();
   const [userId, setUserId] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
@@ -622,7 +622,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
             <div className="portfolio-connected-state">
               <button
                 type="button"
-                onClick={() => open({ view: 'Connect' })}
+                onClick={() => connect()}
                 className="portfolio-wallet-init-button"
               >
                 Create & Initialize Wallet
