@@ -3,10 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, ArrowUpRight, ArrowDownLeft, X, Copy, Check } from 'lucide-react';
 import { useAccount } from 'wagmi';
-import { 
-  Wallet, 
-  ConnectWallet, 
-} from '@coinbase/onchainkit/wallet';
+import { Wallet, ConnectWallet } from '@coinbase/onchainkit/wallet';
 import { createClient } from "@/lib/supabase/client";
 
 // --- Clean Fluid Tracer Graph ---
@@ -192,4 +189,4 @@ export default function PortfolioTab() {
                 <path d="M5 5h30v30H5zm6 6v18h18V11zm60-6h30v30h-30zm6 6v18h18V11zM5 65h30v30H5zm6 6v18h18V71zm40-26h10v10H45zm10 10h10v10H55zm10-20h10v10H65zm10 10h10v10H75zm-30 20h10v10H45zm20 10h10v10H65zm10-10h10v10H75zm10 20h10v10H85z" />
               </svg>
             </div>
-            <div className="w-full p-2.5 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between text-xs"></div>
+            <div className="w-full p-2.5 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
