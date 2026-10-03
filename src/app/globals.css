@@ -269,10 +269,8 @@ button { font: inherit; }
 .portfolio-qr-frame img { width: 100%; height: 100%; image-rendering: pixelated; }
 .portfolio-qr-frame [role="img"], .portfolio-qr-frame svg { width: 100%; height: 100%; display: block; }
 .portfolio-qr-frame > span { color: #0A1424; font-size: 10px; }
-.portfolio-wallet-connect { position: relative; width: 100%; margin-top: 14px; animation: portfolio-wallet-reveal .24s ease-out both; }
-.portfolio-wallet-connect [data-testid="ockConnectWallet_Container"] { width: 100%; }
-.portfolio-wallet-connect .portfolio-connect-button { width: 100%; min-height: 42px; color: #FFFFFF; background: rgba(0, 184, 123, 0.18); border: 1px solid rgba(0, 184, 123, 0.42); border-radius: 9px; font-family: inherit; font-size: 11px; font-weight: 650; cursor: pointer; }
-.portfolio-wallet-connect .portfolio-connect-button:hover { background: rgba(0, 184, 123, 0.28); border-color: rgba(0, 184, 123, 0.7); }
+.portfolio-balance-skeleton { width: min(68%, 235px); height: 39px; display: block; margin-top: 11px; border-radius: 7px; background: linear-gradient(100deg, rgba(255, 255, 255, 0.045) 20%, rgba(222, 205, 246, 0.17) 38%, rgba(255, 255, 255, 0.045) 58%); background-size: 220% 100%; animation: portfolio-balance-shimmer 1.35s ease-in-out infinite; }
+@keyframes portfolio-balance-shimmer { to { background-position-x: -220%; } }
 .portfolio-full-address { padding: 10px 9px; overflow-wrap: anywhere; color: #FFFFFF; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 5px; font-family: var(--font-geist-mono), monospace; font-size: 9px; line-height: 1.5; text-align: center; }
 .portfolio-copy-button { width: 100%; min-height: 39px; display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 9px; color: #FFFFFF; background: rgba(13, 27, 46, 0.8); border: 1px solid rgba(0, 184, 123, 0.3); border-radius: 6px; font-size: 10px; cursor: pointer; box-shadow: 0 0 0 1px rgba(0, 184, 123, 0.2); transition: all 0.2s ease; }
 .portfolio-copy-button:hover { background: rgba(0, 184, 123, 0.15); border-color: #00B87B; box-shadow: 0 0 0 2px rgba(0, 184, 123, 0.5), 0 0 15px rgba(0, 184, 123, 0.3); }
@@ -388,12 +386,6 @@ button { font: inherit; }
 .portfolio-privacy { color: #D9BCFF; border-color: rgba(198, 123, 255, 0.34); }
 .portfolio-privacy:hover { color: #FFFFFF; background: rgba(172, 99, 255, 0.13); }
 .portfolio-total { font-size: 42px; }
-.portfolio-wallet-empty { position: relative; display: grid; gap: 9px; margin-top: 16px; padding-top: 15px; border-top: 1px solid rgba(255, 255, 255, 0.1); animation: portfolio-wallet-reveal .24s ease-out both; }
-.portfolio-wallet-empty > .eyebrow { color: #D8B5FF; }
-.portfolio-wallet-empty p { max-width: 280px; margin: 0; color: #B5B2C2; font-size: 11px; line-height: 1.55; }
-.portfolio-wallet-connect { margin-top: 2px; }
-.portfolio-wallet-connect .portfolio-connect-button { min-height: 46px; background: linear-gradient(110deg, #8C42D8, #5F50D6 56%, #168D87); border: 1px solid rgba(221, 187, 255, 0.48); border-radius: 9px; box-shadow: 0 0 18px rgba(151, 82, 233, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.18); font-size: 12px; }
-.portfolio-wallet-connect .portfolio-connect-button:hover { background: linear-gradient(110deg, #A04DEB, #735FE8 56%, #20A89F); box-shadow: 0 0 23px rgba(151, 82, 233, 0.32); }
 .portfolio-actions { margin-top: 14px; }
 .portfolio-action { background: linear-gradient(#10111B, #10111B) padding-box, linear-gradient(110deg, #C044FF, #8859F5 52%, #36E6CB) border-box; border: 1px solid transparent; box-shadow: 0 0 17px rgba(153, 83, 238, 0.22), 0 0 0 1px rgba(192, 68, 255, 0.16), inset 0 0 14px rgba(132, 95, 229, 0.07); }
 .portfolio-action:hover:not(:disabled) { background: linear-gradient(#171421, #171421) padding-box, linear-gradient(110deg, #E06EFF, #9D76FF 52%, #58F3DE) border-box; box-shadow: 0 0 24px rgba(153, 83, 238, 0.36), 0 0 0 2px rgba(192, 68, 255, 0.22); }

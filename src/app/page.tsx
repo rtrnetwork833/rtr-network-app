@@ -32,7 +32,6 @@ import {
 import { formatUnits, getAddress, isAddress, parseEther, type Address } from "viem";
 import { base } from "wagmi/chains";
 import { FundCard } from "@coinbase/onchainkit/fund";
-import { ConnectWallet, Wallet as OnchainWallet } from "@coinbase/onchainkit/wallet";
 import Image from "next/image";
 import QRCode from "qrcode";
 import { Area, AreaChart, Line, LineChart, ResponsiveContainer } from "recharts";
@@ -839,6 +838,7 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
   const { sendTransactionAsync, isPending: isSending } = useSendTransaction();
   const { switchChainAsync } = useSwitchChain();
   const [profileAddress, setProfileAddress] = useState<Address>();
+  const [profileAddressLoading, setProfileAddressLoading] = useState(true);
   const walletAddress = address ?? profileAddress;
   const { data: nativeBalance } = useBalance({ address: walletAddress });
   const usdcTokenAddress = "0xd9AAEC86B65D86f6A7B5B1b0c42FFA531710b6CA" as Address;
@@ -875,18 +875,19 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
       .then((profile) => {
         if (!cancelled && profile?.walletAddress && isAddress(profile.walletAddress)) setProfileAddress(getAddress(profile.walletAddress));
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setProfileAddressLoading(false); });
     return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
-    if (!isConnected || !address || activeModal !== "deposit") return;
+    if (!walletAddress || activeModal !== "deposit") return;
     let cancelled = false;
-    QRCode.toString(address, { type: "svg", width: 220, margin: 1, errorCorrectionLevel: "M", color: { dark: "#071a30", light: "#ffffff" } })
+    QRCode.toString(walletAddress, { type: "svg", width: 220, margin: 1, errorCorrectionLevel: "M", color: { dark: "#071a30", light: "#ffffff" } })
       .then((svg) => { if (!cancelled) setQrCodeSvg(svg); })
       .catch(() => { if (!cancelled) setQrCodeSvg(""); });
     return () => { cancelled = true; };
-  }, [address, activeModal, isConnected]);
+  }, [walletAddress, activeModal]);
 
   useEffect(() => {
     if (period === "7D") return;
@@ -940,7 +941,9 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
       setActionNotice("");
       return true;
     }
-    setActionNotice(`Create your wallet above before you can ${action === "deposit" ? "receive" : "send"} crypto.`);
+    setActionNotice(walletAddress
+      ? "Your wallet address is linked, but the secure wallet connection is unavailable. Reconnect before signing a transfer."
+      : `No wallet address is linked to this profile. Unable to ${action === "deposit" ? "open a deposit address" : "start a transfer"}.`);
     return false;
   }
 
@@ -987,9 +990,9 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
   }
 
   async function copyAddress() {
-    if (!isConnected || !address) return;
+    if (!walletAddress) return;
     try {
-      await navigator.clipboard.writeText(address);
+      await navigator.clipboard.writeText(walletAddress);
       setCopyStatus("Copied");
     } catch {
       setCopyStatus("Copy unavailable");
@@ -997,11 +1000,12 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
   }
 
   async function openDeposit() {
-    const depositAddress = address;
-    if (!isConnected || !depositAddress) {
-      requireWallet("deposit");
+    const depositAddress = walletAddress;
+    if (!depositAddress) {
+      setActionNotice("No wallet address is linked to this profile. Unable to open a deposit address.");
       return;
     }
+    setActionNotice("");
     setActiveModal("deposit");
     setCopyStatus("");
     try {
@@ -1015,17 +1019,17 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
   return <div className="wallet-view portfolio-view">
     <section className="portfolio-value-card">
       <div className="portfolio-value-label"><span>Est. Total Value</span><button className="balance-toggle portfolio-privacy" type="button" onClick={onToggleBalance} aria-label={isBalanceHidden ? "Show portfolio values" : "Hide portfolio values"}>{isBalanceHidden ? <EyeOff size={17} /> : <Eye size={17} />}</button></div>
-      {!isConnected || !address ? <div className="portfolio-wallet-empty"><span className="eyebrow">BASE EMBEDDED WALLET</span><p>Create a secure wallet to view live assets and use network actions.</p><OnchainWallet draggable={false} className="portfolio-wallet-connect"><ConnectWallet className="portfolio-connect-button" disconnectedLabel="Create Your Wallet" /></OnchainWallet></div> : <div className="portfolio-connected-state">
-        <strong className={`portfolio-total portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{`$${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</strong>
-        <a className="portfolio-address-line" href={`https://basescan.org/address/${address}`} target="_blank" rel="noreferrer">{formattedAddress}<ExternalLink size={12} /></a>
-      </div>}
+      <div className="portfolio-connected-state">
+        {profileAddressLoading && !address ? <span className="portfolio-balance-skeleton" aria-label="Loading portfolio balance" /> : <strong className={`portfolio-total portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{walletAddress ? `$${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}</strong>}
+        {walletAddress && <a className="portfolio-address-line" href={`https://basescan.org/address/${walletAddress}`} target="_blank" rel="noreferrer">{formattedAddress}<ExternalLink size={12} /></a>}
+      </div>
     </section>
 
     <div className="portfolio-actions">
       <button type="button" className="portfolio-action" onClick={openWithdraw}><ArrowUpRight size={16} />Withdraw</button>
       <button type="button" className="portfolio-action" onClick={() => void openDeposit()}><ArrowDownLeft size={16} />Top Up</button>
     </div>
-    {actionNotice && <p className="portfolio-action-notice" role="status">{actionNotice}</p>}
+    {actionNotice && <p className="portfolio-action-notice" role="alert">{actionNotice}</p>}
 
     <section className="portfolio-trend-section">
       <div className="portfolio-trend-heading"><div className="section-heading portfolio-section-heading"><div><span className="eyebrow">BASE NETWORK</span><h3>Asset Trend</h3></div></div></div>
@@ -1047,7 +1051,7 @@ function PortfolioView({ market, isBalanceHidden, onToggleBalance }: { market: M
       {portfolio.slice(0, 3).map((asset, index) => <article className={`portfolio-holding-row${index === 0 ? " portfolio-primary-asset" : ""}`} key={asset.symbol}><span><i className={`asset-logo asset-${asset.symbol.toLowerCase()}`}>{asset.symbol === "RTR" ? <Image src="/logo.png" width={34} height={34} alt="" /> : asset.symbol.slice(0, 1)}</i><span><strong>{asset.name}</strong><small>{asset.symbol}</small></span></span><span className="portfolio-holding-value"><strong className={`portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{asset.amount === null ? "—" : `${asset.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${asset.symbol}`}</strong><small className={`portfolio-blur-target${isBalanceHidden ? " is-private" : ""}`}>{asset.value === null ? "$—" : `$${asset.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</small></span></article>)}
     </section>
 
-    {activeModal === "deposit" && isConnected && address && <div className="portfolio-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setActiveModal(null); }}><section className="portfolio-modal" role="dialog" aria-modal="true" aria-labelledby="deposit-title"><div className="portfolio-modal-header"><div><span className="eyebrow">BASE MAINNET</span><h3 id="deposit-title">Top Up</h3></div><button type="button" className="modal-close" aria-label="Close deposit dialog" onClick={() => setActiveModal(null)}><X size={18} /></button></div><p className="portfolio-modal-caption">Scan the code or copy your public wallet address.</p><div className="portfolio-qr-frame">{qrCodeSvg ? <div role="img" aria-label="QR code for the connected Base wallet address" dangerouslySetInnerHTML={{ __html: qrCodeSvg }} /> : <span className="portfolio-qr-placeholder" role="status"><span className="sr-only">Resolving secure wallet address</span></span>}</div><div className="portfolio-full-address">{address}</div><button type="button" className="portfolio-copy-button" onClick={() => void copyAddress()}><Copy size={15} />{copyStatus || "Copy Address"}</button></section></div>}
+    {activeModal === "deposit" && walletAddress && <div className="portfolio-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setActiveModal(null); }}><section className="portfolio-modal" role="dialog" aria-modal="true" aria-labelledby="deposit-title"><div className="portfolio-modal-header"><div><span className="eyebrow">BASE MAINNET</span><h3 id="deposit-title">Top Up</h3></div><button type="button" className="modal-close" aria-label="Close deposit dialog" onClick={() => setActiveModal(null)}><X size={18} /></button></div><p className="portfolio-modal-caption">Scan the code or copy your public wallet address.</p><div className="portfolio-qr-frame">{qrCodeSvg ? <div role="img" aria-label="QR code for the connected Base wallet address" dangerouslySetInnerHTML={{ __html: qrCodeSvg }} /> : <span className="portfolio-qr-placeholder" role="status"><span className="sr-only">Resolving secure wallet address</span></span>}</div><div className="portfolio-full-address">{walletAddress}</div><button type="button" className="portfolio-copy-button" onClick={() => void copyAddress()}><Copy size={15} />{copyStatus || "Copy Address"}</button></section></div>}
 
     {activeModal === "withdraw" && isConnected && address && <div className="portfolio-modal-backdrop portfolio-withdraw-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setActiveModal(null); }}><section className="portfolio-modal portfolio-withdraw-drawer" role="dialog" aria-modal="true" aria-labelledby="withdraw-title"><div className="portfolio-modal-header"><div><span className="eyebrow">BASE MAINNET · ETH</span><h3 id="withdraw-title">Withdraw</h3></div><button type="button" className="modal-close" aria-label="Close withdraw dialog" onClick={() => setActiveModal(null)}><X size={18} /></button></div><form className="portfolio-transfer-form" onSubmit={(event) => void submitTransfer(event)}><label>Destination 0x Wallet Address<input value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="0x..." autoComplete="off" required /></label><label><span className="portfolio-amount-label">Amount (USD)<button type="button" onClick={setMaximumTransfer}>MAX</button></span><input value={transferAmount} onChange={(event) => { setTransferAmount(event.target.value); setTransferMessage(""); }} placeholder="0.00" type="number" min="0.01" step="0.01" inputMode="decimal" required /><small>{ethPrice ? `Approximately ${(Number(transferAmount || 0) / ethPrice).toFixed(6)} ETH. A small ETH amount is reserved for Base fees.` : "Waiting for live ETH pricing."}</small></label><button type="submit" className="portfolio-action portfolio-submit" disabled={isSending}>{isSending ? "Confirm in wallet..." : "Confirm Asset Transfer"}</button>{transferMessage && <p className="portfolio-feedback" role="status">{transferMessage}</p>}{transferHash && <a className="portfolio-tx-link" href={`https://basescan.org/tx/${transferHash}`} target="_blank" rel="noreferrer">View transaction on BaseScan <ExternalLink size={13} /></a>}</form></section></div>}
   </div>;
