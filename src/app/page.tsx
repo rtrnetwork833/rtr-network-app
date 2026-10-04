@@ -29,7 +29,6 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { FundCard } from "@coinbase/onchainkit/fund";
 import { Area, AreaChart, Line, LineChart, ResponsiveContainer } from "recharts";
 import { usePathname, useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
@@ -1130,7 +1129,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
     <div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and real-time movement across the RTR ecosystem.</p></div>
     <section className="onramp-banner" aria-label="Buy crypto">
       <div className="onramp-banner-heading"><span className="eyebrow">FUND YOUR BASE WALLET</span><h3>Move from fiat to onchain.</h3></div>
-      <FundCard country={country} assetSymbol="ETH" headerText="Buy crypto on Base" buttonText="Buy Crypto with Card / Bank" className="onramp-fund-card" />
+      <button className="onramp-fund-card">Buy Crypto with Card / Bank</button>
       <p className="onramp-disclaimer">Secure processing powered safely by Coinbase Onramp. Quick identity check or log-in may be required for first-time fiat processing.</p>
     </section>
     <label className="market-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search market assets</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by symbol or name" /></label>
