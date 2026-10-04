@@ -1,52 +1,41 @@
 'use client';
 
 import React, { ReactNode, useState } from 'react';
-import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { OnchainKitProvider } from '@coinbase/onchainkit';
-import { createCDPEmbeddedWalletConnector } from '@coinbase/cdp-wagmi';
+import { createAppKit } from '@reown/appkit/react';
+import { WagmiAdapter } from '@reown/appkit-adapter-wagmi';
 import { createConfig, http } from 'wagmi';
 import { base } from 'wagmi/chains';
 
-const cdpProjectId = process.env.NEXT_PUBLIC_CDP_PROJECT_ID || "";
-const reownProjectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID || "";
-const cdpApiKey = process.env.NEXT_PUBLIC_CDP_API_KEY || "";
+const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID || "";
 
-const cdpConfig = {
-  projectId: cdpProjectId,
-  ethereum: { createOnLogin: "smart" as const },
-};
+const wagmiAdapter = new WagmiAdapter({
+  networks: [base],
+  projectId,
+  ssr: true,
+});
 
-const cdpConnector = createCDPEmbeddedWalletConnector({
-  cdpConfig,
-  providerConfig: { 
-    chains: [base], 
-    transports: { [base.id]: http() }, 
-    announceProvider: true 
+createAppKit({
+  adapters: [wagmiAdapter],
+  networks: [base],
+  projectId,
+  features: {
+    email: true,
+    socials: ['google'],
+    analytics: false,
   },
 });
 
-const wagmiConfig = createConfig({
-  chains: [base],
-  connectors: [cdpConnector],
-  transports: { [base.id]: http() },
-  ssr: true,
-});
+const wagmiConfig = wagmiAdapter.wagmiConfig;
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
 
   return (
-    <WagmiProvider config={wagmiConfig}>
+    <WagmiAdapter>
       <QueryClientProvider client={queryClient}>
-        <OnchainKitProvider
-          apiKey={cdpApiKey}
-          projectId={reownProjectId}
-          chain={base}
-        >
-          {children}
-        </OnchainKitProvider>
+        {children}
       </QueryClientProvider>
-    </WagmiProvider>
+    </WagmiAdapter>
   );
 }

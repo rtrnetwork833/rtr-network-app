@@ -37,12 +37,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { normalizeDateOfBirth } from "@/lib/date";
 import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/client";
-import { useAccount, useConnect, useBalance, useReadContract, useSendTransaction, useSwitchChain } from 'wagmi';
+import { useAccount, useBalance, useReadContract, useSendTransaction, useSwitchChain } from 'wagmi';
 import { formatUnits, getAddress, isAddress, parseEther, type Address } from 'viem';
 import { base } from 'wagmi/chains';
 import QRCode from 'qrcode';
 import Image from 'next/image';
 import { fetchProfileWalletAddress, profileWalletQueryKey, saveProfileWalletAddress } from "@/lib/wallet-profile";
+import { useAppKit } from '@reown/appkit/react';
 
 type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "portfolio";
 type Activation = { tier: string; activated_at: string; expires_at: string };
@@ -454,7 +455,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
   const { address, chainId, isConnected } = useAccount();
   const { sendTransactionAsync, isPending: isSending } = useSendTransaction();
   const { switchChainAsync } = useSwitchChain();
-  const { connect, connectors } = useConnect();
+  const { open } = useAppKit();
   const queryClient = useQueryClient();
   const [userId, setUserId] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
@@ -621,14 +622,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
             <div className="portfolio-connected-state">
               <button
                 type="button"
-                onClick={() => {
-                  const coinbaseConnector = connectors.find((c) => c.id === 'coinbaseWallet' || c.name.toLowerCase().includes('coinbase'));
-                  if (coinbaseConnector) {
-                    connect({ connector: coinbaseConnector });
-                  } else if (connectors[0]) {
-                    connect({ connector: connectors[0] });
-                  }
-                }}
+                onClick={() => open({ view: 'Connect' })}
                 className="portfolio-wallet-init-button"
               >
                 Create & Initialize Wallet
