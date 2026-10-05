@@ -492,8 +492,6 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
   const dbWalletAddress = profileWalletQuery.data;
   const activeAddress = address ?? dbWalletAddress ?? undefined;
   const nativeBalance = useBalance({ address: activeAddress });
-  const cbBtcTokenAddress = (process.env.NEXT_PUBLIC_BASE_CBBTC_TOKEN_ADDRESS ?? "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf") as Address;
-  const cbBtcBalance = useBalance({ address: activeAddress, token: cbBtcTokenAddress, query: { enabled: Boolean(activeAddress) } });
   const rtrTokenAddress = process.env.NEXT_PUBLIC_RTR_TOKEN_ADDRESS as Address | undefined;
   const rtrBalance = useReadContract({
     address: rtrTokenAddress,
@@ -505,11 +503,9 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
   const priceFor = (symbol: string) => market.find((asset) => asset.symbol === symbol)?.price ?? null;
   const rtrAmount = typeof rtrBalance.data === "bigint" ? Number(formatUnits(rtrBalance.data, 18)) : activeAddress ? 0 : null;
   const ethAmount = nativeBalance.data ? Number(formatUnits(nativeBalance.data.value, nativeBalance.data.decimals)) : activeAddress ? 0 : null;
-  const cbBtcAmount = cbBtcBalance.data ? Number(formatUnits(cbBtcBalance.data.value, cbBtcBalance.data.decimals)) : activeAddress ? 0 : null;
   const rtrValue = rtrAmount !== null && priceFor("RTR") !== null ? rtrAmount * (priceFor("RTR") ?? 0) : null;
   const ethValue = ethAmount !== null && priceFor("ETH") !== null ? ethAmount * (priceFor("ETH") ?? 0) : null;
-  const cbBtcValue = cbBtcAmount !== null && priceFor("cbBTC") !== null ? cbBtcAmount * (priceFor("cbBTC") ?? 0) : null;
-  const totalValue = [rtrValue, ethValue, cbBtcValue].reduce<number>((sum, value) => sum + (value ?? 0), 0);
+  const totalValue = [rtrValue, ethValue].reduce<number>((sum, value) => sum + (value ?? 0), 0);
 
   useEffect(() => {
     if (!userId || !isConnected || !address || chainId !== base.id || dbWalletAddress?.toLowerCase() === address.toLowerCase()) return;
@@ -677,7 +673,6 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
         </div>
         {[
           { symbol: "ETH", name: "Ethereum", amount: ethAmount, value: ethValue },
-          { symbol: "cbBTC", name: "Coinbase Wrapped Bitcoin", amount: cbBtcAmount, value: cbBtcValue },
         ].map((asset) => (
           <div key={asset.symbol} className="portfolio-holding-row">
             <span><div className="asset-logo asset-eth">{asset.symbol.slice(0, 1)}</div><div><strong>{asset.name}</strong><small>{asset.symbol}</small></div></span>

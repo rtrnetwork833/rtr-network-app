@@ -4,7 +4,7 @@ import React, { ReactNode, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createAppKit } from '@reown/appkit/react';
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi';
-import { createConfig, http } from 'wagmi';
+import { WagmiProvider } from 'wagmi';
 import { base } from 'wagmi/chains';
 
 const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID || "";
@@ -32,10 +32,10 @@ export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
 
   return (
-    <WagmiAdapter>
+    <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         {children}
       </QueryClientProvider>
-    </WagmiAdapter>
+    </WagmiProvider>
   );
 }
