@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createAppKit } from '@reown/appkit/react';
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi';
 import { WagmiProvider } from 'wagmi';
-import { base } from '@reown/appkit/networks';
+import { base } from 'wagmi/chains';
 
 const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID || "";
 
@@ -25,7 +25,7 @@ const wagmiAdapter = new WagmiAdapter({
 
 createAppKit({
   adapters: [wagmiAdapter],
-  networks,
+  networks: networks as any,
   metadata,
   projectId,
   defaultNetwork: base,
