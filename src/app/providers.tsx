@@ -16,7 +16,7 @@ const metadata = {
   icons: ['https://rtrnetwork.com']
 };
 
-const networks = [base];
+const networks = [{ ...base }] as any;
 const wagmiAdapter = new WagmiAdapter({
   networks,
   projectId,
@@ -25,7 +25,7 @@ const wagmiAdapter = new WagmiAdapter({
 
 createAppKit({
   adapters: [wagmiAdapter],
-  networks: networks as any,
+  networks,
   metadata,
   projectId,
   defaultNetwork: base,
