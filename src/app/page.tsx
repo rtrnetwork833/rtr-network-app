@@ -36,11 +36,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { normalizeDateOfBirth } from "@/lib/date";
 import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/client";
-import { useAccount, useBalance, useReadContract, useSendTransaction, useSwitchChain } from 'wagmi';
-import { formatUnits, getAddress, isAddress, parseEther, type Address } from 'viem';
+import { useAccount, useBalance, useReadContract } from 'wagmi';
+import { formatUnits, getAddress, type Address } from 'viem';
 import { base } from 'wagmi/chains';
-import QRCode from 'qrcode';
-import Image from 'next/image';
 import { fetchProfileWalletAddress, profileWalletQueryKey, saveProfileWalletAddress } from "@/lib/wallet-profile";
 import { useAppKit, AppKitAccountButton } from '@reown/appkit/react';
 
@@ -452,21 +450,12 @@ function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, 
 
 function PortfolioView({ market }: { market: MarketAsset[] }) {
   const { address, chainId, isConnected } = useAccount();
-  const { sendTransactionAsync, isPending: isSending } = useSendTransaction();
-  const { switchChainAsync } = useSwitchChain();
   const { open } = useAppKit();
   const queryClient = useQueryClient();
   const [userId, setUserId] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
   const [activeRange, setActiveRange] = useState('7D');
-  const [showTopUp, setShowTopUp] = useState(false);
-  const [showWithdraw, setShowWithdraw] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [qrCodeSvg, setQrCodeSvg] = useState("");
-  const [destination, setDestination] = useState("");
-  const [amountEth, setAmountEth] = useState("");
-  const [transferNotice, setTransferNotice] = useState("");
-  const [transactionHash, setTransactionHash] = useState("");
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -521,18 +510,6 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
     return () => { active = false; };
   }, [address, chainId, dbWalletAddress, isConnected, queryClient, userId]);
 
-  useEffect(() => {
-    if (!activeAddress || !showTopUp) return;
-    let active = true;
-    void QRCode.toString(activeAddress, { type: "svg", width: 220, margin: 1, errorCorrectionLevel: "M", color: { dark: "#10101b", light: "#ffffff" } })
-      .then((svg) => { if (active) setQrCodeSvg(svg); })
-      .catch(() => { if (active) setQrCodeSvg(""); });
-    return () => { active = false; };
-  }, [activeAddress, showTopUp]);
-
-  const ethPrice = priceFor("ETH");
-  const maxEth = Math.max(0, (ethAmount ?? 0) - 0.0001);
-
   const handleCopyAddress = () => {
     if (!activeAddress) return;
     void navigator.clipboard.writeText(activeAddress)
@@ -542,37 +519,6 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
       })
       .catch(() => window.alert("Clipboard access is unavailable in this browser."));
   };
-
-  async function submitWithdraw(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setTransferNotice("");
-    setTransactionHash("");
-    if (!isConnected || !address) {
-      window.alert("Connect your Coinbase wallet before signing a transfer.");
-      return;
-    }
-    if (!isAddress(destination)) {
-      setTransferNotice("Enter a valid destination 0x wallet address.");
-      return;
-    }
-    const valueEth = Number(amountEth);
-    if (!Number.isFinite(valueEth) || valueEth <= 0) {
-      setTransferNotice("Enter an ETH amount greater than zero.");
-      return;
-    }
-    if (valueEth > maxEth) {
-      setTransferNotice("Insufficient ETH after reserving a small amount for Base network fees.");
-      return;
-    }
-    try {
-      if (chainId !== base.id) await switchChainAsync({ chainId: base.id });
-      const hash = await sendTransactionAsync({ to: getAddress(destination), value: parseEther(amountEth), chainId: base.id });
-      setTransactionHash(hash);
-      setTransferNotice("Transaction submitted to Base.");
-    } catch (error) {
-      setTransferNotice(error instanceof Error ? error.message : "The transaction could not be submitted.");
-    }
-  }
 
   function formatUsd(value: number | null) {
     if (value === null || !Number.isFinite(value)) return "$—";
@@ -618,38 +564,29 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
               <span className="portfolio-blur-target" data-private={isPrivate}>{`${activeAddress.slice(0, 6)}...${activeAddress.slice(-4)}`}</span>
               <button onClick={handleCopyAddress} className="portfolio-connect">{copied ? <Check size={12} /> : <Copy size={12} />}{copied ? "Copied" : "Copy"}</button>
             </>
-          ) : (
-            isMounted && !isConnected && (
-              <div className="portfolio-connected-state">
-                <button
-                  type="button"
-                  onClick={() => open({ view: 'Connect' })}
-                  className="portfolio-wallet-init-button"
-                >
-                  Create & Initialize Wallet
-                </button>
+          ) : null}
+        </div>
+        {isMounted && (
+          <div className="my-6 flex flex-col items-center justify-center gap-4 w-full px-4">
+            {!isConnected ? (
+              <button
+                onClick={() => open()}
+                className="w-full max-w-md py-3 px-6 bg-gradient-to-r from-purple-600 to-cyan-500 rounded-xl text-white font-semibold shadow-lg hover:opacity-90 transition-all"
+              >
+                Create & Initialize Wallet
+              </button>
+            ) : (
+              <div className="w-full flex flex-col items-center gap-3">
+                <div className="w-full max-w-md flex justify-center">
+                  <AppKitAccountButton />
+                </div>
+                <p className="text-xs text-slate-400 mt-1">
+                  Click your profile above to Buy with Card, Top Up, or Withdraw instantly.
+                </p>
               </div>
-            )
-          )}
-        </div>
-        <div className="portfolio-actions">
-          {isConnected && activeAddress ? (
-            <AppKitAccountButton />
-          ) : (
-            <>
-              <button className="portfolio-action" onClick={() => {
-                if (!activeAddress) window.alert("No wallet address is linked to this profile.");
-                else if (!isConnected) window.alert("Reconnect your Coinbase wallet before signing a withdrawal.");
-                else setShowWithdraw(true);
-              }}>
-                <ArrowUpRight size={18} />Withdraw
-              </button>
-              <button className="portfolio-action" onClick={() => activeAddress ? setShowTopUp(true) : window.alert("No wallet address is linked to this profile.")}>
-                <ArrowDownLeft size={18} />Top Up
-              </button>
-            </>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="portfolio-section-heading">
@@ -694,45 +631,6 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </div>
         ))}
       </div>
-
-      {showTopUp && activeAddress && (
-        <div className="portfolio-modal-backdrop">
-          <div className="portfolio-modal">
-            <div className="portfolio-modal-header">
-              <h3>Network Deposit</h3>
-              <button onClick={() => setShowTopUp(false)} className="modal-close"><X size={16} /></button>
-            </div>
-            <p className="portfolio-modal-caption">Send supported Base network assets to this address.</p>
-            <div className="portfolio-qr-frame">
-              {qrCodeSvg ? <div role="img" aria-label="QR code for your wallet address" dangerouslySetInnerHTML={{ __html: qrCodeSvg }} /> : <span>Generating QR...</span>}
-            </div>
-            <div className="portfolio-full-address">{activeAddress}</div>
-            <button className="portfolio-copy-button" onClick={handleCopyAddress}>{copied ? <Check size={12} /> : <Copy size={12} />}{copied ? "Copied" : "Copy Address"}</button>
-          </div>
-        </div>
-      )}
-
-      {showWithdraw && activeAddress && isConnected && (
-        <div className="portfolio-modal-backdrop portfolio-withdraw-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowWithdraw(false); }}>
-          <section className="portfolio-withdraw-drawer" role="dialog" aria-modal="true" aria-labelledby="withdraw-title">
-            <div className="mb-5 flex items-center justify-between">
-              <h3 id="withdraw-title">Withdraw</h3>
-              <button type="button" onClick={() => setShowWithdraw(false)} className="modal-close"><X size={16} /></button>
-            </div>
-            <form onSubmit={(event) => void submitWithdraw(event)}>
-              <label className="portfolio-transfer-form label">Destination 0x Wallet Address
-                <input type="text" value={destination} onChange={(event) => setDestination(event.target.value)} placeholder="0x..." autoComplete="off" required />
-              </label>
-              <label className="portfolio-transfer-form label">Amount (ETH)
-                <span className="flex gap-2"><input type="number" min="0" step="any" value={amountEth} onChange={(event) => setAmountEth(event.target.value)} placeholder="0.00" required /><button type="button" onClick={() => setAmountEth(maxEth.toString())} className="secondary-button">MAX</button></span>
-              </label>
-              <button type="submit" disabled={isSending} className="portfolio-submit primary-button">{isSending ? "Confirm in wallet..." : "Confirm Asset Transfer"}</button>
-              {transferNotice && <p className="portfolio-feedback" role="status">{transferNotice}</p>}
-              {transactionHash && <a className="portfolio-tx-link" href={`https://basescan.org/tx/${transactionHash}`} target="_blank" rel="noreferrer">View on BaseScan <ExternalLink size={12} /></a>}
-            </form>
-          </section>
-        </div>
-      )}
     </div>
   );
 }
