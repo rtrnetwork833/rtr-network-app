@@ -42,7 +42,7 @@ import { base } from 'wagmi/chains';
 import QRCode from 'qrcode';
 import Image from 'next/image';
 import { fetchProfileWalletAddress, profileWalletQueryKey, saveProfileWalletAddress } from "@/lib/wallet-profile";
-import { useAppKit } from '@reown/appkit/react';
+import { useAppKit, AppKitAccountButton } from '@reown/appkit/react';
 
 type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "portfolio";
 type Activation = { tier: string; activated_at: string; expires_at: string };
@@ -467,6 +467,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
   const [amountEth, setAmountEth] = useState("");
   const [transferNotice, setTransferNotice] = useState("");
   const [transactionHash, setTransactionHash] = useState("");
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -480,6 +481,10 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
       mounted = false;
       subscription.unsubscribe();
     };
+  }, []);
+
+  useEffect(() => {
+    setIsMounted(true);
   }, []);
 
   const profileWalletQuery = useQuery({
@@ -614,28 +619,36 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
               <button onClick={handleCopyAddress} className="portfolio-connect">{copied ? <Check size={12} /> : <Copy size={12} />}{copied ? "Copied" : "Copy"}</button>
             </>
           ) : (
-            <div className="portfolio-connected-state">
-              <button
-                type="button"
-                onClick={() => open({ view: 'Connect' })}
-                className="portfolio-wallet-init-button"
-              >
-                Create & Initialize Wallet
-              </button>
-            </div>
+            isMounted && !isConnected && (
+              <div className="portfolio-connected-state">
+                <button
+                  type="button"
+                  onClick={() => open({ view: 'Connect' })}
+                  className="portfolio-wallet-init-button"
+                >
+                  Create & Initialize Wallet
+                </button>
+              </div>
+            )
           )}
         </div>
         <div className="portfolio-actions">
-          <button className="portfolio-action" onClick={() => {
-            if (!activeAddress) window.alert("No wallet address is linked to this profile.");
-            else if (!isConnected) window.alert("Reconnect your Coinbase wallet before signing a withdrawal.");
-            else setShowWithdraw(true);
-          }}>
-            <ArrowUpRight size={18} />Withdraw
-          </button>
-          <button className="portfolio-action" onClick={() => activeAddress ? setShowTopUp(true) : window.alert("No wallet address is linked to this profile.")}>
-            <ArrowDownLeft size={18} />Top Up
-          </button>
+          {isConnected && activeAddress ? (
+            <AppKitAccountButton />
+          ) : (
+            <>
+              <button className="portfolio-action" onClick={() => {
+                if (!activeAddress) window.alert("No wallet address is linked to this profile.");
+                else if (!isConnected) window.alert("Reconnect your Coinbase wallet before signing a withdrawal.");
+                else setShowWithdraw(true);
+              }}>
+                <ArrowUpRight size={18} />Withdraw
+              </button>
+              <button className="portfolio-action" onClick={() => activeAddress ? setShowTopUp(true) : window.alert("No wallet address is linked to this profile.")}>
+                <ArrowDownLeft size={18} />Top Up
+              </button>
+            </>
+          )}
         </div>
       </div>
 
