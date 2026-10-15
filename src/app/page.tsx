@@ -45,7 +45,7 @@ import { useAppKit, AppKitAccountButton, useAppKitAccount } from '@reown/appkit/
 type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "portfolio";
 type Activation = { tier: string; activated_at: string; expires_at: string };
 type Profile = { full_name?: string | null; avatar_url: string | null; balance: number | string | null };
-type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null; sparkline?: number[]; address?: string; totalSupply?: string; circulatingSupply?: string; decimals?: number };
+type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null; sparkline?: number[]; address?: string; totalSupply?: string | null; circulatingSupply?: string | null; decimals?: number };
 const supabase = createClient();
 const rtrTokenAbi = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
 const AUTH_EMAIL_STORAGE_KEY = "user_email";
@@ -569,22 +569,19 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           ) : null}
         </div>
         {isMounted && (
-          <div className="my-6 flex flex-col items-center justify-center gap-4 w-full px-4">
+          <div className="portfolio-action-card">
             {!isConnected ? (
               <button
                 onClick={() => open()}
-                className="w-full max-w-md py-3 px-6 bg-gradient-to-r from-purple-600 to-cyan-500 rounded-xl text-white font-semibold shadow-lg hover:opacity-90 transition-all"
+                className="portfolio-connect-wallet-button"
               >
-                Create & Initialize Wallet
+                Connect Wallet
               </button>
             ) : (
-              <div className="w-full flex flex-col items-center gap-3">
-                <div className="w-full max-w-md flex justify-center">
+              <div className="portfolio-native-actions">
+                <div className="portfolio-action-row">
                   <AppKitAccountButton />
                 </div>
-                <p className="text-xs text-slate-400 mt-1">
-                  Click your profile above to Buy with Card, Swap, or Send instantly.
-                </p>
               </div>
             )}
           </div>
@@ -1039,18 +1036,79 @@ function MarketView({ market }: { market: MarketAsset[] }) {
   const [allTokens, setAllTokens] = useState<MarketAsset[]>([]);
   const [visibleCount, setVisibleCount] = useState(50);
   const [searchResults, setSearchResults] = useState<MarketAsset[] | null>(null);
+  const { open } = useAppKit();
+
+  // Fetch tokens from 1inch API
+  useEffect(() => {
+    const fetchTokens = async () => {
+      setLoading(true);
+      try {
+        const response = await fetch('https://api.1inch.io/v5.0/8453/tokens');
+        const data = await response.json();
+        const tokens = Object.values(data.tokens).map((token: any) => ({
+          id: token.address,
+          symbol: token.symbol,
+          name: token.name,
+          price: null, // Will be fetched separately
+          change: null,
+          sparkline: [],
+          address: token.address,
+          decimals: token.decimals,
+          totalSupply: null,
+          circulatingSupply: null
+        }));
+        setAllTokens(tokens);
+      } catch (error) {
+        console.error('Failed to fetch tokens from 1inch:', error);
+        // Fallback to cached market data
+        setAllTokens(market);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTokens();
+  }, [market]);
+
+  // Search filter with async debounce
+  useEffect(() => {
+    const searchTokens = async () => {
+      if (!query.trim()) {
+        setSearchResults(null);
+        return;
+      }
+
+      const normalizedQuery = query.trim().toLowerCase();
+      const filtered = allTokens.filter((token) =>
+        token.symbol.toLowerCase().includes(normalizedQuery) ||
+        token.name.toLowerCase().includes(normalizedQuery)
+      );
+      setSearchResults(filtered);
+    };
+
+    const timer = setTimeout(searchTokens, 300);
+    return () => clearTimeout(timer);
+  }, [query, allTokens]);
 
   // Load more tokens on scroll
   const loadMore = () => {
     setVisibleCount((prev) => prev + 50);
   };
 
-  // Search filter
-  const normalizedQuery = query.trim().toLowerCase();
+  // Display tokens
   const displayTokens = searchResults ?? allTokens.slice(0, visibleCount);
 
   // Always keep RTR at position #1
-  const rtrToken = allTokens.find((t) => t.symbol === "RTR") || { symbol: "RTR", name: "RTR Network", price: null, change: null, sparkline: [] };
+  const rtrToken = allTokens.find((t) => t.symbol === "RTR") || { 
+    symbol: "RTR", 
+    name: "RTR Network", 
+    price: null, 
+    change: null, 
+    sparkline: [],
+    address: "0x0000000000000000000000000000000000000000",
+    totalSupply: "1,000,000,000",
+    circulatingSupply: "500,000,000"
+  };
   const otherTokens = displayTokens.filter((t) => t.symbol !== "RTR");
   const sortedTokens = [rtrToken, ...otherTokens];
 
@@ -1061,6 +1119,9 @@ function MarketView({ market }: { market: MarketAsset[] }) {
       onClick={() => setSelectedAsset(asset)}
     >
       <span className="market-rank">{index + 1}</span>
+      <span className="market-asset-icon">
+        <div className="token-logo">{asset.symbol.slice(0, 1)}</div>
+      </span>
       <span className="market-asset-name">
         {asset.symbol === "RTR" && <span className="featured-badge">Featured Node Asset</span>}
         <strong>{asset.symbol}</strong>
@@ -1084,9 +1145,15 @@ function MarketView({ market }: { market: MarketAsset[] }) {
     <label className="market-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search market assets</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by symbol or name" /></label>
     <div className="market-table" aria-label="Base ecosystem market monitor">
       <div className="market-row market-header"><span>#</span><span>Asset</span><span>Spot price</span><span>Live Change</span><span>Trend</span></div>
-      {sortedTokens.map((asset, index) => renderAsset(asset, index))}
-      {visibleCount < allTokens.length && !searchResults && (
-        <button className="load-more-button" onClick={loadMore}>Load More Assets</button>
+      {loading ? (
+        <div className="market-loading">Loading assets...</div>
+      ) : (
+        <>
+          {sortedTokens.map((asset, index) => renderAsset(asset, index))}
+          {visibleCount < allTokens.length && !searchResults && (
+            <button className="load-more-button" onClick={loadMore}>Load More Assets</button>
+          )}
+        </>
       )}
     </div>
     {selectedAsset && (
@@ -1114,7 +1181,15 @@ function MarketView({ market }: { market: MarketAsset[] }) {
               <strong className="contract-address">{selectedAsset.address || "—"}</strong>
             </div>
           </div>
-          <button className="drawer-swap-button">[ SWAP THIS ASSET IN WALLET ]</button>
+          <button 
+            className="drawer-swap-button"
+            onClick={() => {
+              setSelectedAsset(null);
+              open({ view: 'Swap' });
+            }}
+          >
+            [ SWAP THIS ASSET IN WALLET ]
+          </button>
         </div>
       </div>
     )}
