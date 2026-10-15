@@ -40,12 +40,12 @@ import { useAccount, useBalance, useReadContract } from 'wagmi';
 import { formatUnits, getAddress, type Address } from 'viem';
 import { base } from 'wagmi/chains';
 import { fetchProfileWalletAddress, profileWalletQueryKey, saveProfileWalletAddress } from "@/lib/wallet-profile";
-import { useAppKit, AppKitAccountButton } from '@reown/appkit/react';
+import { useAppKit, AppKitAccountButton, useAppKitAccount } from '@reown/appkit/react';
 
 type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "portfolio";
 type Activation = { tier: string; activated_at: string; expires_at: string };
 type Profile = { full_name?: string | null; avatar_url: string | null; balance: number | string | null };
-type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null; sparkline?: number[] };
+type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null; sparkline?: number[]; address?: string; totalSupply?: string; circulatingSupply?: string; decimals?: number };
 const supabase = createClient();
 const rtrTokenAbi = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
 const AUTH_EMAIL_STORAGE_KEY = "user_email";
@@ -407,12 +407,14 @@ export default function Home() {
         </div>
       </header>
 
-      <section className="identity-row">
-        <div className="greeting" aria-live="polite">
-          {profileLoading ? <span className="greeting-skeleton" aria-label="Loading profile name" /> : profileName ? <h1>Hello, {profileName}</h1> : <h1>Hello</h1>}
-        </div>
-        <div className="status-pill">{profileName && <strong>{profileName}</strong>}<span /> Node online</div>
-      </section>
+      {view === "dashboard" && (
+        <section className="identity-row">
+          <div className="greeting" aria-live="polite">
+            {profileLoading ? <span className="greeting-skeleton" aria-label="Loading profile name" /> : profileName ? <h1>Hello, {profileName}</h1> : <h1>Hello</h1>}
+          </div>
+          <div className="status-pill">{profileName && <strong>{profileName}</strong>}<span /> Node online</div>
+        </section>
+      )}
 
       <section className="content-scroll">
         {error && <div className="error-banner" role="alert">{error}</div>}
@@ -521,7 +523,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
   };
 
   function formatUsd(value: number | null) {
-    if (value === null || !Number.isFinite(value)) return "$—";
+    if (value === null || !Number.isFinite(value)) return "$0.00";
     return value.toLocaleString(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
@@ -581,7 +583,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
                   <AppKitAccountButton />
                 </div>
                 <p className="text-xs text-slate-400 mt-1">
-                  Click your profile above to Buy with Card, Top Up, or Withdraw instantly.
+                  Click your profile above to Buy with Card, Swap, or Send instantly.
                 </p>
               </div>
             )}
@@ -650,6 +652,8 @@ function AccountSettings({ profileName, avatar, onBack, onSignOut }: { profileNa
 
 function AuthOverlay() {
   const router = useRouter();
+  const { address, isConnected } = useAppKitAccount();
+  const { open } = useAppKit();
   const [profilePreview, setProfilePreview] = useState<Profile | null>(null);
   const [mode, setMode] = useState<"login" | "signup" | "recovery">("login");
   const [email, setEmail] = useState("");
@@ -673,6 +677,7 @@ function AuthOverlay() {
   const loginForm = useRef<HTMLFormElement>(null);
   const pinIsValid = /^\d{6}$/.test(pinState);
   const pinsMatch = pinIsValid && pinState === confirmPin;
+  const canActivateSignup = enteredToken.length === 6 && isConnected && Boolean(address);
 
   useLayoutEffect(() => {
     if (!authPreferencesReady || mode !== "login" || signupVerification || recoveryVerification) return;
@@ -771,6 +776,12 @@ function AuthOverlay() {
       setMessage(result.error.message);
       return;
     }
+
+    // Save wallet address to profile if connected
+    if (isConnected && address) {
+      await saveProfileWalletAddress(address as `0x${string}`);
+    }
+
     setSignupVerification(false);
     setMode("login");
     setMessage("Your account is verified. You can now sign in.");
@@ -937,8 +948,13 @@ function AuthOverlay() {
             <input className="otp-input" type="text" inputMode="numeric" maxLength={6} pattern="[0-9]*" value={enteredToken} onChange={(event) => setEnteredToken(event.target.value.replace(/\D/g, "").slice(0, 6))} required autoComplete="one-time-code" />
           </label>
           {message && <div className="auth-message" role="alert">{message}</div>}
-          <button className="primary-button auth-submit" disabled={busy || enteredToken.length !== 6}>
-            {busy ? <><span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>Authenticating token...</> : "Verify Code"}
+          {!isConnected && (
+            <button type="button" className="primary-button auth-submit" onClick={() => open()} style={{ marginBottom: "12px" }}>
+              Connect Wallet to Activate
+            </button>
+          )}
+          <button className="primary-button auth-submit" disabled={busy || !canActivateSignup}>
+            {busy ? <><span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>Authenticating token...</> : "Activate Node & Enter Dashboard"}
           </button>
         </form>
         <p className="resend-status" aria-live="polite">{resendSeconds > 0 ? `Resend code in 00:${String(resendSeconds).padStart(2, "0")}` : "You can request a new code."}</p>
@@ -1018,19 +1034,46 @@ function AuthOverlay() {
 
 function MarketView({ market }: { market: MarketAsset[] }) {
   const [query, setQuery] = useState("");
-  const [country] = useState(() => {
-    if (typeof navigator === "undefined") return "US";
-    try {
-      return new Intl.Locale(navigator.language).region ?? "US";
-    } catch {
-      return "US";
-    }
-  });
+  const [selectedAsset, setSelectedAsset] = useState<MarketAsset | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [allTokens, setAllTokens] = useState<MarketAsset[]>([]);
+  const [visibleCount, setVisibleCount] = useState(50);
+  const [searchResults, setSearchResults] = useState<MarketAsset[] | null>(null);
+
+  // Load more tokens on scroll
+  const loadMore = () => {
+    setVisibleCount((prev) => prev + 50);
+  };
+
+  // Search filter
   const normalizedQuery = query.trim().toLowerCase();
-  const watchlist = marketWatchlist.slice(0, 5).map((item) => market.find((asset) => asset.id === item.id) ?? { ...item, price: null, change: null, sparkline: [] });
-  const pinnedAsset = watchlist[0];
-  const filteredAssets = watchlist.slice(1).filter((asset) => !normalizedQuery || asset.symbol.toLowerCase().includes(normalizedQuery) || asset.name.toLowerCase().includes(normalizedQuery));
-  const renderAsset = (asset: MarketAsset) => <div className={`market-row${asset.symbol === "RTR" ? " market-row-pinned" : ""}`} key={asset.id ?? asset.symbol}><span className="market-asset-name"><strong>{asset.symbol}</strong><small>{asset.name}</small></span><span>{formatMarketPrice(asset)}</span><span className={asset.change !== null && asset.change >= 0 ? "market-up" : "market-down"}>{asset.change === null ? "--" : `${asset.change >= 0 ? "+" : ""}${asset.change.toFixed(2)}%`}</span><MarketSparkline values={asset.sparkline ?? []} positive={asset.change === null || asset.change >= 0} /></div>;
+  const displayTokens = searchResults ?? allTokens.slice(0, visibleCount);
+
+  // Always keep RTR at position #1
+  const rtrToken = allTokens.find((t) => t.symbol === "RTR") || { symbol: "RTR", name: "RTR Network", price: null, change: null, sparkline: [] };
+  const otherTokens = displayTokens.filter((t) => t.symbol !== "RTR");
+  const sortedTokens = [rtrToken, ...otherTokens];
+
+  const renderAsset = (asset: MarketAsset, index: number) => (
+    <div 
+      className={`market-row${asset.symbol === "RTR" ? " market-row-pinned" : ""}`} 
+      key={asset.id ?? asset.symbol}
+      onClick={() => setSelectedAsset(asset)}
+    >
+      <span className="market-rank">{index + 1}</span>
+      <span className="market-asset-name">
+        {asset.symbol === "RTR" && <span className="featured-badge">Featured Node Asset</span>}
+        <strong>{asset.symbol}</strong>
+        <small>{asset.name}</small>
+      </span>
+      <span>{formatMarketPrice(asset)}</span>
+      <span className={asset.change !== null && asset.change >= 0 ? "market-up" : "market-down"}>
+        {asset.change === null ? "--" : `${asset.change >= 0 ? "+" : ""}${asset.change.toFixed(2)}%`}
+      </span>
+      <MarketSparkline values={asset.sparkline ?? []} positive={asset.change === null || asset.change >= 0} />
+    </div>
+  );
+
   return <div className="market-view">
     <div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and real-time movement across the RTR ecosystem.</p></div>
     <section className="onramp-banner" aria-label="Buy crypto">
@@ -1039,7 +1082,42 @@ function MarketView({ market }: { market: MarketAsset[] }) {
       <p className="onramp-disclaimer">Secure processing powered safely by Coinbase Onramp. Quick identity check or log-in may be required for first-time fiat processing.</p>
     </section>
     <label className="market-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search market assets</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by symbol or name" /></label>
-    <div className="market-table" aria-label="Base ecosystem market monitor"><div className="market-row market-header"><span>Asset</span><span>Spot price</span><span>Live Change</span><span>Trend</span></div>{renderAsset(pinnedAsset)}{filteredAssets.map(renderAsset)}</div>
+    <div className="market-table" aria-label="Base ecosystem market monitor">
+      <div className="market-row market-header"><span>#</span><span>Asset</span><span>Spot price</span><span>Live Change</span><span>Trend</span></div>
+      {sortedTokens.map((asset, index) => renderAsset(asset, index))}
+      {visibleCount < allTokens.length && !searchResults && (
+        <button className="load-more-button" onClick={loadMore}>Load More Assets</button>
+      )}
+    </div>
+    {selectedAsset && (
+      <div className="market-detail-drawer" onClick={() => setSelectedAsset(null)}>
+        <div className="drawer-content" onClick={(e) => e.stopPropagation()}>
+          <button className="drawer-close" onClick={() => setSelectedAsset(null)}><X size={20} /></button>
+          <div className="drawer-header">
+            <div className="drawer-logo">{selectedAsset.symbol.slice(0, 1)}</div>
+            <div>
+              <h2>{selectedAsset.name}</h2>
+              <span className="drawer-symbol">{selectedAsset.symbol}</span>
+            </div>
+          </div>
+          <div className="drawer-metrics">
+            <div className="metric">
+              <span>Total Supply</span>
+              <strong>{selectedAsset.totalSupply || "—"}</strong>
+            </div>
+            <div className="metric">
+              <span>Circulating Supply</span>
+              <strong>{selectedAsset.circulatingSupply || "—"}</strong>
+            </div>
+            <div className="metric">
+              <span>Contract Address</span>
+              <strong className="contract-address">{selectedAsset.address || "—"}</strong>
+            </div>
+          </div>
+          <button className="drawer-swap-button">[ SWAP THIS ASSET IN WALLET ]</button>
+        </div>
+      </div>
+    )}
   </div>;
 }
 
