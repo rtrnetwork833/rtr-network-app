@@ -450,8 +450,7 @@ function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, 
   </div>;
 }
 function PortfolioView({ market }: { market: MarketAsset[] }) {
-  const { address, isConnected } = useAccount();
-  const { open } = useAppKit();
+  const { address } = useAccount();
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -461,56 +460,24 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
   if (!isMounted) return null;
 
   return (
-    <div className="portfolio-view w-full max-w-md mx-auto p-4 space-y-6">
-      
-      {/* 1. CLEAN NATIVE BALANCE HEADER */}
-      <div className="portfolio-value-block bg-slate-900/40 border border-slate-800 p-6 rounded-2xl text-center backdrop-blur-md">
-        <span className="portfolio-estimate-label text-xs tracking-widest text-slate-400 block mb-1">EST. TOTAL VALUE</span>
+    <div className="portfolio-view w-full max-w-2xl mx-auto p-4">
+      {/* 1. PROFESSIONAL PLATFORM BALANCES ELEMENT */}
+      <div className="portfolio-value-block bg-slate-900/20 border border-slate-800/50 p-6 rounded-2xl text-center mb-6 backdrop-blur-md">
+        <span className="portfolio-estimate-label text-xs tracking-widest text-slate-500 block mb-1">EST. TOTAL VALUE</span>
         <span className="portfolio-total text-4xl font-extrabold text-white tracking-tight">
           \$0.00
         </span>
         {address && (
-          <div className="mt-2 text-xs text-slate-500 font-mono tracking-wider">
+          <div className="mt-2 text-xs text-slate-400 font-mono tracking-wider bg-slate-950/40 py-1 px-3 rounded-full inline-block border border-slate-800/40">
             {`${address.slice(0, 6)}...${address.slice(-4)}`}
           </div>
         )}
       </div>
 
-      {/* 2. REOWN SYSTEM INTERACTION MATRIX */}
-      <div className="portfolio-action-card">
-        {!isConnected ? (
-          <div className="text-center p-6 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-4">
-            <p className="text-sm text-slate-400">Initialize your node terminal secure wallet connection to sync balances and process network assets.</p>
-            <button 
-              onClick={() => open()} 
-              className="portfolio-connect-wallet-button w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-teal-500 text-white font-bold tracking-wide shadow-lg shadow-purple-500/10 hover:opacity-95 transition-all"
-            >
-              Connect Wallet Terminal
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {/* FLAT NATIVE DEPOSIT & ONRAMP SYSTEM */}
-            <div className="reown-embedded-onramp bg-slate-900 border border-slate-800 rounded-2xl p-2 shadow-xl">
-              <div className="px-4 pt-3 pb-1">
-                <h4 className="text-sm font-semibold text-slate-300">Secure Fiat On-Ramp Portal</h4>
-                <p className="text-xs text-slate-500">Purchase assets directly to your verified execution node</p>
-              </div>
-              <w3m-onramp-widget />
-            </div>
-
-            {/* FLAT NATIVE INTER-CHAIN SWAP TERMINAL */}
-            <div className="reown-embedded-swap bg-slate-900 border border-slate-800 rounded-2xl p-2 shadow-xl">
-              <div className="px-4 pt-3 pb-1">
-                <h4 className="text-sm font-semibold text-slate-300">Decentralized Asset Exchange</h4>
-                <p className="text-xs text-slate-500">Instant swap routing via Reown AppKit execution layer</p>
-              </div>
-              <w3m-swap-widget />
-            </div>
-          </div>
-        )}
+      {/* 2. INSTANT REOWN INTERFACE EMBED */}
+      <div className="reown-embedded-terminal bg-slate-900/80 border border-slate-800/80 rounded-2xl p-1 shadow-2xl backdrop-blur-lg overflow-hidden">
+        <w3m-account-view />
       </div>
-
     </div>
   );
 }
