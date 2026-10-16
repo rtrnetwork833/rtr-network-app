@@ -522,8 +522,8 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
   };
 
   function formatUsd(value: number | null) {
-    if (value === null || !Number.isFinite(value)) return "\$0.00";
-    return `$${value.toFixed(2)}`;
+    if (value === null || !Number.isFinite(value)) return "$0.00";
+    return "$" + value.toFixed(2);
   }
 
   return (
@@ -533,7 +533,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           <div>
             <span className="portfolio-estimate-label">EST. TOTAL VALUE</span>
             <span className="portfolio-total portfolio-blur-target" data-private={isPrivate}>
-              {isPrivate ? "••••••" : activeAddress ? formatUsd(totalValue) : profileWalletQuery.isPending ? "Loading..." : "\$0.00"}
+              {isPrivate ? "••••••" : activeAddress ? formatUsd(totalValue) : profileWalletQuery.isPending ? "Loading..." : "$0.00"}
             </span>
           </div>
           <button className="portfolio-privacy" type="button" onClick={() => setIsPrivate(!isPrivate)} aria-label={isPrivate ? "Show balance" : "Hide balance"}>
@@ -557,8 +557,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
               </button>
             ) : (
               <div className="portfolio-native-flat-container rounded-xl overflow-hidden bg-slate-900 border border-slate-800/80 p-1">
-                {/* Embedded Reown Account Interface - Permanently Visible Layout */}
-                <w3m-account-view />
+                <AppKitAccountButton />
               </div>
             )}
           </div>
@@ -627,9 +626,6 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
     </div>
   );
 }
