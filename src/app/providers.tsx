@@ -15,7 +15,7 @@ const metadata = {
   url: 'https://rtrnetwork.com',
   icons: ['https://rtrnetwork.com']
 };
-
+ 
 const networks = [{ ...base }] as any;
 const wagmiAdapter = new WagmiAdapter({
   networks,

@@ -449,7 +449,6 @@ function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, 
     <div className="metric-grid"><div><span>Network</span><strong>Base Mainnet</strong></div><div><span>Protocol</span><strong>v2.4.8</strong></div><div><span>Multiplier</span><strong>1.0x</strong><small>Standard Hashrate Protocol</small></div></div>
   </div>;
 }
-
 function PortfolioView({ market }: { market: MarketAsset[] }) {
   const { address, chainId, isConnected } = useAccount();
   const { open } = useAppKit();
@@ -523,31 +522,8 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
   };
 
   function formatUsd(value: number | null) {
-    if (value === null || !Number.isFinite(value)) return "$0.00";
-    return value.toLocaleString(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-
-  function AssetTrendChart({ values }: { values: number[] }) {
-    const samples = values.length > 1 ? values : [0, 1, 0.5, 1.5];
-    const minimum = Math.min(...samples);
-    const maximum = Math.max(...samples);
-    const spread = maximum - minimum || 1;
-    const points = samples.map((value, index) => `${(index / (samples.length - 1)) * 400},${88 - ((value - minimum) / spread) * 72}`).join(" ");
-    const firstPoint = points.split(" ")[0];
-    const lastPoint = points.split(" ").at(-1);
-    const fillPath = `M ${firstPoint} L ${points.replaceAll(" ", " L ")} L 400 100 L 0 100 Z`;
-
-    return <div className="w-full h-32 relative mt-4 overflow-hidden rounded-xl bg-slate-950/20">
-      <svg className="w-full h-full" viewBox="0 0 400 100" preserveAspectRatio="none" aria-label="Portfolio asset trend">
-        <defs>
-          <linearGradient id="tracerGradient" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#a855f7" /><stop offset="100%" stopColor="#14b8a6" /></linearGradient>
-          <linearGradient id="fillGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#a855f7" stopOpacity="0.25" /><stop offset="100%" stopColor="#020617" stopOpacity="0" /></linearGradient>
-        </defs>
-        <path d={fillPath} fill="url(#fillGradient)" />
-        <polyline points={points} fill="none" stroke="url(#tracerGradient)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-        <title>{`Portfolio trend ending at ${lastPoint ?? "current value"}`}</title>
-      </svg>
-    </div>;
+    if (value === null || !Number.isFinite(value)) return "\$0.00";
+    return `$${value.toFixed(2)}`;
   }
 
   return (
@@ -556,9 +532,13 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
         <div className="portfolio-title-row">
           <div>
             <span className="portfolio-estimate-label">EST. TOTAL VALUE</span>
-            <span className="portfolio-total portfolio-blur-target" data-private={isPrivate}>{isPrivate ? "••••••" : activeAddress ? formatUsd(totalValue) : profileWalletQuery.isPending ? "Loading..." : "—"}</span>
+            <span className="portfolio-total portfolio-blur-target" data-private={isPrivate}>
+              {isPrivate ? "••••••" : activeAddress ? formatUsd(totalValue) : profileWalletQuery.isPending ? "Loading..." : "\$0.00"}
+            </span>
           </div>
-          <button className="portfolio-privacy" type="button" onClick={() => setIsPrivate(!isPrivate)} aria-label={isPrivate ? "Show balance" : "Hide balance"}>{isPrivate ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+          <button className="portfolio-privacy" type="button" onClick={() => setIsPrivate(!isPrivate)} aria-label={isPrivate ? "Show balance" : "Hide balance"}>
+            {isPrivate ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
         </div>
         <div className="portfolio-address-line">
           {activeAddress ? (
@@ -568,33 +548,30 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
             </>
           ) : null}
         </div>
+        
         {isMounted && (
-          <div className="portfolio-action-card">
+          <div className="portfolio-action-card mt-6">
             {!isConnected ? (
-              <button
-                onClick={() => open()}
-                className="portfolio-connect-wallet-button"
-              >
+              <button onClick={() => open()} className="portfolio-connect-wallet-button w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-teal-500 font-bold transition-all hover:opacity-90">
                 Connect Wallet
               </button>
             ) : (
-              <div className="portfolio-native-actions">
-                <div className="portfolio-action-row">
-                  <AppKitAccountButton />
-                </div>
+              <div className="portfolio-native-flat-container rounded-xl overflow-hidden bg-slate-900 border border-slate-800/80 p-1">
+                {/* Embedded Reown Account Interface - Permanently Visible Layout */}
+                <w3m-account-view />
               </div>
             )}
           </div>
         )}
       </div>
 
-      <div className="portfolio-section-heading">
+      <div className="portfolio-section-heading mt-8">
         <h3>Asset Trend</h3>
         <span className="portfolio-period">Base Network Execution Layer</span>
       </div>
-      <div className="portfolio-chart">
+      <div className="portfolio-chart h-48 bg-slate-950/40 rounded-xl p-4 mt-2">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={market.find((asset) => asset.symbol === "ETH")?.sparkline?.map((val, i) => ({ value: val })) ?? []}>
+          <AreaChart data={market.find((asset) => asset.symbol === "ETH")?.sparkline?.map((val) => ({ value: val })) ?? []}>
             <defs>
               <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/>
@@ -605,31 +582,54 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </AreaChart>
         </ResponsiveContainer>
       </div>
-      <div className="portfolio-range-tabs">
+      <div className="portfolio-range-tabs mt-4 flex gap-2">
         {['7D', '30D', '180D', '360D'].map((range) => (
-          <button key={range} onClick={() => setActiveRange(range)} className={activeRange === range ? 'active' : ''}>{range}</button>
+          <button key={range} onClick={() => setActiveRange(range)} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${activeRange === range ? 'bg-purple-600 text-white' : 'bg-slate-900 text-slate-400 hover:text-white'}`}>
+            {range}
+          </button>
         ))}
       </div>
 
-      <div className="portfolio-section-heading">
+      <div className="portfolio-section-heading mt-8">
         <h3>Assets Breakdown</h3>
       </div>
-      <div className="portfolio-holdings">
-        <div className="portfolio-holding-row portfolio-rtr-row">
-          <span><div className="asset-logo">R</div><div><strong>RTR Network</strong><small>RTR</small></div></span>
-          <strong className="portfolio-blur-target" data-private={isPrivate}>{isPrivate ? "••••" : rtrAmount === null ? "—" : `${rtrAmount.toLocaleString(undefined, { maximumFractionDigits: 6 })} RTR`}</strong>
-          <small className="portfolio-blur-target" data-private={isPrivate}>{isPrivate ? "••••" : formatUsd(rtrValue)}</small>
+      <div className="portfolio-holdings mt-2 flex flex-col gap-2">
+        <div className="portfolio-holding-row portfolio-rtr-row flex justify-between items-center bg-slate-900 p-4 rounded-xl border border-slate-800">
+          <span className="flex items-center gap-3">
+            <div className="asset-logo w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center font-bold text-white shadow-lg shadow-purple-500/20">R</div>
+            <div><strong>RTR Network</strong><small className="block text-xs text-slate-500">RTR</small></div>
+          </span>
+          <div className="text-right">
+            <strong className="block text-white portfolio-blur-target" data-private={isPrivate}>
+              {isPrivate ? "••••" : rtrAmount === null ? "—" : `${rtrAmount.toLocaleString(undefined, { maximumFractionDigits: 6 })} RTR`}
+            </strong>
+            <small className="text-slate-400 portfolio-blur-target" data-private={isPrivate}>
+              {isPrivate ? "••••" : formatUsd(rtrValue)}
+            </small>
+          </div>
         </div>
         {[
           { symbol: "ETH", name: "Ethereum", amount: ethAmount, value: ethValue },
         ].map((asset) => (
-          <div key={asset.symbol} className="portfolio-holding-row">
-            <span><div className="asset-logo asset-eth">{asset.symbol.slice(0, 1)}</div><div><strong>{asset.name}</strong><small>{asset.symbol}</small></div></span>
-            <strong className="portfolio-blur-target" data-private={isPrivate}>{isPrivate ? "••••" : asset.amount === null ? "—" : `${asset.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${asset.symbol}`}</strong>
-            <small className="portfolio-blur-target" data-private={isPrivate}>{isPrivate ? "••••" : formatUsd(asset.value)}</small>
+          <div key={asset.symbol} className="portfolio-holding-row flex justify-between items-center bg-slate-900/60 p-4 rounded-xl border border-slate-800/60">
+            <span className="flex items-center gap-3">
+              <div className="asset-logo asset-eth w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center font-bold text-slate-300">{asset.symbol.slice(0, 1)}</div>
+              <div><strong>{asset.name}</strong><small className="block text-xs text-slate-500">{asset.symbol}</small></div>
+            </span>
+            <div className="text-right">
+              <strong className="block text-white portfolio-blur-target" data-private={isPrivate}>
+                {isPrivate ? "••••" : asset.amount === null ? "—" : `${asset.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${asset.symbol}`}
+              </strong>
+              <small className="text-slate-400 portfolio-blur-target" data-private={isPrivate}>
+                {isPrivate ? "••••" : formatUsd(asset.value)}
+              </small>
+            </div>
           </div>
         ))}
       </div>
+    </div>
+  );
+}
     </div>
   );
 }
