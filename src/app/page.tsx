@@ -450,186 +450,70 @@ function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, 
   </div>;
 }
 function PortfolioView({ market }: { market: MarketAsset[] }) {
-  const { address, chainId, isConnected } = useAccount();
+  const { address, isConnected } = useAccount();
   const { open } = useAppKit();
-  const queryClient = useQueryClient();
-  const [userId, setUserId] = useState("");
-  const [isPrivate, setIsPrivate] = useState(false);
-  const [activeRange, setActiveRange] = useState('7D');
-  const [copied, setCopied] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    void supabase.auth.getUser().then(({ data }) => {
-      if (mounted) setUserId(data.user?.id ?? "");
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserId(session?.user.id ?? "");
-    });
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, []);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  const profileWalletQuery = useQuery({
-    queryKey: profileWalletQueryKey(userId),
-    queryFn: fetchProfileWalletAddress,
-    enabled: Boolean(userId),
-    staleTime: Infinity,
-    retry: 1,
-  });
-  const dbWalletAddress = profileWalletQuery.data;
-  const activeAddress = address ?? dbWalletAddress ?? undefined;
-  const nativeBalance = useBalance({ address: activeAddress });
-  const rtrTokenAddress = process.env.NEXT_PUBLIC_RTR_TOKEN_ADDRESS as Address | undefined;
-  const rtrBalance = useReadContract({
-    address: rtrTokenAddress,
-    abi: rtrTokenAbi,
-    functionName: "balanceOf",
-    args: activeAddress ? [activeAddress] : undefined,
-    query: { enabled: Boolean(activeAddress && rtrTokenAddress) },
-  });
-  const priceFor = (symbol: string) => market.find((asset) => asset.symbol === symbol)?.price ?? null;
-  const rtrAmount = typeof rtrBalance.data === "bigint" ? Number(formatUnits(rtrBalance.data, 18)) : activeAddress ? 0 : null;
-  const ethAmount = nativeBalance.data ? Number(formatUnits(nativeBalance.data.value, nativeBalance.data.decimals)) : activeAddress ? 0 : null;
-  const rtrValue = rtrAmount !== null && priceFor("RTR") !== null ? rtrAmount * (priceFor("RTR") ?? 0) : null;
-  const ethValue = ethAmount !== null && priceFor("ETH") !== null ? ethAmount * (priceFor("ETH") ?? 0) : null;
-  const totalValue = [rtrValue, ethValue].reduce<number>((sum, value) => sum + (value ?? 0), 0);
-
-  useEffect(() => {
-    if (!userId || !isConnected || !address || chainId !== base.id || dbWalletAddress?.toLowerCase() === address.toLowerCase()) return;
-    let active = true;
-    void saveProfileWalletAddress(getAddress(address)).then(() => {
-      if (active) queryClient.setQueryData(profileWalletQueryKey(userId), getAddress(address));
-    }).catch(() => undefined);
-    return () => { active = false; };
-  }, [address, chainId, dbWalletAddress, isConnected, queryClient, userId]);
-
-  const handleCopyAddress = () => {
-    if (!activeAddress) return;
-    void navigator.clipboard.writeText(activeAddress)
-      .then(() => {
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 2000);
-      })
-      .catch(() => window.alert("Clipboard access is unavailable in this browser."));
-  };
-
-  function formatUsd(value: number | null) {
-    if (value === null || !Number.isFinite(value)) return "$0.00";
-    return "$" + value.toFixed(2);
-  }
+  if (!isMounted) return null;
 
   return (
-    <div className="portfolio-view">
-      <div className="portfolio-value-block">
-        <div className="portfolio-title-row">
-          <div>
-            <span className="portfolio-estimate-label">EST. TOTAL VALUE</span>
-            <span className="portfolio-total portfolio-blur-target" data-private={isPrivate}>
-              {isPrivate ? "••••••" : activeAddress ? formatUsd(totalValue) : profileWalletQuery.isPending ? "Loading..." : "$0.00"}
-            </span>
-          </div>
-          <button className="portfolio-privacy" type="button" onClick={() => setIsPrivate(!isPrivate)} aria-label={isPrivate ? "Show balance" : "Hide balance"}>
-            {isPrivate ? <EyeOff size={16} /> : <Eye size={16} />}
-          </button>
-        </div>
-        <div className="portfolio-address-line">
-          {activeAddress ? (
-            <>
-              <span className="portfolio-blur-target" data-private={isPrivate}>{`${activeAddress.slice(0, 6)}...${activeAddress.slice(-4)}`}</span>
-              <button onClick={handleCopyAddress} className="portfolio-connect">{copied ? <Check size={12} /> : <Copy size={12} />}{copied ? "Copied" : "Copy"}</button>
-            </>
-          ) : null}
-        </div>
-        
-        {isMounted && (
-          <div className="portfolio-action-card mt-6">
-            {!isConnected ? (
-              <button onClick={() => open()} className="portfolio-connect-wallet-button w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 to-teal-500 font-bold transition-all hover:opacity-90">
-                Connect Wallet
-              </button>
-            ) : (
-              <div className="portfolio-native-flat-container rounded-xl overflow-hidden bg-slate-900 border border-slate-800/80 p-1">
-                <AppKitAccountButton />
-              </div>
-            )}
+    <div className="portfolio-view w-full max-w-md mx-auto p-4 space-y-6">
+      
+      {/* 1. CLEAN NATIVE BALANCE HEADER */}
+      <div className="portfolio-value-block bg-slate-900/40 border border-slate-800 p-6 rounded-2xl text-center backdrop-blur-md">
+        <span className="portfolio-estimate-label text-xs tracking-widest text-slate-400 block mb-1">EST. TOTAL VALUE</span>
+        <span className="portfolio-total text-4xl font-extrabold text-white tracking-tight">
+          \$0.00
+        </span>
+        {address && (
+          <div className="mt-2 text-xs text-slate-500 font-mono tracking-wider">
+            {`${address.slice(0, 6)}...${address.slice(-4)}`}
           </div>
         )}
       </div>
 
-      <div className="portfolio-section-heading mt-8">
-        <h3>Asset Trend</h3>
-        <span className="portfolio-period">Base Network Execution Layer</span>
-      </div>
-      <div className="portfolio-chart h-48 bg-slate-950/40 rounded-xl p-4 mt-2">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={market.find((asset) => asset.symbol === "ETH")?.sparkline?.map((val) => ({ value: val })) ?? []}>
-            <defs>
-              <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/>
-                <stop offset="95%" stopColor="#a855f7" stopOpacity={0}/>
-              </linearGradient>
-            </defs>
-            <Area type="monotone" dataKey="value" stroke="#a855f7" strokeWidth={2} fillOpacity={1} fill="url(#colorValue)" />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="portfolio-range-tabs mt-4 flex gap-2">
-        {['7D', '30D', '180D', '360D'].map((range) => (
-          <button key={range} onClick={() => setActiveRange(range)} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${activeRange === range ? 'bg-purple-600 text-white' : 'bg-slate-900 text-slate-400 hover:text-white'}`}>
-            {range}
-          </button>
-        ))}
-      </div>
-
-      <div className="portfolio-section-heading mt-8">
-        <h3>Assets Breakdown</h3>
-      </div>
-      <div className="portfolio-holdings mt-2 flex flex-col gap-2">
-        <div className="portfolio-holding-row portfolio-rtr-row flex justify-between items-center bg-slate-900 p-4 rounded-xl border border-slate-800">
-          <span className="flex items-center gap-3">
-            <div className="asset-logo w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center font-bold text-white shadow-lg shadow-purple-500/20">R</div>
-            <div><strong>RTR Network</strong><small className="block text-xs text-slate-500">RTR</small></div>
-          </span>
-          <div className="text-right">
-            <strong className="block text-white portfolio-blur-target" data-private={isPrivate}>
-              {isPrivate ? "••••" : rtrAmount === null ? "—" : `${rtrAmount.toLocaleString(undefined, { maximumFractionDigits: 6 })} RTR`}
-            </strong>
-            <small className="text-slate-400 portfolio-blur-target" data-private={isPrivate}>
-              {isPrivate ? "••••" : formatUsd(rtrValue)}
-            </small>
+      {/* 2. REOWN SYSTEM INTERACTION MATRIX */}
+      <div className="portfolio-action-card">
+        {!isConnected ? (
+          <div className="text-center p-6 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-4">
+            <p className="text-sm text-slate-400">Initialize your node terminal secure wallet connection to sync balances and process network assets.</p>
+            <button 
+              onClick={() => open()} 
+              className="portfolio-connect-wallet-button w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-teal-500 text-white font-bold tracking-wide shadow-lg shadow-purple-500/10 hover:opacity-95 transition-all"
+            >
+              Connect Wallet Terminal
+            </button>
           </div>
-        </div>
-        {[
-          { symbol: "ETH", name: "Ethereum", amount: ethAmount, value: ethValue },
-        ].map((asset) => (
-          <div key={asset.symbol} className="portfolio-holding-row flex justify-between items-center bg-slate-900/60 p-4 rounded-xl border border-slate-800/60">
-            <span className="flex items-center gap-3">
-              <div className="asset-logo asset-eth w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center font-bold text-slate-300">{asset.symbol.slice(0, 1)}</div>
-              <div><strong>{asset.name}</strong><small className="block text-xs text-slate-500">{asset.symbol}</small></div>
-            </span>
-            <div className="text-right">
-              <strong className="block text-white portfolio-blur-target" data-private={isPrivate}>
-                {isPrivate ? "••••" : asset.amount === null ? "—" : `${asset.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${asset.symbol}`}
-              </strong>
-              <small className="text-slate-400 portfolio-blur-target" data-private={isPrivate}>
-                {isPrivate ? "••••" : formatUsd(asset.value)}
-              </small>
+        ) : (
+          <div className="space-y-6">
+            {/* FLAT NATIVE DEPOSIT & ONRAMP SYSTEM */}
+            <div className="reown-embedded-onramp bg-slate-900 border border-slate-800 rounded-2xl p-2 shadow-xl">
+              <div className="px-4 pt-3 pb-1">
+                <h4 className="text-sm font-semibold text-slate-300">Secure Fiat On-Ramp Portal</h4>
+                <p className="text-xs text-slate-500">Purchase assets directly to your verified execution node</p>
+              </div>
+              <w3m-onramp-widget />
+            </div>
+
+            {/* FLAT NATIVE INTER-CHAIN SWAP TERMINAL */}
+            <div className="reown-embedded-swap bg-slate-900 border border-slate-800 rounded-2xl p-2 shadow-xl">
+              <div className="px-4 pt-3 pb-1">
+                <h4 className="text-sm font-semibold text-slate-300">Decentralized Asset Exchange</h4>
+                <p className="text-xs text-slate-500">Instant swap routing via Reown AppKit execution layer</p>
+              </div>
+              <w3m-swap-widget />
             </div>
           </div>
-        ))}
+        )}
       </div>
+
     </div>
   );
 }
-
 function SplashGate({ exiting }: { exiting: boolean }) {
   return <main className={`app-shell auth-loading${exiting ? " splash-exiting" : ""}`} aria-label="Loading RTR Network"><img className="splash-logo" src="/logo.png" alt="RTR Network shield" /></main>;
 }
