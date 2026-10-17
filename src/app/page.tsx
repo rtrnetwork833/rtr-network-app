@@ -4,6 +4,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowUpRight,
+  ArrowDown,
+  ArrowUp,
+  RefreshCw,
   ArrowDownLeft,
   Bell,
   Check,
@@ -512,7 +515,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
 
         <div className="flex items-baseline gap-1.5 mt-1">
           <span className="text-4xl font-black text-white tracking-tight font-sans">
-            \${isPrivate ? "••••••" : formatUsdValue(totalValue)}
+            {"$" + (isPrivate ? "••••••" : formatUsdValue(totalValue))}
           </span>
           <span className="text-sm font-extrabold text-blue-400 tracking-wide">USD</span>
         </div>
