@@ -451,33 +451,133 @@ function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, 
 }
 function PortfolioView({ market }: { market: MarketAsset[] }) {
   const { address } = useAccount();
+  const { open } = useAppKit();
+  const [isPrivate, setIsPrivate] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
+  const nativeBalance = useBalance({ address: address ?? undefined });
+  const rtrTokenAddress = process.env.NEXT_PUBLIC_RTR_TOKEN_ADDRESS as Address | undefined;
+  const rtrBalance = useReadContract({
+    address: rtrTokenAddress,
+    abi: rtrTokenAbi,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address && rtrTokenAddress) },
+  });
+
+  const priceFor = (symbol: string) => market.find((asset) => asset.symbol === symbol)?.price ?? null;
+  const rtrAmount = typeof rtrBalance.data === "bigint" ? Number(formatUnits(rtrBalance.data, 18)) : address ? 0 : null;
+  const ethAmount = nativeBalance.data ? Number(formatUnits(nativeBalance.data.value, nativeBalance.data.decimals)) : address ? 0 : null;
+  const rtrValue = rtrAmount !== null && priceFor("RTR") !== null ? rtrAmount * (priceFor("RTR") ?? 0) : 0;
+  const ethValue = ethAmount !== null && priceFor("ETH") !== null ? ethAmount * (priceFor("ETH") ?? 0) : 0;
+  const totalValue = rtrValue + ethValue;
+
+  function formatUsdValue(value: number) {
+    if (!Number.isFinite(value) || value === 0) return "0.00";
+    return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
   if (!isMounted) return null;
 
   return (
-    <div className="portfolio-view w-full max-w-2xl mx-auto p-4">
-      {/* 1. PROFESSIONAL PLATFORM BALANCES ELEMENT */}
-      <div className="portfolio-value-block bg-slate-900/20 border border-slate-800/50 p-6 rounded-2xl text-center mb-6 backdrop-blur-md">
-        <span className="portfolio-estimate-label text-xs tracking-widest text-slate-500 block mb-1">EST. TOTAL VALUE</span>
-        <span className="portfolio-total text-4xl font-extrabold text-white tracking-tight">
-          \$0.00
-        </span>
+    <div className="portfolio-view w-full max-w-md mx-auto px-4 py-6 space-y-6 select-none animate-fadeIn">
+      
+      {/* =========================================================================
+          ZONE 1: EXCLUSIVE BEAUTIFUL EST. TOTAL VALUE BALANCE CARD
+          ========================================================================= */}
+      <div className="bg-[#11192e] border border-blue-900/30 rounded-2xl p-6 shadow-xl relative overflow-hidden backdrop-blur-md">
+        <div className="flex justify-between items-center mb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold tracking-widest text-slate-400 uppercase">EST. TOTAL VALUE</span>
+            <button 
+              type="button" 
+              onClick={() => setIsPrivate(!isPrivate)} 
+              className="text-slate-400 hover:text-white transition-colors"
+              aria-label={isPrivate ? "Show balance" : "Hide balance"}
+            >
+              {isPrivate ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
+          </div>
+          
+          {/* Subtle network badge inside the custom balance card container */}
+          <div className="text-[10px] text-emerald-400 font-bold tracking-wider uppercase bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            Secured
+          </div>
+        </div>
+
+        <div className="flex items-baseline gap-1.5 mt-1">
+          <span className="text-4xl font-black text-white tracking-tight font-sans">
+            \${isPrivate ? "••••••" : formatUsdValue(totalValue)}
+          </span>
+          <span className="text-sm font-extrabold text-blue-400 tracking-wide">USD</span>
+        </div>
+
         {address && (
-          <div className="mt-2 text-xs text-slate-400 font-mono tracking-wider bg-slate-950/40 py-1 px-3 rounded-full inline-block border border-slate-800/40">
-            {`${address.slice(0, 6)}...${address.slice(-4)}`}
+          <div className="mt-3 pt-3 border-t border-slate-800/40 text-[11px] text-slate-500 font-mono tracking-wider flex justify-between items-center">
+            <span className="text-slate-400">Node Wallet</span>
+            <span>{`${address.slice(0, 6)}...${address.slice(-4)}`}</span>
           </div>
         )}
       </div>
 
-      {/* 2. INSTANT REOWN INTERFACE EMBED */}
-      <div className="reown-embedded-terminal bg-slate-900/80 border border-slate-800/80 rounded-2xl p-1 shadow-2xl backdrop-blur-lg overflow-hidden">
+      {/* =========================================================================
+          ZONE 2: REOWN-STYLE LIGHT BLUE PREMIUM 3-ACTION GRID WITH CLEAR TEXT
+          ========================================================================= */}
+      <div className="grid grid-cols-3 gap-4 py-2">
+        
+        {/* BUTTON 1: DEPOSIT (ARROW DOWN) */}
+        <button 
+          onClick={() => open({ view: 'OnRampProviders' })}
+          className="flex flex-col items-center justify-center group focus:outline-none"
+        >
+          <div className="w-full aspect-square max-w-[70px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
+            <ArrowDown size={24} className="stroke-[2.5]" />
+          </div>
+          <span className="text-xs font-bold text-slate-300 mt-2.5 tracking-wide group-hover:text-white transition-colors">
+            Deposit
+          </span>
+        </button>
+
+        {/* BUTTON 2: SWAP / CONVERT (ROTATING ARROWS) */}
+        <button 
+          onClick={() => open({ view: 'Swap' })}
+          className="flex flex-col items-center justify-center group focus:outline-none"
+        >
+          <div className="w-full aspect-square max-w-[70px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
+            <RefreshCw size={22} className="stroke-[2.5]" />
+          </div>
+          <span className="text-xs font-bold text-slate-300 mt-2.5 tracking-wide group-hover:text-white transition-colors">
+            Convert
+          </span>
+        </button>
+
+        {/* BUTTON 3: SEND (ARROW UP) */}
+        <button 
+          onClick={() => open({ view: 'Account' })}
+          className="flex flex-col items-center justify-center group focus:outline-none"
+        >
+          <div className="w-full aspect-square max-w-[70px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
+            <ArrowUp size={24} className="stroke-[2.5]" />
+          </div>
+          <span className="text-xs font-bold text-slate-300 mt-2.5 tracking-wide group-hover:text-white transition-colors">
+            Send Crypto
+          </span>
+        </button>
+
+      </div>
+
+      {/* =========================================================================
+          ZONE 3: REAL-TIME SECURE ASSETS LEDGER SUB-VIEW
+          ========================================================================= */}
+      <div className="reown-embedded-terminal bg-[#0d1321]/90 border border-slate-900 rounded-2xl p-1 shadow-2xl overflow-hidden backdrop-blur-md">
         <w3m-account-view />
       </div>
+
     </div>
   );
 }
