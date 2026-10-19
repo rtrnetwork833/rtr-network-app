@@ -36,7 +36,8 @@ createAppKit({
     email: true,
     socials: ['google'],
     analytics: false,
-    emailShowWallets: true
+    emailShowWallets: true,
+    swaps: true
   },
   themeMode: 'dark'
 });
