@@ -490,14 +490,11 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
     <div className="portfolio-view w-full px-0 py-6 space-y-6 select-none animate-fadeIn">
       
       {/* =========================================================================
-          ZONE 1: ULTRA-PREMIUM HORIZONTALLY EXPANDED BALANCE CARD
+          ZONE 1: BEAUTIFUL FULL-WIDTH EST. TOTAL VALUE BALANCE CARD
           ========================================================================= */}
       <div className="bg-[#11192e] border border-blue-900/30 rounded-2xl p-5 shadow-xl relative overflow-hidden w-full mx-0">
         
-        {/* Full horizontal straight line container alignment */}
         <div className="flex items-center w-full mb-3 text-xs font-bold tracking-wide">
-          
-          {/* Left Block: Title and visibility controls */}
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-slate-400 uppercase text-[11px] whitespace-nowrap">EST. TOTAL VALUE</span>
             <button 
@@ -510,19 +507,17 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
             </button>
           </div>
           
-          {/* Central Structural Spacer: Creates the necessary gap and forces expansion to left/right sides */}
           <div className="flex-grow min-w-[24px]"></div>
           
-          {/* Right Block: Clean, unclipped Action text link */}
+          {/* WIRED CORRECTLY TO USER'S NATIVE BLOCKCHAIN LOG VIEW */}
           <button 
-            onClick={() => open({ view: 'Account' })}
+            onClick={() => open({ view: "Account" })}
             className="text-blue-400 hover:text-blue-300 transition-colors text-[11px] text-right font-bold whitespace-nowrap shrink-0 block"
           >
             Transaction History ›
           </button>
         </div>
 
-        {/* Clean numerical currency presentation without any backslash characters */}
         <div className="flex items-baseline gap-1.5 mt-2">
           <span className="text-4xl font-black text-white tracking-tight font-sans">
             {"\$" + (isPrivate ? "••••••" : formatUsdValue(totalValue))}
@@ -530,7 +525,6 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           <span className="text-sm font-extrabold text-blue-400 tracking-wide uppercase">USD</span>
         </div>
 
-        {/* System node network wallet display layout */}
         <div className="mt-5 pt-3 border-t border-slate-800/40 text-[11px] text-slate-400 font-mono flex justify-between items-center w-full">
           <span className="text-slate-500 font-sans font-semibold uppercase tracking-wider text-[10px]">Node Wallet</span>
           <span className="tracking-wider text-slate-400 text-xs">{address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "0xe0D1...A91C"}</span>
@@ -538,13 +532,13 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
       </div>
 
       {/* =========================================================================
-          ZONE 2: REOWN-STYLE LIGHT BLUE 3-ACTION CONTROL HUB WITH NATIVE WIRE ROUTING
+          ZONE 2: REOWN-STYLE PREMIUM 3-ACTION GRID WITH FIXED TARGET ROUTING
           ========================================================================= */}
       <div className="grid grid-cols-3 gap-4 py-2 justify-items-center w-full">
         
-        {/* DEPOSIT ACTION NODE UTILITY - WIRED DIRECTLY TO THE FUND WALLET PORTAL VIEW */}
-        <button
-          onClick={() => open({ view: 'Account' })}
+        {/* BUTTON 1: DEPOSIT - JUMPS DIRECTLY TO FUND SELECTION PANEL */}
+        <button 
+          onClick={() => open({ view: "OnRampProviders" })}
           className="flex flex-col items-center justify-center group focus:outline-none w-full"
         >
           <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
@@ -555,9 +549,9 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </span>
         </button>
 
-        {/* CONVERT ACTION NODE UTILITY - WIRED DIRECTLY TO NATIVE SWAP INTERFACE WINDOW */}
+        {/* BUTTON 2: CONVERT - OPENS NATIVE CRYPTO SWAP DIALOG */}
         <button 
-          onClick={() => open({ view: 'Swap' })}
+          onClick={() => open({ view: "Swap" })}
           className="flex flex-col items-center justify-center group focus:outline-none w-full"
         >
           <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
@@ -568,9 +562,9 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </span>
         </button>
 
-        {/* SEND CRYPTO ACTION NODE UTILITY - WIRED TO SKIP MAIN LANDING AND LAUNCH TRANSACTION MODULES */}
+        {/* BUTTON 3: SEND CRYPTO - OPENS THE DIRECT ADDRESS PASTE INPUT MATRIX */}
         <button 
-          onClick={() => open({ view: 'Networks' })}
+          onClick={() => open({ view: "WalletSend" })}
           className="flex flex-col items-center justify-center group focus:outline-none w-full"
         >
           <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
@@ -584,14 +578,13 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
       </div>
 
       {/* =========================================================================
-          ZONE 3: PRODUCTION LIVE MULTI-ASSET BLOCKCHAIN LEDGER DIRECTORY
+          ZONE 3: LIVE MULTI-ASSET HOLDINGS LEDGER
           ========================================================================= */}
       <div className="portfolio-section-heading pt-2 w-full">
         <h3 className="text-xs font-bold tracking-widest text-slate-500 uppercase">Assets Ledger</h3>
       </div>
       
       <div className="portfolio-holdings flex flex-col gap-2.5 w-full">
-        
         <div className="flex justify-between items-center bg-[#11192e]/40 p-4 rounded-xl border border-blue-950/40 w-full">
           <span className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center font-bold text-white shadow-lg shadow-purple-500/20 text-sm">R</div>
@@ -627,7 +620,6 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
             </small>
           </div>
         </div>
-
       </div>
 
     </div>
