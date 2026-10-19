@@ -490,7 +490,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
     <div className="portfolio-view w-full px-0 py-6 space-y-6 select-none animate-fadeIn">
       
       {/* =========================================================================
-          ZONE 1: HORIZONTALLY EXPANDED BALANCE CARD WITH CLEAN NO-WRAP LAYOUT
+          ZONE 1: ULTRA-PREMIUM HORIZONTALLY EXPANDED BALANCE CARD
           ========================================================================= */}
       <div className="bg-[#11192e] border border-blue-900/30 rounded-2xl p-5 shadow-xl relative overflow-hidden w-full mx-0">
         
@@ -538,13 +538,13 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
       </div>
 
       {/* =========================================================================
-          ZONE 2: REOWN-STYLE PREMIUM 3-ACTION CONTROL HUB MATRIX
+          ZONE 2: REOWN-STYLE LIGHT BLUE 3-ACTION CONTROL HUB WITH NATIVE WIRE ROUTING
           ========================================================================= */}
       <div className="grid grid-cols-3 gap-4 py-2 justify-items-center w-full">
         
-        {/* DEPOSIT ACTION NODE UTILITY */}
+        {/* DEPOSIT ACTION NODE UTILITY - WIRED DIRECTLY TO THE FUND WALLET PORTAL VIEW */}
         <button 
-          onClick={() => open()}
+          onClick={() => open({ view: 'OnRampProviders' })}
           className="flex flex-col items-center justify-center group focus:outline-none w-full"
         >
           <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
@@ -555,7 +555,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </span>
         </button>
 
-        {/* CONVERT ACTION NODE UTILITY */}
+        {/* CONVERT ACTION NODE UTILITY - WIRED DIRECTLY TO NATIVE SWAP INTERFACE WINDOW */}
         <button 
           onClick={() => open({ view: 'Swap' })}
           className="flex flex-col items-center justify-center group focus:outline-none w-full"
@@ -568,7 +568,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </span>
         </button>
 
-        {/* SEND CRYPTO ACTION NODE UTILITY */}
+        {/* SEND CRYPTO ACTION NODE UTILITY - WIRED TO SKIP MAIN LANDING AND LAUNCH TRANSACTION MODULES */}
         <button 
           onClick={() => open({ view: 'Networks' })}
           className="flex flex-col items-center justify-center group focus:outline-none w-full"
