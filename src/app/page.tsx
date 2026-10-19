@@ -487,60 +487,67 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
   if (!isMounted) return null;
 
   return (
-    <div className="portfolio-view w-full max-w-lg mx-auto px-4 py-6 space-y-6 select-none animate-fadeIn">
+    <div className="portfolio-view w-full px-0 py-6 space-y-6 select-none animate-fadeIn">
       
       {/* =========================================================================
-          ZONE 1: EXPANDED ULTRA-PREMIUM EST. TOTAL VALUE CARD
+          ZONE 1: HORIZONTALLY EXPANDED BALANCE CARD WITH CLEAN NO-WRAP LAYOUT
           ========================================================================= */}
-      <div className="bg-[#11192e] border border-blue-900/30 rounded-2xl p-6 shadow-xl relative overflow-hidden backdrop-blur-md w-full">
+      <div className="bg-[#11192e] border border-blue-900/30 rounded-2xl p-5 shadow-xl relative overflow-hidden w-full mx-0">
         
-        {/* Straight-line layout alignment container */}
-        <div className="flex justify-between items-center w-full mb-3 whitespace-nowrap gap-4">
+        {/* Full horizontal straight line container alignment */}
+        <div className="flex items-center w-full mb-3 text-xs font-bold tracking-wide">
+          
+          {/* Left Block: Title and visibility controls */}
           <div className="flex items-center gap-2 shrink-0">
-            <span className="text-xs font-bold tracking-widest text-slate-400 uppercase">EST. TOTAL VALUE</span>
+            <span className="text-slate-400 uppercase text-[11px] whitespace-nowrap">EST. TOTAL VALUE</span>
             <button 
               type="button" 
               onClick={() => setIsPrivate(!isPrivate)} 
-              className="text-slate-400 hover:text-white transition-colors flex items-center"
+              className="text-slate-400 hover:text-white transition-colors p-0.5 flex items-center justify-center"
               aria-label={isPrivate ? "Show balance" : "Hide balance"}
             >
-              {isPrivate ? <EyeOff size={15} /> : <Eye size={15} />}
+              {isPrivate ? <EyeOff size={14} /> : <Eye size={14} />}
             </button>
           </div>
           
+          {/* Central Structural Spacer: Creates the necessary gap and forces expansion to left/right sides */}
+          <div className="flex-grow min-w-[24px]"></div>
+          
+          {/* Right Block: Clean, unclipped Action text link */}
           <button 
             onClick={() => open({ view: 'Account' })}
-            className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors tracking-wide shrink-0"
+            className="text-blue-400 hover:text-blue-300 transition-colors text-[11px] text-right font-bold whitespace-nowrap shrink-0 block"
           >
             Transaction History ›
           </button>
         </div>
 
-        {/* Hardcoded plain string injection to completely eliminate the backslash bug */}
+        {/* Clean numerical currency presentation without any backslash characters */}
         <div className="flex items-baseline gap-1.5 mt-2">
           <span className="text-4xl font-black text-white tracking-tight font-sans">
-            \${isPrivate ? "••••••" : formatUsdValue(totalValue)}
+            {"\$" + (isPrivate ? "••••••" : formatUsdValue(totalValue))}
           </span>
-          <span className="text-sm font-extrabold text-blue-400 tracking-wide">USD</span>
+          <span className="text-sm font-extrabold text-blue-400 tracking-wide uppercase">USD</span>
         </div>
 
+        {/* System node network wallet display layout */}
         <div className="mt-5 pt-3 border-t border-slate-800/40 text-[11px] text-slate-400 font-mono flex justify-between items-center w-full">
-          <span className="text-slate-400 font-sans font-medium">Node Wallet</span>
-          <span className="tracking-wider">{address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "0xe0D1...A91C"}</span>
+          <span className="text-slate-500 font-sans font-semibold uppercase tracking-wider text-[10px]">Node Wallet</span>
+          <span className="tracking-wider text-slate-400 text-xs">{address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "0xe0D1...A91C"}</span>
         </div>
       </div>
 
       {/* =========================================================================
-          ZONE 2: REOWN-STYLE PREMIUM 3-ACTION GRID WITH FIXED TARGET ROUTING
+          ZONE 2: REOWN-STYLE PREMIUM 3-ACTION CONTROL HUB MATRIX
           ========================================================================= */}
-      <div className="grid grid-cols-3 gap-4 py-2">
+      <div className="grid grid-cols-3 gap-4 py-2 justify-items-center w-full">
         
-        {/* BUTTON 1: DEPOSIT */}
+        {/* DEPOSIT ACTION NODE UTILITY */}
         <button 
           onClick={() => open()}
-          className="flex flex-col items-center justify-center group focus:outline-none"
+          className="flex flex-col items-center justify-center group focus:outline-none w-full"
         >
-          <div className="w-full aspect-square max-w-[70px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
+          <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
             <ArrowDown size={24} className="stroke-[2.5]" />
           </div>
           <span className="text-xs font-bold text-slate-300 mt-2.5 tracking-wide group-hover:text-white transition-colors">
@@ -548,12 +555,12 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </span>
         </button>
 
-        {/* BUTTON 2: CONVERT */}
+        {/* CONVERT ACTION NODE UTILITY */}
         <button 
           onClick={() => open({ view: 'Swap' })}
-          className="flex flex-col items-center justify-center group focus:outline-none"
+          className="flex flex-col items-center justify-center group focus:outline-none w-full"
         >
-          <div className="w-full aspect-square max-w-[70px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
+          <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
             <RefreshCw size={22} className="stroke-[2.5]" />
           </div>
           <span className="text-xs font-bold text-slate-300 mt-2.5 tracking-wide group-hover:text-white transition-colors">
@@ -561,12 +568,12 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </span>
         </button>
 
-        {/* BUTTON 3: SEND CRYPTO */}
+        {/* SEND CRYPTO ACTION NODE UTILITY */}
         <button 
           onClick={() => open({ view: 'Networks' })}
-          className="flex flex-col items-center justify-center group focus:outline-none"
+          className="flex flex-col items-center justify-center group focus:outline-none w-full"
         >
-          <div className="w-full aspect-square max-w-[70px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
+          <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
             <ArrowUp size={24} className="stroke-[2.5]" />
           </div>
           <span className="text-xs font-bold text-slate-300 mt-2.5 tracking-wide group-hover:text-white transition-colors">
@@ -577,15 +584,15 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
       </div>
 
       {/* =========================================================================
-          ZONE 3: PROPRIETARY LIVE MULTI-ASSET LEDGER
+          ZONE 3: PRODUCTION LIVE MULTI-ASSET BLOCKCHAIN LEDGER DIRECTORY
           ========================================================================= */}
-      <div className="portfolio-section-heading pt-2">
-        <h3 className="text-xs font-bold tracking-widest text-slate-400 uppercase">Assets Ledger</h3>
+      <div className="portfolio-section-heading pt-2 w-full">
+        <h3 className="text-xs font-bold tracking-widest text-slate-500 uppercase">Assets Ledger</h3>
       </div>
       
-      <div className="portfolio-holdings flex flex-col gap-2.5">
+      <div className="portfolio-holdings flex flex-col gap-2.5 w-full">
         
-        <div className="flex justify-between items-center bg-[#11192e]/40 p-4 rounded-xl border border-blue-950/40">
+        <div className="flex justify-between items-center bg-[#11192e]/40 p-4 rounded-xl border border-blue-950/40 w-full">
           <span className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center font-bold text-white shadow-lg shadow-purple-500/20 text-sm">R</div>
             <div>
@@ -603,7 +610,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </div>
         </div>
 
-        <div className="flex justify-between items-center bg-[#11192e]/20 p-4 rounded-xl border border-blue-950/20">
+        <div className="flex justify-between items-center bg-[#11192e]/20 p-4 rounded-xl border border-blue-950/20 w-full">
           <span className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center font-bold text-slate-300 text-sm">Ξ</div>
             <div>
