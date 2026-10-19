@@ -543,8 +543,8 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
       <div className="grid grid-cols-3 gap-4 py-2 justify-items-center w-full">
         
         {/* DEPOSIT ACTION NODE UTILITY - WIRED DIRECTLY TO THE FUND WALLET PORTAL VIEW */}
-        <button 
-          onClick={() => open({ view: 'OnRampProviders' })}
+        <button
+          onClick={() => open({ view: 'Account' })}
           className="flex flex-col items-center justify-center group focus:outline-none w-full"
         >
           <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
