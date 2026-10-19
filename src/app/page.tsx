@@ -487,43 +487,44 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
   if (!isMounted) return null;
 
   return (
-    <div className="portfolio-view w-full max-w-md mx-auto px-4 py-6 space-y-6 select-none animate-fadeIn">
+    <div className="portfolio-view w-full max-w-lg mx-auto px-4 py-6 space-y-6 select-none animate-fadeIn">
       
       {/* =========================================================================
-          ZONE 1: RESTORED ORIGINAL EST. TOTAL VALUE CARD
+          ZONE 1: EXPANDED ULTRA-PREMIUM EST. TOTAL VALUE CARD
           ========================================================================= */}
-      <div className="bg-[#11192e] border border-blue-900/30 rounded-2xl p-6 shadow-xl relative overflow-hidden backdrop-blur-md">
-        <div className="flex justify-between items-center mb-2">
-          <div className="flex items-center gap-2">
+      <div className="bg-[#11192e] border border-blue-900/30 rounded-2xl p-6 shadow-xl relative overflow-hidden backdrop-blur-md w-full">
+        
+        {/* Straight-line layout alignment container */}
+        <div className="flex justify-between items-center w-full mb-3 whitespace-nowrap gap-4">
+          <div className="flex items-center gap-2 shrink-0">
             <span className="text-xs font-bold tracking-widest text-slate-400 uppercase">EST. TOTAL VALUE</span>
             <button 
               type="button" 
               onClick={() => setIsPrivate(!isPrivate)} 
-              className="text-slate-400 hover:text-white transition-colors"
+              className="text-slate-400 hover:text-white transition-colors flex items-center"
               aria-label={isPrivate ? "Show balance" : "Hide balance"}
             >
               {isPrivate ? <EyeOff size={15} /> : <Eye size={15} />}
             </button>
           </div>
           
-          {/* Replaced 'Secured' badge strictly with Transaction History shortcut link */}
           <button 
             onClick={() => open({ view: 'Account' })}
-            className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-0.5 tracking-wide"
+            className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors tracking-wide shrink-0"
           >
             Transaction History ›
           </button>
         </div>
 
-        <div className="flex items-baseline gap-1.5 mt-1">
+        {/* Hardcoded plain string injection to completely eliminate the backslash bug */}
+        <div className="flex items-baseline gap-1.5 mt-2">
           <span className="text-4xl font-black text-white tracking-tight font-sans">
             \${isPrivate ? "••••••" : formatUsdValue(totalValue)}
           </span>
           <span className="text-sm font-extrabold text-blue-400 tracking-wide">USD</span>
         </div>
 
-        {/* Restored the clean operational wallet address readout from original layout screen */}
-        <div className="mt-4 pt-3 border-t border-slate-800/40 text-[11px] text-slate-400 font-mono flex justify-between items-center">
+        <div className="mt-5 pt-3 border-t border-slate-800/40 text-[11px] text-slate-400 font-mono flex justify-between items-center w-full">
           <span className="text-slate-400 font-sans font-medium">Node Wallet</span>
           <span className="tracking-wider">{address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "0xe0D1...A91C"}</span>
         </div>
@@ -534,7 +535,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           ========================================================================= */}
       <div className="grid grid-cols-3 gap-4 py-2">
         
-        {/* BUTTON 1: DEPOSIT - ROUTES DIRECTLY TO MAIN OPTIONS PANEL */}
+        {/* BUTTON 1: DEPOSIT */}
         <button 
           onClick={() => open()}
           className="flex flex-col items-center justify-center group focus:outline-none"
@@ -547,7 +548,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </span>
         </button>
 
-        {/* BUTTON 2: CONVERT / SWAP */}
+        {/* BUTTON 2: CONVERT */}
         <button 
           onClick={() => open({ view: 'Swap' })}
           className="flex flex-col items-center justify-center group focus:outline-none"
@@ -560,7 +561,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </span>
         </button>
 
-        {/* BUTTON 3: SEND CRYPTO - SKIPS ROOT MENU AND OPENS TRANSACTION MODULE */}
+        {/* BUTTON 3: SEND CRYPTO */}
         <button 
           onClick={() => open({ view: 'Networks' })}
           className="flex flex-col items-center justify-center group focus:outline-none"
