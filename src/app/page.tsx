@@ -44,6 +44,10 @@ import { formatUnits, getAddress, type Address } from 'viem';
 import { base } from 'wagmi/chains';
 import { fetchProfileWalletAddress, profileWalletQueryKey, saveProfileWalletAddress } from "@/lib/wallet-profile";
 import { useAppKit, AppKitAccountButton, useAppKitAccount } from '@reown/appkit/react';
+import CustomSendModal from '@/components/CustomSendModal';
+import CustomSwapModal from '@/components/CustomSwapModal';
+import CustomDepositModal from '@/components/CustomDepositModal';
+import CustomActivityLedger from '@/components/CustomActivityLedger';
 
 type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "portfolio";
 type Activation = { tier: string; activated_at: string; expires_at: string };
@@ -457,6 +461,10 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
   const { open } = useAppKit();
   const [isPrivate, setIsPrivate] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [showDepositModal, setShowDepositModal] = useState(false);
+  const [showSwapModal, setShowSwapModal] = useState(false);
+  const [showSendModal, setShowSendModal] = useState(false);
+  const [showActivityLedger, setShowActivityLedger] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -506,8 +514,8 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
             </button>
           </div>
           <div className="flex-grow min-w-[24px]"></div>
-          <button 
-            onClick={() => open({ view: "Account" })}
+          <button
+            onClick={() => setShowActivityLedger(true)}
             className="text-blue-400 hover:text-blue-300 transition-colors text-[11px] text-right font-bold whitespace-nowrap shrink-0 block"
           >
             Transaction History ›
@@ -516,7 +524,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
 
         <div className="flex items-baseline gap-1.5 mt-2">
           <span className="text-4xl font-black text-white tracking-tight font-sans">
-            {"\$" + (isPrivate ? "••••••" : formatUsdValue(totalValue))}
+            {"$" + (isPrivate ? "••••••" : formatUsdValue(totalValue))}
           </span>
           <span className="text-sm font-extrabold text-blue-400 tracking-wide uppercase">USD</span>
         </div>
@@ -532,9 +540,9 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           ========================================================================= */}
       <div className="grid grid-cols-3 gap-4 py-2 justify-items-center w-full">
         
-        {/* BUTTON 1: DEPOSIT - FIXED TO OPEN THE BASE APPKIT MODAL COMPATIBLE WITH ALL VERSIONS */}
-        <button 
-          onClick={() => open()}
+        {/* BUTTON 1: DEPOSIT - OPEN CUSTOM DEPOSIT MODAL */}
+        <button
+          onClick={() => setShowDepositModal(true)}
           className="flex flex-col items-center justify-center group focus:outline-none w-full"
         >
           <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
@@ -545,9 +553,9 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </span>
         </button>
 
-        {/* BUTTON 2: CONVERT - FIXED TO OPEN THE MAIN PORTAL TO PREVENT TYPESCRIPT COMPILER ERRORS */}
-        <button 
-          onClick={() => open()}
+        {/* BUTTON 2: CONVERT - OPEN CUSTOM SWAP MODAL */}
+        <button
+          onClick={() => setShowSwapModal(true)}
           className="flex flex-col items-center justify-center group group-hover:scale-105 focus:outline-none w-full"
         >
           <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
@@ -617,6 +625,12 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </div>
         </div>
       </div>
+
+      {/* Custom Modals */}
+      {showDepositModal && <CustomDepositModal onClose={() => setShowDepositModal(false)} />}
+      {showSwapModal && <CustomSwapModal onClose={() => setShowSwapModal(false)} />}
+      {showSendModal && <CustomSendModal onClose={() => setShowSendModal(false)} />}
+      {showActivityLedger && <CustomActivityLedger onClose={() => setShowActivityLedger(false)} />}
 
     </div>
   );
