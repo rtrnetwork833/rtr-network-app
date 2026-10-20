@@ -465,6 +465,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
   const [showSwapModal, setShowSwapModal] = useState(false);
   const [showSendModal, setShowSendModal] = useState(false);
   const [showActivityLedger, setShowActivityLedger] = useState(false);
+  const [showWalletError, setShowWalletError] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -491,6 +492,14 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
     if (!Number.isFinite(value) || value === 0) return "0.00";
     return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
+
+  const handleAction = (action: () => void) => {
+    if (!address) {
+      setShowWalletError(true);
+      return;
+    }
+    action();
+  };
 
   if (!isMounted) return null;
 
@@ -542,7 +551,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
         
         {/* BUTTON 1: DEPOSIT - OPEN CUSTOM DEPOSIT MODAL */}
         <button
-          onClick={() => setShowDepositModal(true)}
+          onClick={() => handleAction(() => setShowDepositModal(true))}
           className="flex flex-col items-center justify-center group focus:outline-none w-full"
         >
           <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
@@ -555,7 +564,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
 
         {/* BUTTON 2: CONVERT - OPEN CUSTOM SWAP MODAL */}
         <button
-          onClick={() => setShowSwapModal(true)}
+          onClick={() => handleAction(() => setShowSwapModal(true))}
           className="flex flex-col items-center justify-center group group-hover:scale-105 focus:outline-none w-full"
         >
           <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
@@ -566,9 +575,9 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </span>
         </button>
 
-        {/* BUTTON 3: SEND CRYPTO - LEFT EXACTLY AS IT WAS (WORKING FINE) */}
-        <button 
-          onClick={() => open({ view: "WalletSend" })}
+        {/* BUTTON 3: SEND CRYPTO - NATIVE WALLETSEND PANEL */}
+        <button
+          onClick={() => handleAction(() => open({ view: "WalletSend" }))}
           className="flex flex-col items-center justify-center group focus:outline-none w-full"
         >
           <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
@@ -631,6 +640,27 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
       {showSwapModal && <CustomSwapModal onClose={() => setShowSwapModal(false)} />}
       {showSendModal && <CustomSendModal onClose={() => setShowSendModal(false)} />}
       {showActivityLedger && <CustomActivityLedger onClose={() => setShowActivityLedger(false)} />}
+      
+      {/* Wallet Connection Error Modal */}
+      {showWalletError && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#11192e] border border-blue-900/30 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="text-center">
+              <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
+                <X size={32} className="text-red-400" />
+              </div>
+              <h3 className="text-lg font-bold text-white mb-2">Wallet Not Connected</h3>
+              <p className="text-slate-400 text-sm mb-6">Please connect your wallet to proceed with this action.</p>
+              <button
+                onClick={() => setShowWalletError(false)}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
