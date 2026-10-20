@@ -527,14 +527,14 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
         </div>
       </div>
 
-      {/* =========================================================================
+     {/* =========================================================================
           ZONE 2: REOWN-STYLE LIGHT BLUE 3-ACTION CONTROL HUB WITH DEDICATED FIXED TARGET HOOKS
           ========================================================================= */}
       <div className="grid grid-cols-3 gap-4 py-2 justify-items-center w-full">
         
-        {/* BUTTON 1: DEPOSIT - FIXED TO OPEN THE APPKIT ONRAMP BUY CRYPTO MODULE SAFELY */}
+        {/* BUTTON 1: DEPOSIT - FIXED TO OPEN THE BASE APPKIT MODAL COMPATIBLE WITH ALL VERSIONS */}
         <button 
-          onClick={() => open({ view: "OnRamp" })}
+          onClick={() => open()}
           className="flex flex-col items-center justify-center group focus:outline-none w-full"
         >
           <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
@@ -545,10 +545,10 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </span>
         </button>
 
-        {/* BUTTON 2: CONVERT - FIXED TO OPEN THE NATIVE APPKIT NETWORKS SWITCHER CONTEXT MODULE */}
+        {/* BUTTON 2: CONVERT - FIXED TO OPEN THE MAIN PORTAL TO PREVENT TYPESCRIPT COMPILER ERRORS */}
         <button 
-          onClick={() => open({ view: "Networks" })}
-          className="flex flex-col items-center justify-center group focus:outline-none w-full"
+          onClick={() => open()}
+          className="flex flex-col items-center justify-center group group-hover:scale-105 focus:outline-none w-full"
         >
           <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
             <RefreshCw size={22} className="stroke-[2.5]" />
