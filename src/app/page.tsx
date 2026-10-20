@@ -453,7 +453,7 @@ function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, 
   </div>;
 }
 function PortfolioView({ market }: { market: MarketAsset[] }) {
-  const { address, isConnected } = useAccount();
+  const { address } = useAccount();
   const { open } = useAppKit();
   const [isPrivate, setIsPrivate] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -510,12 +510,12 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
             </button>
           </div>
           
-          {/* Central Structural Spacer: Creates the necessary gap and forces expansion to left/right sides */}
+          {/* Central Dynamic Spacer: Creates the necessary gap and forces expansion to left/right sides */}
           <div className="flex-grow min-w-[24px]"></div>
           
           {/* Right Block: Clean, unclipped Action text link */}
-          <button
-            onClick={() => open({ view: 'Account' })}
+          <button 
+            onClick={() => open({ view: "Account" })}
             className="text-blue-400 hover:text-blue-300 transition-colors text-[11px] text-right font-bold whitespace-nowrap shrink-0 block"
           >
             Transaction History ›
@@ -525,7 +525,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
         {/* Clean numerical currency presentation without any backslash characters */}
         <div className="flex items-baseline gap-1.5 mt-2">
           <span className="text-4xl font-black text-white tracking-tight font-sans">
-            {"$" + (isPrivate ? "••••••" : formatUsdValue(totalValue))}
+            {"\$" + (isPrivate ? "••••••" : formatUsdValue(totalValue))}
           </span>
           <span className="text-sm font-extrabold text-blue-400 tracking-wide uppercase">USD</span>
         </div>
@@ -538,13 +538,13 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
       </div>
 
       {/* =========================================================================
-          ZONE 2: REOWN-STYLE LIGHT BLUE 3-ACTION CONTROL HUB WITH TARGETED SDK FIXED ROUTING
+          ZONE 2: REOWN-STYLE LIGHT BLUE 3-ACTION CONTROL HUB WITH DEDICATED FIXED TARGET HOOKS
           ========================================================================= */}
       <div className="grid grid-cols-3 gap-4 py-2 justify-items-center w-full">
         
-        {/* BUTTON 1: DEPOSIT - TRIGGER ONRAMP PROVIDERS VIEW */}
-        <button
-          onClick={() => open({ view: 'OnRampProviders' })}
+        {/* BUTTON 1: DEPOSIT - WIRED TO DISPLAY "BUY CRYPTO / RECEIVE FUNDS" PATHWAY GRID */}
+        <button 
+          onClick={() => open({ view: "OnRampProviders" })}
           className="flex flex-col items-center justify-center group focus:outline-none w-full"
         >
           <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
@@ -555,9 +555,9 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </span>
         </button>
 
-        {/* BUTTON 2: CONVERT - TRIGGERS DECENTRALIZED SWAP LAYOUT OVERLAY */}
-        <button
-          onClick={() => open({ view: 'Swap' })}
+        {/* BUTTON 2: CONVERT - WIRED DIRECTLY TO THE OFFICIAL DECENTRALIZED SWAP MODAL */}
+        <button 
+          onClick={() => open({ view: "Swap" })}
           className="flex flex-col items-center justify-center group focus:outline-none w-full"
         >
           <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
@@ -568,9 +568,9 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </span>
         </button>
 
-        {/* BUTTON 3: SEND CRYPTO - PRESERVED TO AUTOMATICALLY TARGET TRANSACTION INPUT MATRIX FORMS */}
-        <button
-          onClick={() => open({ view: 'Networks' })}
+        {/* BUTTON 3: SEND CRYPTO - WIRED TO SKIP ACC MENU AND GO STRAIGHT TO TRANSFER FORM PANEL */}
+        <button 
+          onClick={() => open({ view: "WalletSend" })}
           className="flex flex-col items-center justify-center group focus:outline-none w-full"
         >
           <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
