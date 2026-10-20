@@ -524,7 +524,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
           </div>
           <div className="flex-grow min-w-[24px]"></div>
           <button
-            onClick={() => setShowActivityLedger(true)}
+            onClick={() => handleAction(() => setShowActivityLedger(true))}
             className="text-blue-400 hover:text-blue-300 transition-colors text-[11px] text-right font-bold whitespace-nowrap shrink-0 block"
           >
             Transaction History ›
