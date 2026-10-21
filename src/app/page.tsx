@@ -10,6 +10,7 @@ import {
   ArrowDownLeft,
   Bell,
   Check,
+  CheckCircle2,
   ChevronRight,
   Copy,
   Crown,
@@ -488,6 +489,28 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
   const ethValue = ethAmount * (priceFor("ETH") ?? 0);
   const totalValue = rtrValue + ethValue;
 
+  // Dynamic asset ledger array
+  const assets = [
+    {
+      symbol: "RTR",
+      name: "RTR Network",
+      balance: rtrAmount,
+      value: rtrValue,
+      icon: "R",
+      iconBg: "bg-purple-600",
+      iconShadow: "shadow-purple-500/20",
+    },
+    {
+      symbol: "ETH",
+      name: "Ethereum",
+      balance: ethAmount,
+      value: ethValue,
+      icon: "Ξ",
+      iconBg: "bg-slate-800",
+      iconShadow: "shadow-slate-500/20",
+    },
+  ].filter((asset) => asset.balance > 0);
+
   function formatUsdValue(value: number) {
     if (!Number.isFinite(value) || value === 0) return "0.00";
     return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -540,7 +563,9 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
 
         <div className="mt-5 pt-3 border-t border-slate-800/40 text-[11px] text-slate-400 font-mono flex justify-between items-center w-full">
           <span className="text-slate-500 font-sans font-semibold uppercase tracking-wider text-[10px]">Node Wallet</span>
-          <span className="tracking-wider text-slate-400 text-xs">{address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "0xe0D1...A91C"}</span>
+          <span className={`tracking-wider text-xs ${address ? "text-slate-400" : "text-slate-600"}`}>
+            {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "No Wallet Linked"}
+          </span>
         </div>
       </div>
 
@@ -598,41 +623,36 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
       </div>
       
       <div className="portfolio-holdings flex flex-col gap-2.5 w-full">
-        <div className="flex justify-between items-center bg-[#11192e]/40 p-4 rounded-xl border border-blue-950/40 w-full">
-          <span className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center font-bold text-white shadow-lg shadow-purple-500/20 text-sm">R</div>
-            <div>
-              <strong className="block text-sm text-white font-semibold tracking-wide">RTR Network</strong>
-              <small className="block text-xs text-slate-500 uppercase tracking-wider font-medium">RTR</small>
-            </div>
-          </span>
-          <div className="text-right">
-            <strong className="block text-sm text-white font-bold tracking-wide portfolio-blur-target" data-private={isPrivate}>
-              {isPrivate ? "••••" : `${rtrAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })} RTR`}
-            </strong>
-            <small className="text-xs text-slate-400 font-semibold tracking-wide portfolio-blur-target" data-private={isPrivate}>
-              {isPrivate ? "••••" : `$${formatUsdValue(rtrValue)}`}
-            </small>
+        {assets.length === 0 ? (
+          <div className="text-center py-8 text-slate-500 text-sm">
+            No assets found in your wallet
           </div>
-        </div>
-
-        <div className="flex justify-between items-center bg-[#11192e]/20 p-4 rounded-xl border border-blue-950/20 w-full">
-          <span className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center font-bold text-slate-300 text-sm">Ξ</div>
-            <div>
-              <strong className="block text-sm text-white font-semibold tracking-wide">Ethereum</strong>
-              <small className="block text-xs text-slate-500 uppercase tracking-wider font-medium">ETH</small>
+        ) : (
+          assets.map((asset) => (
+            <div
+              key={asset.symbol}
+              className="flex justify-between items-center bg-[#11192e]/40 p-4 rounded-xl border border-blue-950/40 w-full"
+            >
+              <span className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-full ${asset.iconBg} flex items-center justify-center font-bold text-white shadow-lg ${asset.iconShadow} text-sm`}>
+                  {asset.icon}
+                </div>
+                <div>
+                  <strong className="block text-sm text-white font-semibold tracking-wide">{asset.name}</strong>
+                  <small className="block text-xs text-slate-500 uppercase tracking-wider font-medium">{asset.symbol}</small>
+                </div>
+              </span>
+              <div className="text-right">
+                <strong className="block text-sm text-white font-bold tracking-wide portfolio-blur-target" data-private={isPrivate}>
+                  {isPrivate ? "••••" : `${asset.balance.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${asset.symbol}`}
+                </strong>
+                <small className="text-xs text-slate-400 font-semibold tracking-wide portfolio-blur-target" data-private={isPrivate}>
+                  {isPrivate ? "••••" : `$${formatUsdValue(asset.value)}`}
+                </small>
+              </div>
             </div>
-          </span>
-          <div className="text-right">
-            <strong className="block text-sm text-white font-bold tracking-wide portfolio-blur-target" data-private={isPrivate}>
-              {isPrivate ? "••••" : `${ethAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })} ETH`}
-            </strong>
-            <small className="text-xs text-slate-400 font-semibold tracking-wide portfolio-blur-target" data-private={isPrivate}>
-              {isPrivate ? "••••" : `$${formatUsdValue(ethValue)}`}
-            </small>
-          </div>
-        </div>
+          ))
+        )}
       </div>
 
       {/* Custom Modals */}
@@ -976,11 +996,28 @@ function AuthOverlay() {
             <input className="otp-input" type="text" inputMode="numeric" maxLength={6} pattern="[0-9]*" value={enteredToken} onChange={(event) => setEnteredToken(event.target.value.replace(/\D/g, "").slice(0, 6))} required autoComplete="one-time-code" />
           </label>
           {message && <div className="auth-message" role="alert">{message}</div>}
-          {!isConnected && (
-            <button type="button" className="primary-button auth-submit" onClick={() => open()} style={{ marginBottom: "12px" }}>
-              Connect Wallet to Activate
-            </button>
-          )}
+          
+          {/* Premium Wallet Activation Card */}
+          <div className="wallet-activation-card">
+            <div className="wallet-activation-icon">
+              <Zap size={24} />
+            </div>
+            <h3>Activate Your Secure Node Core</h3>
+            <p>After verifying your account email code above, click below to initialize your permanent RTR Network Node Wallet to access your portfolio assets, transaction nodes, and exchange channels securely.</p>
+            {!isConnected ? (
+              <button type="button" className="wallet-activate-button" onClick={() => open()}>
+                Initialize & Connect Node Wallet Core
+              </button>
+            ) : (
+              <div className="wallet-connected-state">
+                <div className="wallet-connected-icon">
+                  <CheckCircle2 size={20} />
+                </div>
+                <span>Wallet Connected Ready</span>
+              </div>
+            )}
+          </div>
+          
           <button className="primary-button auth-submit" disabled={busy || !canActivateSignup}>
             {busy ? <><span className="loading-dots" aria-hidden="true"><i /><i /><i /></span>Authenticating token...</> : "Activate Node & Enter Dashboard"}
           </button>
