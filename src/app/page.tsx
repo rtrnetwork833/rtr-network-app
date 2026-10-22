@@ -187,6 +187,7 @@ export default function Home() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { disconnect } = useDisconnect();
+  const { address: walletAddress, isConnected: walletConnected } = useAppKitAccount();
   const [user, setUser] = useState<User | null>(null);
   const [, setPinState] = useState("");
   const [profileName, setProfileName] = useState<string | null>(null);
@@ -207,6 +208,13 @@ export default function Home() {
     enabled: marketCacheReady,
     staleTime: 30000,
     refetchInterval: 30000,
+    retry: 1,
+  });
+  const walletProfileQuery = useQuery({
+    queryKey: profileWalletQueryKey(user?.id ?? ""),
+    queryFn: fetchProfileWalletAddress,
+    enabled: Boolean(user && !authLoading),
+    staleTime: 0,
     retry: 1,
   });
   const market = marketQuery.data ?? [];
@@ -233,17 +241,33 @@ export default function Home() {
     return () => window.clearTimeout(splashTimer);
   }, [authLoading]);
 
-  // Auto-reconnect wallet from saved profile address
   useEffect(() => {
-    if (authLoading || !user) return;
-    
-    const savedWalletAddress = window.localStorage.getItem('saved_wallet_address');
-    if (savedWalletAddress) {
-      console.log('Found saved wallet address, user is authenticated:', savedWalletAddress);
-      // The wallet connection is handled by Reown's persistent storage
-      // The saved address is now used for reference and verification
+    if (!walletProfileQuery.isSuccess) return;
+    if (walletProfileQuery.data) {
+      window.localStorage.setItem("saved_wallet_address", walletProfileQuery.data);
+    } else {
+      window.localStorage.removeItem("saved_wallet_address");
     }
-  }, [authLoading, user]);
+  }, [walletProfileQuery.data, walletProfileQuery.isSuccess]);
+
+  useEffect(() => {
+    if (!user || authLoading || !walletProfileQuery.isSuccess || !walletAddress || !walletConnected) return;
+    const normalizedWalletAddress = getAddress(walletAddress);
+    if (walletProfileQuery.data === normalizedWalletAddress) return;
+    let cancelled = false;
+
+    void saveProfileWalletAddress(normalizedWalletAddress)
+      .then(() => {
+        if (cancelled) return;
+        queryClient.setQueryData(profileWalletQueryKey(user.id), normalizedWalletAddress);
+        window.localStorage.setItem("saved_wallet_address", normalizedWalletAddress);
+      })
+      .catch((err: unknown) => {
+        console.error("Failed to sync wallet address:", err);
+      });
+
+    return () => { cancelled = true; };
+  }, [user, authLoading, walletAddress, walletConnected, walletProfileQuery.data, walletProfileQuery.isSuccess, queryClient]);
 
   useEffect(() => {
     const mountTimer = window.setTimeout(() => {
@@ -452,7 +476,7 @@ export default function Home() {
         {view === "market" && <MarketView market={market} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
         {view === "game" && <PlaceholderView icon={<Gamepad2 />} title="Node quests" text="Complete community missions to unlock bonus points." />}
-        {view === "portfolio" && <PortfolioView market={market} />}
+        {view === "portfolio" && <PortfolioView market={market} savedWalletAddress={walletProfileQuery.data ?? null} />}
       </section>
 
       <nav className="bottom-nav" aria-label="Primary navigation">
@@ -478,7 +502,7 @@ function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, 
     <div className="metric-grid"><div><span>Network</span><strong>Base Mainnet</strong></div><div><span>Protocol</span><strong>v2.4.8</strong></div><div><span>Multiplier</span><strong>1.0x</strong><small>Standard Hashrate Protocol</small></div></div>
   </div>;
 }
-function PortfolioView({ market }: { market: MarketAsset[] }) {
+function PortfolioView({ market, savedWalletAddress }: { market: MarketAsset[]; savedWalletAddress: Address | null }) {
   const { address, isConnected, isConnecting } = useAccount();
   const { open } = useAppKit();
   const [isPrivate, setIsPrivate] = useState(false);
@@ -493,19 +517,20 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
     setIsMounted(true);
   }, []);
 
-  const nativeBalance = useBalance({ address: address ?? undefined });
+  const portfolioAddress = address ?? savedWalletAddress ?? undefined;
+  const nativeBalance = useBalance({ address: portfolioAddress });
   const rtrTokenAddress = process.env.NEXT_PUBLIC_RTR_TOKEN_ADDRESS as Address | undefined;
   const rtrBalance = useReadContract({
     address: rtrTokenAddress,
     abi: rtrTokenAbi,
     functionName: "balanceOf",
-    args: address ? [address] : undefined,
-    query: { enabled: Boolean(address && rtrTokenAddress) },
+    args: portfolioAddress ? [portfolioAddress] : undefined,
+    query: { enabled: Boolean(portfolioAddress && rtrTokenAddress) },
   });
 
   const priceFor = (symbol: string) => market.find((asset) => asset.symbol === symbol)?.price ?? null;
-  const rtrAmount = typeof rtrBalance.data === "bigint" ? Number(formatUnits(rtrBalance.data, 18)) : address ? 0 : 0;
-  const ethAmount = nativeBalance.data ? Number(formatUnits(nativeBalance.data.value, nativeBalance.data.decimals)) : address ? 0 : 0;
+  const rtrAmount = typeof rtrBalance.data === "bigint" ? Number(formatUnits(rtrBalance.data, 18)) : portfolioAddress ? 0 : 0;
+  const ethAmount = nativeBalance.data ? Number(formatUnits(nativeBalance.data.value, nativeBalance.data.decimals)) : portfolioAddress ? 0 : 0;
   const rtrValue = rtrAmount * (priceFor("RTR") ?? 0);
   const ethValue = ethAmount * (priceFor("ETH") ?? 0);
   const totalValue = rtrValue + ethValue;
@@ -538,7 +563,7 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
   }
 
   const handleAction = (action: () => void) => {
-    if (!address) {
+    if (!address || !isConnected) {
       setShowWalletError(true);
       return;
     }
@@ -584,8 +609,8 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
 
         <div className="mt-5 pt-3 border-t border-slate-800/40 text-[11px] text-slate-400 font-mono flex justify-between items-center w-full">
           <span className="text-slate-500 font-sans font-semibold uppercase tracking-wider text-[10px]">Node Wallet</span>
-          <span className={`tracking-wider text-xs ${address ? "text-slate-400" : isConnecting ? "text-blue-400 animate-pulse" : "text-slate-600"}`}>
-            {isConnecting ? "Syncing Secure Node..." : address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "No Wallet Linked"}
+          <span className={`tracking-wider text-xs ${portfolioAddress ? "text-slate-400" : isConnecting ? "text-blue-400 animate-pulse" : "text-slate-600"}`}>
+            {isConnecting ? "Syncing Secure Node..." : portfolioAddress ? `${portfolioAddress.slice(0, 6)}...${portfolioAddress.slice(-4)}` : "No Wallet Linked"}
           </span>
         </div>
       </div>
