@@ -40,7 +40,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { normalizeDateOfBirth } from "@/lib/date";
 import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/client";
-import { useAccount, useBalance, useReadContract } from 'wagmi';
+import { useAccount, useBalance, useReadContract, useDisconnect } from 'wagmi';
 import { formatUnits, getAddress, type Address } from 'viem';
 import { base } from 'wagmi/chains';
 import { fetchProfileWalletAddress, profileWalletQueryKey, saveProfileWalletAddress } from "@/lib/wallet-profile";
@@ -186,6 +186,7 @@ export default function Home() {
   const pathname = usePathname();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { disconnect } = useDisconnect();
   const [user, setUser] = useState<User | null>(null);
   const [, setPinState] = useState("");
   const [profileName, setProfileName] = useState<string | null>(null);
@@ -199,6 +200,7 @@ export default function Home() {
   const [remaining, setRemaining] = useState(0);
   const [balance, setBalance] = useState<number | null>(null);
   const [marketCacheReady, setMarketCacheReady] = useState(false);
+  const [email, setEmail] = useState("");
   const marketQuery = useQuery({
     queryKey: ["market-assets"],
     queryFn: fetchMarketRows,
@@ -379,8 +381,15 @@ export default function Home() {
     setActivation(null);
     setActive(false);
     setBalance(0);
+    
+    // Save email for login memory
+    if (typeof window !== 'undefined' && email) {
+      window.localStorage.setItem('last_logged_in_email', email);
+    }
+    
     try {
       await supabase.auth.signOut();
+      await disconnect();
     } finally {
       window.localStorage.removeItem("active_tab");
       window.localStorage.removeItem(LEGACY_AUTH_EMAIL_STORAGE_KEY);
@@ -398,7 +407,7 @@ export default function Home() {
 
   if (splashVisible) return <SplashGate exiting={splashExiting} />;
   if (!user) return <AuthOverlay />;
-  if (pathname === "/settings") return <AccountSettings profileName={profileName} avatar={avatar} onBack={() => router.push("/")} onSignOut={() => void signOut()} />;
+  if (pathname === "/settings") return <AccountSettings profileName={profileName} avatar={avatar} onBack={() => router.push("/")} onSignOut={() => { disconnect(); void signOut(); }} />;
 
   return (
     <main className="app-shell" data-build={BUILD_TIMESTAMP}>
@@ -702,6 +711,7 @@ function AuthOverlay() {
   const router = useRouter();
   const { address, isConnected } = useAppKitAccount();
   const { open } = useAppKit();
+  const { disconnect } = useDisconnect();
   const [profilePreview, setProfilePreview] = useState<Profile | null>(null);
   const [mode, setMode] = useState<"login" | "signup" | "recovery">("login");
   const [email, setEmail] = useState("");
@@ -726,6 +736,17 @@ function AuthOverlay() {
   const pinIsValid = /^\d{6}$/.test(pinState);
   const pinsMatch = pinIsValid && pinState === confirmPin;
   const canActivateSignup = enteredToken.length === 6 && isConnected && Boolean(address);
+
+  // Load last logged in email on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const lastEmail = window.localStorage.getItem('last_logged_in_email');
+      if (lastEmail) {
+        setEmail(lastEmail);
+      }
+      setAuthPreferencesReady(true);
+    }
+  }, []);
 
   useLayoutEffect(() => {
     if (!authPreferencesReady || mode !== "login" || signupVerification || recoveryVerification) return;
@@ -862,6 +883,11 @@ function AuthOverlay() {
         setMessage("Incorrect PIN. Try again.");
         window.requestAnimationFrame(() => pinInput.current?.focus());
         return;
+      }
+
+      // Save email for login memory on successful login
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('last_logged_in_email', email.trim());
       }
 
       if (pinInput.current) pinInput.current.value = "";

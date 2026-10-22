@@ -4,7 +4,7 @@ import React, { ReactNode, useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createAppKit, useAppKitAccount, useDisconnect } from '@reown/appkit/react';
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi';
-import { WagmiProvider } from 'wagmi';
+import { WagmiProvider, createStorage } from 'wagmi';
 import { base } from 'wagmi/chains';
 import { createClient } from '@supabase/supabase-js';
 
@@ -23,7 +23,10 @@ const networks = [{ ...base }] as any;
 const wagmiAdapter = new WagmiAdapter({
   networks,
   projectId,
-  ssr: true
+  ssr: true,
+  storage: createStorage({
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined
+  })
 });
 
 createAppKit({
