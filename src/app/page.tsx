@@ -41,9 +41,9 @@ import { normalizeDateOfBirth } from "@/lib/date";
 import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/client";
 import { useAccount, useBalance, useReadContract, useDisconnect } from 'wagmi';
-import { formatUnits, getAddress, type Address } from 'viem';
+import { formatUnits, getAddress, isAddress, type Address } from 'viem';
 import { base } from 'wagmi/chains';
-import { fetchProfileWalletAddress, profileWalletQueryKey, saveProfileWalletAddress } from "@/lib/wallet-profile";
+import { profileWalletQueryKey, saveProfileWalletAddress } from "@/lib/wallet-profile";
 import { useAppKit, AppKitAccountButton, useAppKitAccount } from '@reown/appkit/react';
 import CustomSendModal from '@/components/CustomSendModal';
 import CustomSwapModal from '@/components/CustomSwapModal';
@@ -212,7 +212,18 @@ export default function Home() {
   });
   const walletProfileQuery = useQuery({
     queryKey: profileWalletQueryKey(user?.id ?? ""),
-    queryFn: fetchProfileWalletAddress,
+    queryFn: async () => {
+      if (!user) return null;
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("wallet_address")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (error) throw error;
+      return typeof data?.wallet_address === "string" && isAddress(data.wallet_address)
+        ? getAddress(data.wallet_address)
+        : null;
+    },
     enabled: Boolean(user && !authLoading),
     staleTime: 0,
     retry: 1,
@@ -476,7 +487,7 @@ export default function Home() {
         {view === "market" && <MarketView market={market} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
         {view === "game" && <PlaceholderView icon={<Gamepad2 />} title="Node quests" text="Complete community missions to unlock bonus points." />}
-        {view === "portfolio" && <PortfolioView market={market} savedWalletAddress={walletProfileQuery.data ?? null} />}
+        {view === "portfolio" && <PortfolioView market={market} savedWalletAddress={walletProfileQuery.data ?? null} walletProfileLoading={walletProfileQuery.isPending} />}
       </section>
 
       <nav className="bottom-nav" aria-label="Primary navigation">
@@ -502,7 +513,7 @@ function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, 
     <div className="metric-grid"><div><span>Network</span><strong>Base Mainnet</strong></div><div><span>Protocol</span><strong>v2.4.8</strong></div><div><span>Multiplier</span><strong>1.0x</strong><small>Standard Hashrate Protocol</small></div></div>
   </div>;
 }
-function PortfolioView({ market, savedWalletAddress }: { market: MarketAsset[]; savedWalletAddress: Address | null }) {
+function PortfolioView({ market, savedWalletAddress, walletProfileLoading }: { market: MarketAsset[]; savedWalletAddress: Address | null; walletProfileLoading: boolean }) {
   const { address, isConnected, isConnecting } = useAccount();
   const { open } = useAppKit();
   const [isPrivate, setIsPrivate] = useState(false);
@@ -517,7 +528,7 @@ function PortfolioView({ market, savedWalletAddress }: { market: MarketAsset[]; 
     setIsMounted(true);
   }, []);
 
-  const portfolioAddress = address ?? savedWalletAddress ?? undefined;
+  const portfolioAddress = savedWalletAddress ?? address ?? undefined;
   const nativeBalance = useBalance({ address: portfolioAddress });
   const rtrTokenAddress = process.env.NEXT_PUBLIC_RTR_TOKEN_ADDRESS as Address | undefined;
   const rtrBalance = useReadContract({
@@ -609,8 +620,8 @@ function PortfolioView({ market, savedWalletAddress }: { market: MarketAsset[]; 
 
         <div className="mt-5 pt-3 border-t border-slate-800/40 text-[11px] text-slate-400 font-mono flex justify-between items-center w-full">
           <span className="text-slate-500 font-sans font-semibold uppercase tracking-wider text-[10px]">Node Wallet</span>
-          <span className={`tracking-wider text-xs ${portfolioAddress ? "text-slate-400" : isConnecting ? "text-blue-400 animate-pulse" : "text-slate-600"}`}>
-            {isConnecting ? "Syncing Secure Node..." : portfolioAddress ? `${portfolioAddress.slice(0, 6)}...${portfolioAddress.slice(-4)}` : "No Wallet Linked"}
+          <span className={`tracking-wider text-xs ${portfolioAddress ? "text-slate-400" : isConnecting || walletProfileLoading ? "text-blue-400 animate-pulse" : "text-slate-600"}`}>
+            {walletProfileLoading ? "Loading profile wallet..." : isConnecting ? "Syncing Secure Node..." : portfolioAddress ? `${portfolioAddress.slice(0, 6)}...${portfolioAddress.slice(-4)}` : "No Wallet Linked"}
           </span>
         </div>
       </div>
