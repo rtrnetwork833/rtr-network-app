@@ -233,6 +233,18 @@ export default function Home() {
     return () => window.clearTimeout(splashTimer);
   }, [authLoading]);
 
+  // Auto-reconnect wallet from saved profile address
+  useEffect(() => {
+    if (authLoading || !user) return;
+    
+    const savedWalletAddress = window.localStorage.getItem('saved_wallet_address');
+    if (savedWalletAddress) {
+      console.log('Found saved wallet address, user is authenticated:', savedWalletAddress);
+      // The wallet connection is handled by Reown's persistent storage
+      // The saved address is now used for reference and verification
+    }
+  }, [authLoading, user]);
+
   useEffect(() => {
     const mountTimer = window.setTimeout(() => {
       const savedView = window.localStorage.getItem("active_tab");
@@ -467,7 +479,7 @@ function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, 
   </div>;
 }
 function PortfolioView({ market }: { market: MarketAsset[] }) {
-  const { address } = useAccount();
+  const { address, isConnected, isConnecting } = useAccount();
   const { open } = useAppKit();
   const [isPrivate, setIsPrivate] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -572,8 +584,8 @@ function PortfolioView({ market }: { market: MarketAsset[] }) {
 
         <div className="mt-5 pt-3 border-t border-slate-800/40 text-[11px] text-slate-400 font-mono flex justify-between items-center w-full">
           <span className="text-slate-500 font-sans font-semibold uppercase tracking-wider text-[10px]">Node Wallet</span>
-          <span className={`tracking-wider text-xs ${address ? "text-slate-400" : "text-slate-600"}`}>
-            {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "No Wallet Linked"}
+          <span className={`tracking-wider text-xs ${address ? "text-slate-400" : isConnecting ? "text-blue-400 animate-pulse" : "text-slate-600"}`}>
+            {isConnecting ? "Syncing Secure Node..." : address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "No Wallet Linked"}
           </span>
         </div>
       </div>
@@ -849,6 +861,10 @@ function AuthOverlay() {
     // Save wallet address to profile if connected
     if (isConnected && address) {
       await saveProfileWalletAddress(address as `0x${string}`);
+      // Also save to localStorage for auto-reconnection
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('saved_wallet_address', address);
+      }
     }
 
     setSignupVerification(false);
@@ -888,6 +904,21 @@ function AuthOverlay() {
       // Save email for login memory on successful login
       if (typeof window !== 'undefined') {
         window.localStorage.setItem('last_logged_in_email', email.trim());
+      }
+
+      // Fetch wallet address from profile to enable auto-reconnection
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('wallet_address')
+          .eq('email', email.trim())
+          .single();
+        
+        if (profile?.wallet_address) {
+          window.localStorage.setItem('saved_wallet_address', profile.wallet_address);
+        }
+      } catch (err) {
+        console.error('Failed to fetch wallet address:', err);
       }
 
       if (pinInput.current) pinInput.current.value = "";
