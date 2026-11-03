@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useAccount, useBalance, useReadContract } from "wagmi";
+import { useBalance, useReadContract } from "wagmi";
 import { type Address } from "viem";
 import { ArrowDownUp, ArrowRight, Loader2, AlertCircle, CheckCircle2, X } from "lucide-react";
 
 interface CustomSwapModalProps {
+  activeWalletAddress: Address | null;
   onClose: () => void;
 }
 
@@ -34,8 +35,7 @@ const tokens: Token[] = [
   { symbol: "USDT", name: "Tether USD", isNative: false },
 ];
 
-export default function CustomSwapModal({ onClose }: CustomSwapModalProps) {
-  const { address, isConnected } = useAccount();
+export default function CustomSwapModal({ activeWalletAddress, onClose }: CustomSwapModalProps) {
   const [fromToken, setFromToken] = useState<Token>(tokens[0]);
   const [toToken, setToToken] = useState<Token>(tokens[1]);
   const [fromAmount, setFromAmount] = useState("");
@@ -46,13 +46,13 @@ export default function CustomSwapModal({ onClose }: CustomSwapModalProps) {
   const [swapError, setSwapError] = useState("");
 
   // Fetch balances
-  const ethBalance = useBalance({ address });
+  const ethBalance = useBalance({ address: activeWalletAddress ?? undefined });
   const rtrBalance = useReadContract({
     address: rtrTokenAddress,
     abi: rtrTokenAbi,
     functionName: "balanceOf",
-    args: address ? [address] : undefined,
-    query: { enabled: Boolean(address && rtrTokenAddress) },
+    args: activeWalletAddress ? [activeWalletAddress] : undefined,
+    query: { enabled: Boolean(activeWalletAddress && rtrTokenAddress) },
   });
 
   const ethAmount = ethBalance.data ? Number(ethBalance.data.value) / 1e18 : 0;
@@ -88,7 +88,10 @@ export default function CustomSwapModal({ onClose }: CustomSwapModalProps) {
   };
 
   const handleSwap = async () => {
-    if (!isConnected || !address) return;
+    if (!activeWalletAddress) {
+      setSwapError("No wallet is linked to your profile.");
+      return;
+    }
     if (!fromAmount || parseFloat(fromAmount) <= 0) return;
 
     setIsSwapping(true);
@@ -106,16 +109,6 @@ export default function CustomSwapModal({ onClose }: CustomSwapModalProps) {
       setIsSwapping(false);
     }
   };
-
-  if (!isConnected) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-        <div className="bg-[#11192e] border border-blue-900/30 rounded-2xl p-6 w-full max-w-md shadow-2xl">
-          <div className="text-center text-slate-400">Please connect your wallet to swap tokens</div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">

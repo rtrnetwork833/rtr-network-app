@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { useAccount, useBalance, useSendTransaction, useReadContract } from "wagmi";
-import { parseEther, isAddress, type Address } from "viem";
+import { useAccount, useBalance, useSendTransaction, useReadContract, useWriteContract } from "wagmi";
+import { useAppKit } from "@reown/appkit/react";
+import { parseEther, parseUnits, isAddress, type Address } from "viem";
 import { base } from "wagmi/chains";
 import { X, ArrowRight, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 
 interface CustomSendModalProps {
+  activeWalletAddress: Address | null;
   onClose: () => void;
 }
 
@@ -31,24 +33,27 @@ const rtrTokenAbi = [
   },
 ] as const;
 
-export default function CustomSendModal({ onClose }: CustomSendModalProps) {
+export default function CustomSendModal({ activeWalletAddress, onClose }: CustomSendModalProps) {
   const { address, isConnected } = useAccount();
-  const { sendTransaction, isPending, isSuccess, error } = useSendTransaction();
+  const { open } = useAppKit();
+  const { sendTransactionAsync, isPending, isSuccess, error } = useSendTransaction();
+  const { writeContractAsync, isPending: isTokenTransferPending, error: tokenTransferError } = useWriteContract();
   
   const [selectedToken, setSelectedToken] = useState<"ETH" | "RTR">("ETH");
   const [destinationAddress, setDestinationAddress] = useState("");
   const [amount, setAmount] = useState("");
   const [addressError, setAddressError] = useState("");
-  const [estimatedGas, setEstimatedGas] = useState<string>("0.000001");
+  const [sendError, setSendError] = useState("");
 
   // Fetch balances
-  const ethBalance = useBalance({ address });
+  const balanceAddress = activeWalletAddress ?? undefined;
+  const ethBalance = useBalance({ address: balanceAddress });
   const rtrBalance = useReadContract({
     address: rtrTokenAddress,
     abi: rtrTokenAbi,
     functionName: "balanceOf",
-    args: address ? [address] : undefined,
-    query: { enabled: Boolean(address && rtrTokenAddress) },
+    args: balanceAddress ? [balanceAddress] : undefined,
+    query: { enabled: Boolean(balanceAddress && rtrTokenAddress) },
   });
 
   const ethAmount = ethBalance.data ? Number(ethBalance.data.value) / 1e18 : 0;
@@ -75,37 +80,43 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
   };
 
   const handleSend = async () => {
-    if (!isConnected || !address) return;
+    setSendError("");
+    if (!activeWalletAddress) {
+      setSendError("No wallet is linked to your profile.");
+      return;
+    }
     if (!validateAddress(destinationAddress)) return;
     if (!amount || parseFloat(amount) <= 0) return;
+    if (!isConnected || !address || address.toLowerCase() !== activeWalletAddress.toLowerCase()) {
+      await open();
+      return;
+    }
 
     try {
-      const amountInWei = parseEther(amount);
-
       if (selectedToken === "ETH") {
-        // Send native ETH
-        await sendTransaction({
+        await sendTransactionAsync({
           to: destinationAddress as Address,
-          value: amountInWei,
+          value: parseEther(amount),
+          chainId: base.id,
         });
       } else {
-        // Send RTR token (simplified - would need to write contract in production)
-        console.log("Token transfer would be executed here");
+        if (!rtrTokenAddress) throw new Error("RTR token contract is not configured.");
+        await writeContractAsync({
+          address: rtrTokenAddress,
+          abi: rtrTokenAbi,
+          functionName: "transfer",
+          args: [destinationAddress as Address, parseUnits(amount, 18)],
+          chainId: base.id,
+        });
       }
     } catch (err) {
       console.error("Transaction failed:", err);
+      setSendError(err instanceof Error ? err.message : "Transaction failed. Please try again.");
     }
   };
 
-  if (!isConnected) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-        <div className="bg-[#11192e] border border-blue-900/30 rounded-2xl p-6 w-full max-w-md shadow-2xl">
-          <div className="text-center text-slate-400">Please connect your wallet to send crypto</div>
-        </div>
-      </div>
-    );
-  }
+
+  const transactionPending = isPending || isTokenTransferPending;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -224,25 +235,25 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
             <div className="bg-[#1a2b4c]/50 border border-blue-900/20 rounded-xl p-4">
               <div className="flex justify-between items-center">
                 <span className="text-sm text-slate-400">Estimated Gas Fee</span>
-                <span className="text-sm font-bold text-white">{estimatedGas} ETH</span>
+                <span className="text-sm font-bold text-white">0.000001 ETH</span>
               </div>
             </div>
 
             {/* Error Message */}
-            {error && (
+            {(sendError || error || tokenTransferError) && (
               <div className="flex items-center gap-2 text-red-400 text-sm bg-red-500/10 border border-red-500/30 rounded-xl p-3">
                 <AlertCircle size={16} />
-                {error.message || "Transaction failed"}
+                {sendError || error?.message || tokenTransferError?.message || "Transaction failed"}
               </div>
             )}
 
             {/* Send Button */}
             <button
               onClick={handleSend}
-              disabled={isPending || !destinationAddress || !amount || parseFloat(amount) <= 0 || !!addressError}
+              disabled={transactionPending || !destinationAddress || !amount || parseFloat(amount) <= 0 || !!addressError}
               className="w-full py-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              {isPending ? (
+              {transactionPending ? (
                 <>
                   <Loader2 size={20} className="animate-spin" />
                   Sending...

@@ -7,7 +7,6 @@ import {
   ArrowDown,
   ArrowUp,
   RefreshCw,
-  ArrowDownLeft,
   Bell,
   Check,
   CheckCircle2,
@@ -16,7 +15,6 @@ import {
   Crown,
   Eye,
   EyeOff,
-  ExternalLink,
   Gamepad2,
   Globe2,
   Info,
@@ -37,14 +35,13 @@ import { Area, AreaChart, Line, LineChart, ResponsiveContainer } from "recharts"
 import { usePathname, useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { normalizeDateOfBirth } from "@/lib/date";
 import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/client";
-import { useAccount, useBalance, useReadContract, useDisconnect } from 'wagmi';
+import { useBalance, useReadContract, useDisconnect } from 'wagmi';
 import { formatUnits, getAddress, isAddress, type Address } from 'viem';
 import { base } from 'wagmi/chains';
 import { profileWalletQueryKey, saveProfileWalletAddress } from "@/lib/wallet-profile";
-import { useAppKit, AppKitAccountButton, useAppKitAccount } from '@reown/appkit/react';
+import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
 import CustomSendModal from '@/components/CustomSendModal';
 import CustomSwapModal from '@/components/CustomSwapModal';
 import CustomDepositModal from '@/components/CustomDepositModal';
@@ -187,7 +184,6 @@ export default function Home() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { disconnect } = useDisconnect();
-  const { address: walletAddress, isConnected: walletConnected } = useAppKitAccount();
   const [user, setUser] = useState<User | null>(null);
   const [, setPinState] = useState("");
   const [profileName, setProfileName] = useState<string | null>(null);
@@ -228,6 +224,7 @@ export default function Home() {
     staleTime: 0,
     retry: 1,
   });
+  const activeWalletAddress = walletProfileQuery.data ?? null;
   const market = marketQuery.data ?? [];
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
   const [visibilityReady, setVisibilityReady] = useState(false);
@@ -260,25 +257,6 @@ export default function Home() {
       window.localStorage.removeItem("saved_wallet_address");
     }
   }, [walletProfileQuery.data, walletProfileQuery.isSuccess]);
-
-  useEffect(() => {
-    if (!user || authLoading || !walletProfileQuery.isSuccess || !walletAddress || !walletConnected) return;
-    const normalizedWalletAddress = getAddress(walletAddress);
-    if (walletProfileQuery.data === normalizedWalletAddress) return;
-    let cancelled = false;
-
-    void saveProfileWalletAddress(normalizedWalletAddress)
-      .then(() => {
-        if (cancelled) return;
-        queryClient.setQueryData(profileWalletQueryKey(user.id), normalizedWalletAddress);
-        window.localStorage.setItem("saved_wallet_address", normalizedWalletAddress);
-      })
-      .catch((err: unknown) => {
-        console.error("Failed to sync wallet address:", err);
-      });
-
-    return () => { cancelled = true; };
-  }, [user, authLoading, walletAddress, walletConnected, walletProfileQuery.data, walletProfileQuery.isSuccess, queryClient]);
 
   useEffect(() => {
     const mountTimer = window.setTimeout(() => {
@@ -487,7 +465,7 @@ export default function Home() {
         {view === "market" && <MarketView market={market} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
         {view === "game" && <PlaceholderView icon={<Gamepad2 />} title="Node quests" text="Complete community missions to unlock bonus points." />}
-        {view === "portfolio" && <PortfolioView market={market} savedWalletAddress={walletProfileQuery.data ?? null} walletProfileLoading={walletProfileQuery.isPending} />}
+        {view === "portfolio" && <PortfolioView market={market} activeWalletAddress={activeWalletAddress} walletProfileLoading={walletProfileQuery.isPending} />}
       </section>
 
       <nav className="bottom-nav" aria-label="Primary navigation">
@@ -513,9 +491,7 @@ function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, 
     <div className="metric-grid"><div><span>Network</span><strong>Base Mainnet</strong></div><div><span>Protocol</span><strong>v2.4.8</strong></div><div><span>Multiplier</span><strong>1.0x</strong><small>Standard Hashrate Protocol</small></div></div>
   </div>;
 }
-function PortfolioView({ market, savedWalletAddress, walletProfileLoading }: { market: MarketAsset[]; savedWalletAddress: Address | null; walletProfileLoading: boolean }) {
-  const { address, isConnected, isConnecting } = useAccount();
-  const { open } = useAppKit();
+function PortfolioView({ market, activeWalletAddress, walletProfileLoading }: { market: MarketAsset[]; activeWalletAddress: Address | null; walletProfileLoading: boolean }) {
   const [isPrivate, setIsPrivate] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [showDepositModal, setShowDepositModal] = useState(false);
@@ -528,7 +504,7 @@ function PortfolioView({ market, savedWalletAddress, walletProfileLoading }: { m
     setIsMounted(true);
   }, []);
 
-  const portfolioAddress = savedWalletAddress ?? address ?? undefined;
+  const portfolioAddress = activeWalletAddress ?? undefined;
   const nativeBalance = useBalance({ address: portfolioAddress });
   const rtrTokenAddress = process.env.NEXT_PUBLIC_RTR_TOKEN_ADDRESS as Address | undefined;
   const rtrBalance = useReadContract({
@@ -545,6 +521,7 @@ function PortfolioView({ market, savedWalletAddress, walletProfileLoading }: { m
   const rtrValue = rtrAmount * (priceFor("RTR") ?? 0);
   const ethValue = ethAmount * (priceFor("ETH") ?? 0);
   const totalValue = rtrValue + ethValue;
+  const assetsLoading = walletProfileLoading || Boolean(portfolioAddress && (nativeBalance.isLoading || rtrBalance.isLoading));
 
   // Dynamic asset ledger array
   const assets = [
@@ -574,7 +551,7 @@ function PortfolioView({ market, savedWalletAddress, walletProfileLoading }: { m
   }
 
   const handleAction = (action: () => void) => {
-    if (!address || !isConnected) {
+    if (!activeWalletAddress) {
       setShowWalletError(true);
       return;
     }
@@ -620,8 +597,8 @@ function PortfolioView({ market, savedWalletAddress, walletProfileLoading }: { m
 
         <div className="mt-5 pt-3 border-t border-slate-800/40 text-[11px] text-slate-400 font-mono flex justify-between items-center w-full">
           <span className="text-slate-500 font-sans font-semibold uppercase tracking-wider text-[10px]">Node Wallet</span>
-          <span className={`tracking-wider text-xs ${portfolioAddress ? "text-slate-400" : isConnecting || walletProfileLoading ? "text-blue-400 animate-pulse" : "text-slate-600"}`}>
-            {walletProfileLoading ? "Loading profile wallet..." : isConnecting ? "Syncing Secure Node..." : portfolioAddress ? `${portfolioAddress.slice(0, 6)}...${portfolioAddress.slice(-4)}` : "No Wallet Linked"}
+          <span className={`tracking-wider text-xs ${portfolioAddress ? "text-slate-400" : walletProfileLoading ? "text-blue-400 animate-pulse" : "text-slate-600"}`}>
+            {walletProfileLoading ? "Loading profile wallet..." : portfolioAddress ? `${portfolioAddress.slice(0, 6)}...${portfolioAddress.slice(-4)}` : "No Wallet Linked"}
           </span>
         </div>
       </div>
@@ -659,7 +636,7 @@ function PortfolioView({ market, savedWalletAddress, walletProfileLoading }: { m
 
         {/* BUTTON 3: SEND CRYPTO - NATIVE WALLETSEND PANEL */}
         <button
-          onClick={() => handleAction(() => open({ view: "WalletSend" }))}
+          onClick={() => handleAction(() => setShowSendModal(true))}
           className="flex flex-col items-center justify-center group focus:outline-none w-full"
         >
           <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
@@ -680,7 +657,11 @@ function PortfolioView({ market, savedWalletAddress, walletProfileLoading }: { m
       </div>
       
       <div className="portfolio-holdings flex flex-col gap-2.5 w-full">
-        {assets.length === 0 ? (
+        {assetsLoading ? (
+          <div className="text-center py-8 text-slate-400" role="status">
+            Scanning wallet assets...
+          </div>
+        ) : assets.length === 0 ? (
           <div className="text-center py-8 text-slate-500 text-sm">
             No assets found in your wallet
           </div>
@@ -713,10 +694,10 @@ function PortfolioView({ market, savedWalletAddress, walletProfileLoading }: { m
       </div>
 
       {/* Custom Modals */}
-      {showDepositModal && <CustomDepositModal onClose={() => setShowDepositModal(false)} />}
-      {showSwapModal && <CustomSwapModal onClose={() => setShowSwapModal(false)} />}
-      {showSendModal && <CustomSendModal onClose={() => setShowSendModal(false)} />}
-      {showActivityLedger && <CustomActivityLedger onClose={() => setShowActivityLedger(false)} />}
+      {showDepositModal && <CustomDepositModal activeWalletAddress={activeWalletAddress} onClose={() => setShowDepositModal(false)} />}
+      {showSwapModal && <CustomSwapModal activeWalletAddress={activeWalletAddress} onClose={() => setShowSwapModal(false)} />}
+      {showSendModal && <CustomSendModal activeWalletAddress={activeWalletAddress} onClose={() => setShowSendModal(false)} />}
+      {showActivityLedger && <CustomActivityLedger activeWalletAddress={activeWalletAddress} onClose={() => setShowActivityLedger(false)} />}
       
       {/* Wallet Connection Error Modal */}
       {showWalletError && (
@@ -726,8 +707,8 @@ function PortfolioView({ market, savedWalletAddress, walletProfileLoading }: { m
               <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
                 <X size={32} className="text-red-400" />
               </div>
-              <h3 className="text-lg font-bold text-white mb-2">Wallet Not Connected</h3>
-              <p className="text-slate-400 text-sm mb-6">Please connect your wallet to proceed with this action.</p>
+              <h3 className="text-lg font-bold text-white mb-2">Wallet Not Linked</h3>
+              <p className="text-slate-400 text-sm mb-6">Link a wallet to your profile to continue.</p>
               <button
                 onClick={() => setShowWalletError(false)}
                 className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-colors"
@@ -759,7 +740,6 @@ function AuthOverlay() {
   const router = useRouter();
   const { address, isConnected } = useAppKitAccount();
   const { open } = useAppKit();
-  const { disconnect } = useDisconnect();
   const [profilePreview, setProfilePreview] = useState<Profile | null>(null);
   const [mode, setMode] = useState<"login" | "signup" | "recovery">("login");
   const [email, setEmail] = useState("");
