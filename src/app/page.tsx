@@ -40,7 +40,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useBalance, useReadContract, useDisconnect } from 'wagmi';
 import { formatUnits, getAddress, isAddress, type Address } from 'viem';
 import { base } from 'wagmi/chains';
-import { profileWalletQueryKey, saveProfileWalletAddress } from "@/lib/wallet-profile";
+import { saveProfileWalletAddress } from "@/lib/wallet-profile";
 import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
 import CustomSendModal from '@/components/CustomSendModal';
 import CustomSwapModal from '@/components/CustomSwapModal';
@@ -185,6 +185,8 @@ export default function Home() {
   const queryClient = useQueryClient();
   const { disconnect } = useDisconnect();
   const [user, setUser] = useState<User | null>(null);
+  const [activeWalletAddress, setActiveWalletAddress] = useState<Address | null>(null);
+  const [walletProfileLoading, setWalletProfileLoading] = useState(true);
   const [, setPinState] = useState("");
   const [profileName, setProfileName] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -206,25 +208,6 @@ export default function Home() {
     refetchInterval: 30000,
     retry: 1,
   });
-  const walletProfileQuery = useQuery({
-    queryKey: profileWalletQueryKey(user?.id ?? ""),
-    queryFn: async () => {
-      if (!user) return null;
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("wallet_address")
-        .eq("id", user.id)
-        .maybeSingle();
-      if (error) throw error;
-      return typeof data?.wallet_address === "string" && isAddress(data.wallet_address)
-        ? getAddress(data.wallet_address)
-        : null;
-    },
-    enabled: Boolean(user && !authLoading),
-    staleTime: 0,
-    retry: 1,
-  });
-  const activeWalletAddress = walletProfileQuery.data ?? null;
   const market = marketQuery.data ?? [];
   const [isBalanceHidden, setIsBalanceHidden] = useState(false);
   const [visibilityReady, setVisibilityReady] = useState(false);
@@ -248,15 +231,6 @@ export default function Home() {
     }, 0);
     return () => window.clearTimeout(splashTimer);
   }, [authLoading]);
-
-  useEffect(() => {
-    if (!walletProfileQuery.isSuccess) return;
-    if (walletProfileQuery.data) {
-      window.localStorage.setItem("saved_wallet_address", walletProfileQuery.data);
-    } else {
-      window.localStorage.removeItem("saved_wallet_address");
-    }
-  }, [walletProfileQuery.data, walletProfileQuery.isSuccess]);
 
   useEffect(() => {
     const mountTimer = window.setTimeout(() => {
@@ -297,25 +271,74 @@ export default function Home() {
   }
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-      setProfileName(displayNameFromUser(data.user));
-      setProfileLoading(Boolean(data.user));
+    let cancelled = false;
+    let authEventReceived = false;
+    let walletRequestId = 0;
+    const loadWalletAddress = async (sessionUser: User | null) => {
+      const requestId = ++walletRequestId;
+      setActiveWalletAddress(null);
+      setWalletProfileLoading(Boolean(sessionUser));
+      if (!sessionUser) return;
+
+      await Promise.resolve();
+      try {
+        const { data, error: walletError } = await supabase
+          .from("profiles")
+          .select("wallet_address")
+          .eq("id", sessionUser.id)
+          .maybeSingle();
+        if (walletError) throw walletError;
+        if (cancelled || requestId !== walletRequestId) return;
+        const walletAddress = data?.wallet_address;
+        setActiveWalletAddress(
+          typeof walletAddress === "string" && isAddress(walletAddress)
+            ? getAddress(walletAddress)
+            : null,
+        );
+        setWalletProfileLoading(false);
+      } catch (walletError: unknown) {
+        if (cancelled || requestId !== walletRequestId) return;
+        console.error("Failed to load profile wallet address:", walletError);
+        setActiveWalletAddress(null);
+        setWalletProfileLoading(false);
+        setError("Unable to load your profile wallet address.");
+      }
+    };
+
+    void supabase.auth.getSession().then(({ data, error: sessionError }) => {
+      if (sessionError) throw sessionError;
+      if (cancelled || authEventReceived) return;
+      const sessionUser = data.session?.user ?? null;
+      void loadWalletAddress(sessionUser);
+      setUser(sessionUser);
+      setProfileName(displayNameFromUser(sessionUser));
+      setProfileLoading(Boolean(sessionUser));
       setAuthLoading(false);
-      if (data.user) void loadActivation();
+      if (sessionUser) void loadActivation();
+    }).catch((sessionError: unknown) => {
+      if (cancelled || authEventReceived) return;
+      console.error("Failed to restore Supabase session:", sessionError);
+      setAuthLoading(false);
+      setError("Unable to restore your session. Please refresh and try again.");
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setProfileName(displayNameFromUser(session?.user ?? null));
-      setProfileLoading(Boolean(session?.user));
+      authEventReceived = true;
+      const sessionUser = session?.user ?? null;
+      void loadWalletAddress(sessionUser);
+      setUser(sessionUser);
+      setProfileName(displayNameFromUser(sessionUser));
+      setProfileLoading(Boolean(sessionUser));
       setAuthLoading(false);
-      if (session?.user) void loadActivation();
+      if (sessionUser) void loadActivation();
       else {
         setActivation(null);
         setActive(false);
       }
     });
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -465,7 +488,7 @@ export default function Home() {
         {view === "market" && <MarketView market={market} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
         {view === "game" && <PlaceholderView icon={<Gamepad2 />} title="Node quests" text="Complete community missions to unlock bonus points." />}
-        {view === "portfolio" && <PortfolioView market={market} activeWalletAddress={activeWalletAddress} walletProfileLoading={walletProfileQuery.isPending} />}
+        {view === "portfolio" && <PortfolioView market={market} activeWalletAddress={activeWalletAddress} walletProfileLoading={walletProfileLoading} />}
       </section>
 
       <nav className="bottom-nav" aria-label="Primary navigation">
