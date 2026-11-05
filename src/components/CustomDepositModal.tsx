@@ -86,7 +86,9 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-end justify-center bg-[#0d1527]/95 p-0 backdrop-blur-md sm:p-6"
+      className={`fixed inset-0 z-[100] flex justify-center bg-[#0d1527]/95 p-0 backdrop-blur-md sm:p-6 ${
+        view === "methods" ? "items-end" : "items-start sm:items-center"
+      }`}
       onClick={(event) => {
         if (event.target === event.currentTarget) closeModal();
       }}
@@ -94,7 +96,11 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
       <section
         aria-labelledby="deposit-modal-title"
         aria-modal="true"
-        className="deposit-modal-sheet relative max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl rounded-b-none border border-[#1e293b] bg-[#0d1527] p-5 pb-24 shadow-[0_24px_100px_rgba(0,0,0,0.55)] sm:rounded-3xl sm:p-7 sm:pb-24"
+        className={`deposit-modal-sheet relative w-full max-w-lg overflow-y-auto border border-[#1e293b] bg-[#0d1527] p-5 pb-24 shadow-[0_24px_100px_rgba(0,0,0,0.55)] sm:rounded-3xl sm:p-7 sm:pb-24 ${
+          view === "methods"
+            ? "max-h-[92dvh] rounded-t-3xl rounded-b-none"
+            : "max-h-[100dvh] min-h-[100dvh] rounded-none sm:max-h-[92dvh] sm:min-h-0"
+        }`}
         role="dialog"
       >
         <button
@@ -200,7 +206,7 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
               <div className="mb-5 flex items-start gap-3 rounded-xl border border-[#1e293b] bg-[#16223f] px-4 py-3.5">
                 <ShieldCheck aria-hidden="true" className="mt-0.5 shrink-0 text-[#94a3b8]" size={18} />
                 <p className="text-sm leading-6 text-[#94a3b8]">
-                  Asset to Receive: <span className="font-medium text-white">USDC (Polygon/EVM Network)</span>
+                  Asset to Receive: <span className="font-medium text-white">USDC (Base Network)</span>
                 </p>
               </div>
 
@@ -292,7 +298,7 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
 
               <div className="mt-5 rounded-xl border border-[#1e293b] bg-[#16223f]/70 p-3.5">
                 <p className="text-xs leading-5 text-[#94a3b8]">
-                  Notice: Ensure you only send supported assets to this address via the supported network. Transferring unsupported assets may result in permanent loss.
+                  Notice: Ensure you only send supported crypto assets to this address using the Base Network. Transferring funds via any other network will result in permanent loss.
                 </p>
               </div>
             </>
