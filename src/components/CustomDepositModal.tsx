@@ -30,7 +30,6 @@ const placeholderWalletAddress = "0x284bEa823901923481239841239841D7F2";
 
 export default function CustomDepositModal({ activeWalletAddress, onClose }: CustomDepositModalProps) {
   const [view, setView] = useState<DepositView>("methods");
-  const [selectedAsset, setSelectedAsset] = useState("USDC");
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const depositAddress = activeWalletAddress ?? placeholderWalletAddress;
@@ -87,7 +86,7 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0d1527]/95 p-3 backdrop-blur-md sm:p-6"
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-[#0d1527]/95 p-0 backdrop-blur-md sm:p-6"
       onClick={(event) => {
         if (event.target === event.currentTarget) closeModal();
       }}
@@ -95,7 +94,7 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
       <section
         aria-labelledby="deposit-modal-title"
         aria-modal="true"
-        className="relative max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-3xl border border-[#1e293b] bg-[#0d1527] p-5 shadow-[0_24px_100px_rgba(0,0,0,0.55)] sm:p-7"
+        className="deposit-modal-sheet relative max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl rounded-b-none border border-[#1e293b] bg-[#0d1527] p-5 pb-24 shadow-[0_24px_100px_rgba(0,0,0,0.55)] sm:rounded-3xl sm:p-7 sm:pb-24"
         role="dialog"
       >
         <button
@@ -238,25 +237,11 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
                 </div>
               </div>
 
-              <label className="mb-2 block text-sm font-medium text-[#94a3b8]" htmlFor="deposit-asset">
-                Select asset
-              </label>
-              <select
-                className="mb-5 w-full appearance-none rounded-xl border border-[#1e293b] bg-[#16223f] px-4 py-3.5 text-sm font-semibold text-white outline-none transition-colors focus:border-[#3b82f6] focus:ring-2 focus:ring-[#3b82f6]/20"
-                id="deposit-asset"
-                onChange={(event) => setSelectedAsset(event.target.value)}
-                value={selectedAsset}
-              >
-                <option value="USDT">USDT</option>
-                <option value="USDC">USDC</option>
-                <option value="RTR">RTR</option>
-              </select>
-
               <div className="mb-5 flex flex-col items-center rounded-2xl border border-[#1e293b] bg-[#16223f] px-5 py-5">
                 <div className="flex h-44 w-44 items-center justify-center rounded-2xl bg-white p-2.5 shadow-lg shadow-black/20">
                   {qrCodeQuery.data ? (
                     <Image
-                      alt={`${selectedAsset} deposit wallet QR code`}
+                      alt="Deposit wallet QR code"
                       className="h-40 w-40"
                       height={160}
                       src={qrCodeQuery.data}
@@ -307,7 +292,7 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
 
               <div className="mt-5 rounded-xl border border-[#1e293b] bg-[#16223f]/70 p-3.5">
                 <p className="text-xs leading-5 text-[#94a3b8]">
-                  Notice: Ensure you only send the selected asset to this address via the supported network. Transferring unsupported assets may result in permanent loss.
+                  Notice: Ensure you only send supported assets to this address via the supported network. Transferring unsupported assets may result in permanent loss.
                 </p>
               </div>
             </>
@@ -347,12 +332,18 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
           )}
         </div>
         <style>{`
+          @keyframes depositModalSheetIn {
+            from { opacity: 0.96; transform: translateY(100%); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          .deposit-modal-sheet { animation: depositModalSheetIn 320ms cubic-bezier(0.22, 1, 0.36, 1); }
           @keyframes depositModalViewIn {
             from { opacity: 0; transform: translateY(6px); }
             to { opacity: 1; transform: translateY(0); }
           }
           .deposit-modal-view { animation: depositModalViewIn 180ms ease-out; }
           @media (prefers-reduced-motion: reduce) {
+            .deposit-modal-sheet,
             .deposit-modal-view { animation: none; }
           }
         `}</style>
