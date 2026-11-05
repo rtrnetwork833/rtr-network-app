@@ -5,14 +5,14 @@ This directory contains custom-built crypto interface components that replace th
 ## Components
 
 ### 1. CustomSendModal.tsx
-**Purpose:** On-chain crypto transfers
+**Purpose:** A self-contained send workflow with method selection, bank withdrawal and internal transfer placeholders, plus on-chain crypto transfers.
 **Features:**
-- Destination wallet address input with validation
-- Token selection dropdown (ETH, RTR)
-- Amount input with "MAX" button linked to live balance
-- Estimated gas fee calculator
-- Transaction execution via wagmi hooks
-- Status handling (Idle, Loading, Success, Failed)
+- Select-method screen with bank withdrawal, on-chain, and RTR-user transfer routes
+- Fonbnk withdrawal gateway placeholder and internal transfer placeholder
+- Destination address validation and ETH/RTR selection for on-chain transfers
+- Amount input with a Max action and live active-wallet balance validation
+- Review step with an estimated Base network fee before transaction execution
+- Transaction status handling through the connected wagmi wallet
 
 **Usage:**
 ```tsx
@@ -22,7 +22,12 @@ import CustomSendModal from '@/components/CustomSendModal';
 const [showSendModal, setShowSendModal] = useState(false);
 
 <button onClick={() => setShowSendModal(true)}>Send Crypto</button>
-{showSendModal && <CustomSendModal onClose={() => setShowSendModal(false)} />}
+{showSendModal && (
+  <CustomSendModal
+    activeWalletAddress={activeWalletAddress}
+    onClose={() => setShowSendModal(false)}
+  />
+)}
 ```
 
 ### 2. CustomSwapModal.tsx
@@ -125,7 +130,7 @@ const [showActivityLedger, setShowActivityLedger] = useState(false);
 ```tsx
 {showDepositModal && <CustomDepositModal onClose={() => setShowDepositModal(false)} />}
 {showSwapModal && <CustomSwapModal onClose={() => setShowSwapModal(false)} />}
-{showSendModal && <CustomSendModal onClose={() => setShowSendModal(false)} />}
+{showSendModal && <CustomSendModal activeWalletAddress={activeWalletAddress} onClose={() => setShowSendModal(false)} />}
 {showActivityLedger && <CustomActivityLedger onClose={() => setShowActivityLedger(false)} />}
 ```
 
