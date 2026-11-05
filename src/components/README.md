@@ -28,11 +28,10 @@ const [showSendModal, setShowSendModal] = useState(false);
 ### 2. CustomSwapModal.tsx
 **Purpose:** Token swap engine
 **Features:**
-- "From" and "To" token selection (ETH, RTR, USDC, USDT)
-- Live exchange rate indicator
-- Price slippage settings (0.5%, 1%, 3%)
-- Ready for DEX aggregator integration (0x, 1inch, Uniswap)
-- Professional loading and success states
+- Searchable token selection using Reown AppKit's supported asset list and wallet balances
+- Spend amount input with balance-aware Max action and token inversion
+- Opens the native Reown AppKit Swap view with the selected token pair and amount
+- Reown handles quotes, approvals, and wallet transaction execution
 
 **Usage:**
 ```tsx
