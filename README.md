@@ -14,6 +14,8 @@ BREVO_SENDER_NAME=RTR Network
 
 Recovery validates `profiles.email` and `profiles.date_of_birth`, stores a six-digit code in `profiles.recovery_code`, and sends it through Brevo's transactional email API. Never expose `BREVO_API_KEY` with a `NEXT_PUBLIC_` prefix.
 
+The token converter uses the 1inch Base swap API for its token list, quotes, and swap transaction data. Configure a server-only `ONEINCH_API_KEY` from the 1inch Business portal in `.env.local` and the deployment environment. Never expose this key with a `NEXT_PUBLIC_` prefix. Until it is configured, the converter shows common Base tokens but will not present simulated quotes or submit swaps. ERC-20 swaps may require a separate wallet approval transaction before the swap itself.
+
 Before testing activations, run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. It creates the `booster_activations` table and row-level security policies. The free node is persisted for 24 hours; every paid tier is persisted for 30 days, with the countdown derived from the database `expires_at` timestamp after refresh.
 
 ## Getting Started
