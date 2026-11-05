@@ -2,6 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  formatUnits,
+  getAddress,
+  isAddress,
+  type Address,
+} from "viem";
+import {
+  useAccount,
+  useBalance,
+  useReadContract,
+} from "wagmi";
+import {
   ArrowDownUp,
   ChevronDown,
   LoaderCircle,
@@ -10,6 +21,7 @@ import {
 } from "lucide-react";
 import { SwapController, type SwapControllerState } from "@reown/appkit-controllers";
 import { useAppKit, useAppKitAccount } from "@reown/appkit/react";
+import { base } from "wagmi/chains";
 import CustomActivityLedger from "@/components/CustomActivityLedger";
 
 interface CustomSwapModalProps {
@@ -20,6 +32,14 @@ interface CustomSwapModalProps {
 type AppKitToken = NonNullable<SwapControllerState["tokens"]>[number];
 type ModalView = "convert" | "history";
 type TokenSide = "spend" | "receive";
+const nativeTokenAddress = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+const erc20BalanceAbi = [{
+  name: "balanceOf",
+  type: "function",
+  stateMutability: "view",
+  inputs: [{ name: "account", type: "address" }],
+  outputs: [{ name: "", type: "uint256" }],
+}] as const;
 
 function formatBalance(value?: string) {
   if (!value) return "0.00";
@@ -27,6 +47,13 @@ function formatBalance(value?: string) {
   return Number.isFinite(numeric)
     ? numeric.toLocaleString(undefined, { maximumFractionDigits: 6 })
     : "0.00";
+}
+
+function getTokenAddress(token?: AppKitToken): Address | undefined {
+  if (!token) return undefined;
+  const address = token.address.split(":").at(-1);
+  if (!address || !isAddress(address) || address.toLowerCase() === nativeTokenAddress) return undefined;
+  return getAddress(address);
 }
 
 function TokenIcon({ token }: { token: AppKitToken }) {
@@ -57,6 +84,7 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
 
   const { open } = useAppKit();
   const { address: connectedAddress, isConnected } = useAppKitAccount();
+  const { address: wagmiAddress } = useAccount();
 
   useEffect(() => {
     let active = true;
@@ -141,6 +169,57 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
       ?? tokens.find((token) => token.symbol === "USDC" && token.address !== selectedFromToken?.address)
       ?? tokens.find((token) => token.address !== selectedFromToken?.address);
 
+  const balanceAddress = activeWalletAddress ?? wagmiAddress
+    ?? (connectedAddress && isAddress(connectedAddress) ? getAddress(connectedAddress) : undefined);
+  const selectedFromIsNative = Boolean(selectedFromToken && (
+    selectedFromToken.address.toLowerCase().endsWith(nativeTokenAddress)
+    || selectedFromToken.symbol === controllerState.networkTokenSymbol
+  ));
+  const selectedToIsNative = Boolean(selectedToToken && (
+    selectedToToken.address.toLowerCase().endsWith(nativeTokenAddress)
+    || selectedToToken.symbol === controllerState.networkTokenSymbol
+  ));
+  const selectedFromAddress = getTokenAddress(selectedFromToken);
+  const selectedToAddress = getTokenAddress(selectedToToken);
+  const fromNativeBalance = useBalance({
+    address: balanceAddress,
+    chainId: base.id,
+    query: {
+      enabled: Boolean(balanceAddress && selectedFromToken && selectedFromIsNative),
+      refetchInterval: 12_000,
+    },
+  });
+  const toNativeBalance = useBalance({
+    address: balanceAddress,
+    chainId: base.id,
+    query: {
+      enabled: Boolean(balanceAddress && selectedToToken && selectedToIsNative),
+      refetchInterval: 12_000,
+    },
+  });
+  const fromTokenBalance = useReadContract({
+    address: selectedFromAddress,
+    abi: erc20BalanceAbi,
+    functionName: "balanceOf",
+    args: balanceAddress ? [balanceAddress] : undefined,
+    chainId: base.id,
+    query: {
+      enabled: Boolean(balanceAddress && selectedFromAddress && !selectedFromIsNative),
+      refetchInterval: 12_000,
+    },
+  });
+  const toTokenBalance = useReadContract({
+    address: selectedToAddress,
+    abi: erc20BalanceAbi,
+    functionName: "balanceOf",
+    args: balanceAddress ? [balanceAddress] : undefined,
+    chainId: base.id,
+    query: {
+      enabled: Boolean(balanceAddress && selectedToAddress && !selectedToIsNative),
+      refetchInterval: 12_000,
+    },
+  });
+
   const filteredTokens = useMemo(() => {
     const normalized = search.trim().toLowerCase();
     if (!normalized) return tokens;
@@ -151,12 +230,40 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
     );
   }, [search, tokens]);
 
-  const balanceForToken = (token?: AppKitToken) => {
-    if (!token) return "0.00";
+  const fromBalanceValue = selectedFromIsNative
+    ? fromNativeBalance.data
+      ? formatUnits(fromNativeBalance.data.value, fromNativeBalance.data.decimals)
+      : undefined
+    : typeof fromTokenBalance.data === "bigint" && selectedFromToken
+      ? formatUnits(fromTokenBalance.data, selectedFromToken.decimals)
+      : undefined;
+  const toBalanceValue = selectedToIsNative
+    ? toNativeBalance.data
+      ? formatUnits(toNativeBalance.data.value, toNativeBalance.data.decimals)
+      : undefined
+    : typeof toTokenBalance.data === "bigint" && selectedToToken
+      ? formatUnits(toTokenBalance.data, selectedToToken.decimals)
+      : undefined;
+  const fromBalancePending = Boolean(balanceAddress) && (selectedFromIsNative
+    ? fromNativeBalance.isPending
+    : fromTokenBalance.isPending);
+  const toBalancePending = Boolean(balanceAddress) && (selectedToIsNative
+    ? toNativeBalance.isPending
+    : toTokenBalance.isPending);
+  const displayBalance = (value: string | undefined, pending: boolean) => {
+    if (!balanceAddress) return "—";
+    if (pending) return "Loading...";
+    if (value === undefined) return "Unavailable";
+    const numeric = Number(value);
+    return Number.isFinite(numeric)
+      ? numeric.toLocaleString(undefined, { maximumFractionDigits: 6 })
+      : "0.00";
+  };
+  const balanceForToken = (token: AppKitToken) => {
     const balance = controllerState.myTokensWithBalance?.find(
       (candidate) => candidate.address.toLowerCase() === token.address.toLowerCase(),
     );
-    return formatBalance(balance?.quantity.numeric);
+    return balance ? formatBalance(balance.quantity.numeric) : "—";
   };
 
   const selectToken = (token: AppKitToken) => {
@@ -262,7 +369,7 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
             <div className="mb-4 flex items-center justify-between gap-2">
               <span className="text-sm font-medium text-white">Spend</span>
               <span className="truncate text-right text-xs text-[#94a3b8]">
-                Available: {balanceForToken(selectedFromToken)} {selectedFromToken?.symbol ?? ""}
+                Available: {displayBalance(fromBalanceValue, fromBalancePending)} {selectedFromToken?.symbol ?? ""}
               </span>
             </div>
             <div className="flex items-center gap-3">
@@ -294,8 +401,8 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
             <div className="mt-3 flex justify-end">
               <button
                 className="text-xs font-semibold text-[#94a3b8] transition-colors hover:text-white disabled:opacity-50"
-                disabled={!selectedFromToken || !Number(selectedFromToken.quantity.numeric)}
-                onClick={() => setFromAmount(selectedFromToken ? selectedFromToken.quantity.numeric : "")}
+                disabled={!fromBalanceValue || !Number(fromBalanceValue)}
+                onClick={() => setFromAmount(fromBalanceValue ?? "")}
                 type="button"
               >
                 Max
@@ -322,7 +429,7 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
             <div className="mb-4 flex items-center justify-between gap-2">
               <span className="text-sm font-medium text-white">Receive</span>
               <span className="truncate text-right text-xs text-[#94a3b8]">
-                Available: {balanceForToken(selectedToToken)} {selectedToToken?.symbol ?? ""}
+                Available: {displayBalance(toBalanceValue, toBalancePending)} {selectedToToken?.symbol ?? ""}
               </span>
             </div>
             <div className="flex items-center gap-3">
@@ -340,9 +447,13 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
                 <span className="font-semibold">{selectedToToken?.symbol ?? "Loading"}</span>
                 <ChevronDown aria-hidden="true" className="text-[#94a3b8]" size={16} />
               </button>
-              <div aria-label="Estimated receive amount shown in AppKit" className="min-w-0 flex-1 text-right text-2xl font-semibold text-slate-500 sm:text-3xl">
-                0.00
-              </div>
+              <input
+                aria-label="Estimated receive amount"
+                className="min-w-0 flex-1 bg-transparent text-right text-2xl font-semibold text-white outline-none placeholder:text-slate-500 sm:text-3xl"
+                placeholder="0.00"
+                readOnly
+                value=""
+              />
             </div>
           </div>
 
@@ -366,12 +477,6 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
               Connect a wallet to view available balances and trade.
             </p>
           )}
-          {activeWalletAddress && (!isConnected || !connectedAddress || connectedAddress.toLowerCase() !== activeWalletAddress.toLowerCase()) && (
-            <p className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-200">
-              Connect the active wallet in Reown AppKit to use its balances.
-            </p>
-          )}
-
           <button
             className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-blue-400/30 bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3.5 font-bold text-white shadow-lg shadow-blue-900/20 transition hover:from-blue-500 hover:to-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!selectedFromToken || !selectedToToken || !fromAmount || !Number.isFinite(Number(fromAmount)) || Number(fromAmount) <= 0 || openingSwap}
