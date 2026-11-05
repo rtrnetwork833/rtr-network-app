@@ -270,7 +270,7 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
     && fromAmountRaw > fromBalanceRaw,
   );
   const amountValidationError = insufficientBalance
-    ? "Error: Insufficient balance for this transaction."
+    ? "Insufficient balance"
     : amountPrecisionError
       ? "Error: Amount exceeds the supported token precision."
       : fromAmount && !fromBalancePending && fromBalanceRaw === undefined
@@ -533,7 +533,7 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
               />
             </div>
             {amountValidationError && (
-              <p className="mt-3 text-sm font-medium text-red-400" role="alert">
+              <p className="mt-2 w-fit text-xs font-medium leading-tight text-red-400" role="alert">
                 {amountValidationError}
               </p>
             )}
