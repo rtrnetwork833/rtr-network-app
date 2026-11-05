@@ -719,7 +719,7 @@ function PortfolioView({ market, activeWalletAddress, walletProfileLoading }: { 
       {/* Custom Modals */}
       {showDepositModal && <CustomDepositModal activeWalletAddress={activeWalletAddress} onClose={() => setShowDepositModal(false)} />}
       {showSwapModal && <CustomSwapModal activeWalletAddress={activeWalletAddress} onClose={() => setShowSwapModal(false)} />}
-      {showSendModal && <CustomSendModal activeWalletAddress={activeWalletAddress} onClose={() => setShowSendModal(false)} />}
+      {showSendModal && <CustomSendModal onClose={() => setShowSendModal(false)} />}
       {showActivityLedger && <CustomActivityLedger activeWalletAddress={activeWalletAddress} onClose={() => setShowActivityLedger(false)} />}
       
       {/* Wallet Connection Error Modal */}

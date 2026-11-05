@@ -11,8 +11,8 @@ import {
   useSwitchChain,
   useWriteContract,
 } from "wagmi";
-import { useAppKit, useAppKitAccount } from "@reown/appkit/react";
-import { SwapController, type SwapControllerState } from "@reown/appkit-controllers";
+import { useAppKit, useAppKitAccount, useAppKitNetwork } from "@reown/appkit/react";
+import { BalanceUtil } from "@reown/appkit-controllers/utils";
 import {
   encodeFunctionData,
   formatUnits,
@@ -38,13 +38,12 @@ import {
 } from "lucide-react";
 
 interface CustomSendModalProps {
-  activeWalletAddress: Address | null;
   onClose: () => void;
 }
 
 type Screen = "methods" | "bank" | "onchain" | "internal" | "review" | "success";
-type AppKitToken = NonNullable<SwapControllerState["myTokensWithBalance"]>[number];
-const emptyWalletTokens: AppKitToken[] = [];
+type ReownBalance = Awaited<ReturnType<typeof BalanceUtil.getMyTokensWithBalance>>[number];
+const emptyWalletTokens: ReownBalance[] = [];
 
 interface WalletAsset {
   key: string;
@@ -103,9 +102,10 @@ function conciseAmount(value: bigint, decimals: number, precision = 6) {
     : whole;
 }
 
-export default function CustomSendModal({ activeWalletAddress, onClose }: CustomSendModalProps) {
+export default function CustomSendModal({ onClose }: CustomSendModalProps) {
   const { address, chainId, isConnected } = useAccount();
-  const { address: appKitAddress } = useAppKitAccount();
+  const { address: appKitAddress, isConnected: isAppKitConnected } = useAppKitAccount();
+  const { caipNetwork } = useAppKitNetwork();
   const { open } = useAppKit();
   const { switchChainAsync, isPending: isSwitchingChain } = useSwitchChain();
   const { sendTransactionAsync, isPending: isNativePending, error: nativeError } = useSendTransaction();
@@ -120,48 +120,52 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
   const [assetSnapshot, setAssetSnapshot] = useState<{
     address: string;
     refreshCount: number;
-    tokens: AppKitToken[];
+    tokens: ReownBalance[];
     error?: string;
   } | null>(null);
   const [assetRefreshCount, setAssetRefreshCount] = useState(0);
 
-  const connectedToActiveWallet = Boolean(
-    address &&
-    appKitAddress &&
-    activeWalletAddress &&
-    address.toLowerCase() === activeWalletAddress.toLowerCase() &&
-    appKitAddress.toLowerCase() === activeWalletAddress.toLowerCase(),
-  );
-  const balanceAddress = connectedToActiveWallet ? address : undefined;
+  const walletAddress = address ?? (appKitAddress && isAddress(appKitAddress) ? getAddress(appKitAddress) : undefined);
+  const walletSessionConnected = Boolean((isConnected || isAppKitConnected) && walletAddress);
+  const balanceAddress = walletSessionConnected ? walletAddress : undefined;
+  const isBaseNetwork = caipNetwork?.caipNetworkId === `eip155:${base.id}`;
   const snapshotMatchesWallet =
     Boolean(balanceAddress && assetSnapshot?.address === balanceAddress.toLowerCase());
   const assetListLoading = Boolean(
     balanceAddress &&
+    isBaseNetwork &&
     (!snapshotMatchesWallet || assetSnapshot?.refreshCount !== assetRefreshCount),
   );
   const assetListError =
     snapshotMatchesWallet && assetSnapshot?.refreshCount === assetRefreshCount
       ? assetSnapshot.error ?? ""
       : "";
-  const discoveredTokens = snapshotMatchesWallet ? assetSnapshot?.tokens ?? emptyWalletTokens : emptyWalletTokens;
+  const discoveredTokens =
+    snapshotMatchesWallet && assetSnapshot?.refreshCount === assetRefreshCount
+      ? assetSnapshot.tokens
+      : emptyWalletTokens;
 
   useEffect(() => {
     let active = true;
 
-    if (!isConnected || !connectedToActiveWallet || !address) {
+    if (!walletSessionConnected || !balanceAddress || !caipNetwork || !isBaseNetwork) {
       return () => {
         active = false;
       };
     }
 
-    const walletAddress = address.toLowerCase();
-    void SwapController.getMyTokensWithBalance()
-      .then(() => {
+    const snapshotAddress = balanceAddress.toLowerCase();
+    void BalanceUtil.getMyTokensWithBalance({
+      address: balanceAddress,
+      caipNetwork,
+      forceUpdate: String(assetRefreshCount),
+    })
+      .then((tokens) => {
         if (active) {
           setAssetSnapshot({
-            address: walletAddress,
+            address: snapshotAddress,
             refreshCount: assetRefreshCount,
-            tokens: [...(SwapController.state.myTokensWithBalance ?? [])],
+            tokens,
           });
         }
       })
@@ -169,7 +173,7 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
         console.error("Unable to load wallet assets for sending:", error);
         if (active) {
           setAssetSnapshot({
-            address: walletAddress,
+            address: snapshotAddress,
             refreshCount: assetRefreshCount,
             tokens: [],
             error: "Unable to load wallet assets. Please refresh and try again.",
@@ -180,27 +184,34 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
     return () => {
       active = false;
     };
-  }, [activeWalletAddress, address, assetRefreshCount, connectedToActiveWallet, isConnected]);
+  }, [assetRefreshCount, balanceAddress, caipNetwork, isBaseNetwork, walletSessionConnected]);
 
   const assetCandidates = useMemo(() => {
     const uniqueAssets = new Map<string, WalletAsset>();
     for (const token of discoveredTokens) {
-      const caipPrefix = `eip155:${base.id}:`;
-      if (!token?.address?.startsWith(caipPrefix) || !Number.isInteger(token.decimals) || token.decimals < 0) continue;
-      const reportedBalance = parseTokenAmount(token.quantity?.numeric ?? "", token.decimals);
+      const caipChainId = `eip155:${base.id}`;
+      const caipPrefix = `${caipChainId}:`;
+      if (token.chainId !== caipChainId) continue;
+      const decimals = Number(token.quantity?.decimals);
+      if (!Number.isInteger(decimals) || decimals < 0) continue;
+      const reportedBalance = parseTokenAmount(token.quantity?.numeric ?? "", decimals);
       if (reportedBalance === null || reportedBalance <= BigInt(0)) continue;
-      const rawAddress = token.address.slice(caipPrefix.length);
+      const rawAddress = token.address
+        ? token.address.startsWith(caipPrefix)
+          ? token.address.slice(caipPrefix.length)
+          : token.address
+        : nativeTokenAddress;
       if (!isAddress(rawAddress)) continue;
       const isNative = rawAddress.toLowerCase() === nativeTokenAddress;
-      const key = token.address.toLowerCase();
+      const key = `${caipPrefix}${rawAddress}`.toLowerCase();
       if (!uniqueAssets.has(key)) {
         uniqueAssets.set(key, {
           key,
           address: isNative ? null : getAddress(rawAddress),
           symbol: token.symbol,
           name: token.name,
-          decimals: token.decimals,
-          logoUri: token.logoUri || undefined,
+          decimals,
+          logoUri: token.iconUrl || undefined,
           isNative,
         });
       }
@@ -252,6 +263,8 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
   const destination = isAddress(destinationAddress) ? getAddress(destinationAddress) : undefined;
   const tokenBalance = selectedToken?.balance;
   const balanceKnown = Boolean(selectedToken && typeof tokenBalance === "bigint");
+  const wagmiSessionMatches =
+    Boolean(isConnected && address && walletAddress && address.toLowerCase() === walletAddress.toLowerCase());
   const assetBalanceLoading = Boolean(
     assetCandidates.length &&
     ((assetCandidates.some((token) => token.isNative) && nativeBalance.isPending) ||
@@ -264,8 +277,7 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
     balanceKnown && amountValue !== null && tokenBalance !== undefined && amountValue > tokenBalance;
   const amountIsPositive = amountValue !== null && amountValue > BigInt(0);
   const validForm = Boolean(
-    activeWalletAddress &&
-    connectedToActiveWallet &&
+    walletSessionConnected &&
     selectedToken &&
     destination &&
     amountIsPositive &&
@@ -276,8 +288,8 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
   const estimateReady = Boolean(
     screen === "review" &&
     validForm &&
-    isConnected &&
-    connectedToActiveWallet &&
+    walletSessionConnected &&
+    wagmiSessionMatches &&
     chainId === base.id,
   );
 
@@ -327,12 +339,12 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
 
   const handleSend = async () => {
     setSendError("");
-    if (!activeWalletAddress || !selectedToken || !destination || amountValue === null || !validForm) {
+    if (!walletSessionConnected || !selectedToken || !destination || amountValue === null || !validForm) {
       setSendError("Check the destination, amount, and available balance before continuing.");
       return;
     }
     try {
-      if (!isConnected || !connectedToActiveWallet) {
+      if (!wagmiSessionMatches) {
         await open();
         return;
       }
@@ -489,12 +501,6 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
 
           {screen === "onchain" && (
             <div className="space-y-5">
-              {(!activeWalletAddress || !connectedToActiveWallet) && (
-                <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">
-                  Connect the wallet linked to your profile to view its assets and send crypto.
-                </div>
-              )}
-
               <div>
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <label className="text-sm font-medium text-[#94a3b8]" htmlFor="send-asset">
@@ -503,7 +509,7 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
                   <button
                     aria-label="Refresh wallet assets"
                     className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-blue-300 transition-colors hover:bg-[#16223f] hover:text-white disabled:opacity-50"
-                    disabled={assetListLoading || !connectedToActiveWallet}
+                    disabled={assetListLoading || !walletSessionConnected || !isBaseNetwork}
                     onClick={() => {
                       void nativeBalance.refetch();
                       void erc20Balances.refetch();
@@ -537,7 +543,7 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
                     <option value="">
                       {assetListLoading || assetBalanceLoading
                         ? "Loading wallet assets..."
-                        : "No assets with balance"}
+                        : "Select an asset"}
                     </option>
                   )}
                 </select>
@@ -546,9 +552,11 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
                 )}
                 {!assetListLoading && !assetListError && !assetBalanceLoading && !assetBalanceError && !liveAssets.length && (
                   <p className="mt-2 text-xs text-[#94a3b8]">
-                    {connectedToActiveWallet
-                      ? "No supported Base assets with a positive balance were found."
-                      : "Connect the profile wallet to scan for assets."}
+                    {walletSessionConnected && isBaseNetwork
+                      ? "No positive-balance Base assets found for the connected wallet."
+                      : walletSessionConnected
+                        ? "Switch to Base to view assets available for sending."
+                        : "Connect a wallet to scan for assets."}
                   </p>
                 )}
                 {assetBalanceError && (
@@ -678,9 +686,9 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
                 </div>
               </div>
 
-              {!isConnected || !connectedToActiveWallet ? (
+              {!wagmiSessionMatches ? (
                 <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-200">
-                  <span>Connect the wallet linked to this profile to estimate fees and continue.</span>
+                  <span>Connect your active wallet to estimate fees and continue.</span>
                   <button
                     className="shrink-0 rounded-lg border border-amber-200/30 px-3 py-1.5 text-xs font-semibold hover:bg-amber-200/10"
                     onClick={() => {

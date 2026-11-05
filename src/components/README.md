@@ -9,8 +9,8 @@ This directory contains custom-built crypto interface components that replace th
 **Features:**
 - Select-method screen with bank withdrawal, on-chain, and RTR-user transfer routes
 - Fonbnk withdrawal gateway placeholder and internal transfer placeholder
-- Destination address validation and ETH/RTR selection for on-chain transfers
-- Amount input with a Max action and live active-wallet balance validation
+- Dynamic on-chain asset selection from the connected Reown wallet's positive-balance Base assets
+- Amount input with a Max action and live selected-token balance validation
 - Review step with an estimated Base network fee before transaction execution
 - Transaction status handling through the connected wagmi wallet
 
@@ -24,7 +24,6 @@ const [showSendModal, setShowSendModal] = useState(false);
 <button onClick={() => setShowSendModal(true)}>Send Crypto</button>
 {showSendModal && (
   <CustomSendModal
-    activeWalletAddress={activeWalletAddress}
     onClose={() => setShowSendModal(false)}
   />
 )}
@@ -130,7 +129,7 @@ const [showActivityLedger, setShowActivityLedger] = useState(false);
 ```tsx
 {showDepositModal && <CustomDepositModal onClose={() => setShowDepositModal(false)} />}
 {showSwapModal && <CustomSwapModal onClose={() => setShowSwapModal(false)} />}
-{showSendModal && <CustomSendModal activeWalletAddress={activeWalletAddress} onClose={() => setShowSendModal(false)} />}
+{showSendModal && <CustomSendModal onClose={() => setShowSendModal(false)} />}
 {showActivityLedger && <CustomActivityLedger onClose={() => setShowActivityLedger(false)} />}
 ```
 
