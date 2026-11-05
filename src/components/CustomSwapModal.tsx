@@ -5,6 +5,7 @@ import {
   formatUnits,
   getAddress,
   isAddress,
+  parseUnits,
   type Address,
 } from "viem";
 import {
@@ -30,7 +31,7 @@ interface CustomSwapModalProps {
 }
 
 type AppKitToken = NonNullable<SwapControllerState["tokens"]>[number];
-type ModalView = "convert" | "history";
+type ModalView = "convert" | "confirm" | "history";
 type TokenSide = "spend" | "receive";
 const nativeTokenAddress = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 const erc20BalanceAbi = [{
@@ -81,6 +82,8 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
   }));
   const [tokenLoadError, setTokenLoadError] = useState("");
   const [openingSwap, setOpeningSwap] = useState(false);
+  const [preparingPreview, setPreparingPreview] = useState(false);
+  const [previewError, setPreviewError] = useState("");
 
   const { open } = useAppKit();
   const { address: connectedAddress, isConnected } = useAppKitAccount();
@@ -244,9 +247,35 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
     : typeof toTokenBalance.data === "bigint" && selectedToToken
       ? formatUnits(toTokenBalance.data, selectedToToken.decimals)
       : undefined;
+  const fromBalanceRaw = selectedFromIsNative
+    ? fromNativeBalance.data?.value
+    : typeof fromTokenBalance.data === "bigint"
+      ? fromTokenBalance.data
+      : undefined;
   const fromBalancePending = Boolean(balanceAddress) && (selectedFromIsNative
     ? fromNativeBalance.isPending
     : fromTokenBalance.isPending);
+  let fromAmountRaw: bigint | undefined;
+  let amountPrecisionError = false;
+  if (selectedFromToken && fromAmount) {
+    try {
+      fromAmountRaw = parseUnits(fromAmount, selectedFromToken.decimals);
+    } catch {
+      amountPrecisionError = true;
+    }
+  }
+  const insufficientBalance = Boolean(
+    fromAmountRaw !== undefined
+    && fromBalanceRaw !== undefined
+    && fromAmountRaw > fromBalanceRaw,
+  );
+  const amountValidationError = insufficientBalance
+    ? "Error: Insufficient balance for this transaction."
+    : amountPrecisionError
+      ? "Error: Amount exceeds the supported token precision."
+      : fromAmount && !fromBalancePending && fromBalanceRaw === undefined
+        ? "Error: Unable to verify the live balance. Please try again."
+        : "";
   const toBalancePending = Boolean(balanceAddress) && (selectedToIsNative
     ? toNativeBalance.isPending
     : toTokenBalance.isPending);
@@ -286,7 +315,35 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
     if (!selectedFromToken || !selectedToToken || !fromAmount || !Number.isFinite(Number(fromAmount)) || Number(fromAmount) <= 0) {
       return;
     }
+    if (insufficientBalance) return;
+    if (amountPrecisionError || fromBalanceRaw === undefined) {
+      setPreviewError(amountValidationError || "Unable to verify the live balance. Please try again.");
+      return;
+    }
+
+    setPreviewError("");
+    setView("confirm");
+    setPreparingPreview(true);
+    try {
+      SwapController.setSourceTokenAmount("");
+      SwapController.setToTokenAmount("");
+      await SwapController.setSourceToken(selectedFromToken);
+      await SwapController.setToToken(selectedToToken);
+      SwapController.setSourceTokenAmount(fromAmount);
+      await SwapController.getInitialGasPrice();
+      await SwapController.swapTokens();
+    } catch (error) {
+      console.error("Unable to prepare the Reown swap preview:", error);
+      setPreviewError("Unable to prepare the secure swap preview. Please try again.");
+    } finally {
+      setPreparingPreview(false);
+    }
+  };
+
+  const handleConfirmSwap = async () => {
+    if (!selectedFromToken || !selectedToToken || !fromAmount) return;
     setOpeningSwap(true);
+    setPreviewError("");
     try {
       await open({
         view: "Swap",
@@ -296,14 +353,20 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
           amount: fromAmount,
         },
       });
-      onClose();
     } catch (error) {
       console.error("Unable to open the Reown swap view:", error);
-      setTokenLoadError("Unable to open the secure Reown swap view. Please try again.");
+      setPreviewError("Unable to open the secure Reown swap view. Please try again.");
     } finally {
       setOpeningSwap(false);
     }
   };
+
+  const quotedReceiveAmount = Number(controllerState.toTokenAmount);
+  const spendAmountNumber = Number(fromAmount);
+  const quoteRate = quotedReceiveAmount > 0 && spendAmountNumber > 0
+    ? quotedReceiveAmount / spendAmountNumber
+    : undefined;
+  const estimatedGasUsd = controllerState.gasPriceInUSD;
 
   if (view === "history") {
     return (
@@ -356,6 +419,77 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
           </button>
         </div>
 
+        {view === "confirm" ? (
+          <div className="space-y-5">
+            <div>
+              <button
+                className="mb-4 rounded-lg px-1 py-1 text-sm font-medium text-[#94a3b8] transition-colors hover:text-white"
+                onClick={() => {
+                  setView("convert");
+                  setPreviewError("");
+                }}
+                type="button"
+              >
+                ← Back to Convert
+              </button>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">Secure transaction review</p>
+              <h2 className="mt-1 text-2xl font-bold tracking-tight text-white">Confirm Swap</h2>
+              <p className="mt-1 text-sm text-[#94a3b8]">Review the live Reown quote before continuing.</p>
+            </div>
+
+            <div className="space-y-3 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 sm:p-5">
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-sm text-[#94a3b8]">You spend</span>
+                <span className="text-right font-semibold text-white">{fromAmount} {selectedFromToken?.symbol}</span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-sm text-[#94a3b8]">Estimated receive</span>
+                <span className="text-right font-semibold text-white">
+                  {controllerState.loadingQuote || preparingPreview
+                    ? "Calculating..."
+                    : controllerState.toTokenAmount
+                      ? `${formatBalance(controllerState.toTokenAmount)} ${selectedToToken?.symbol}`
+                      : "Quote unavailable"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-4 border-t border-[#1e293b] pt-3">
+                <span className="text-sm text-[#94a3b8]">Conversion rate</span>
+                <span className="text-right text-sm font-medium text-white">
+                  {quoteRate !== undefined
+                    ? `1 ${selectedFromToken?.symbol} ≈ ${formatBalance(String(quoteRate))} ${selectedToToken?.symbol}`
+                    : controllerState.loadingQuote || preparingPreview
+                      ? "Calculating..."
+                      : "Quote unavailable"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-sm text-[#94a3b8]">Estimated network gas fee</span>
+                <span className="text-right text-sm font-medium text-white">
+                  {typeof estimatedGasUsd === "number" && Number.isFinite(estimatedGasUsd) && estimatedGasUsd > 0
+                    ? `≈ $${estimatedGasUsd.toFixed(2)} USD`
+                    : "Calculating..."}
+                </span>
+              </div>
+            </div>
+
+            {previewError && (
+              <p className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300" role="alert">
+                {previewError}
+              </p>
+            )}
+
+            <button
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-blue-400/30 bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3.5 font-bold text-white shadow-lg shadow-blue-900/20 transition hover:from-blue-500 hover:to-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={preparingPreview || openingSwap}
+              onClick={() => void handleConfirmSwap()}
+              type="button"
+            >
+              {(preparingPreview || openingSwap) && <LoaderCircle className="animate-spin" size={17} />}
+              {openingSwap ? "Opening Reown swap..." : "Confirm Swap"}
+            </button>
+          </div>
+        ) : (
+          <>
         <div className="mb-5">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">
             {controllerState.networkTokenSymbol ? `${controllerState.networkTokenSymbol} Network` : "Reown Swap"}
@@ -398,6 +532,11 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
                 value={fromAmount}
               />
             </div>
+            {amountValidationError && (
+              <p className="mt-3 text-sm font-medium text-red-400" role="alert">
+                {amountValidationError}
+              </p>
+            )}
             <div className="mt-3 flex justify-end">
               <button
                 className="text-xs font-semibold text-[#94a3b8] transition-colors hover:text-white disabled:opacity-50"
@@ -479,14 +618,16 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
           )}
           <button
             className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-blue-400/30 bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3.5 font-bold text-white shadow-lg shadow-blue-900/20 transition hover:from-blue-500 hover:to-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!selectedFromToken || !selectedToToken || !fromAmount || !Number.isFinite(Number(fromAmount)) || Number(fromAmount) <= 0 || openingSwap}
+            disabled={!selectedFromToken || !selectedToToken || !fromAmount || !Number.isFinite(Number(fromAmount)) || Number(fromAmount) <= 0 || Boolean(amountValidationError) || fromBalancePending || openingSwap}
             onClick={() => void handlePreview()}
             type="button"
           >
-            {openingSwap && <LoaderCircle className="animate-spin" size={17} />}
-            {openingSwap ? "Opening secure swap..." : "Preview"}
+            {preparingPreview && <LoaderCircle className="animate-spin" size={17} />}
+            {preparingPreview ? "Preparing secure preview..." : "Preview"}
           </button>
         </div>
+          </>
+        )}
 
         {selectorSide && (
           <div
