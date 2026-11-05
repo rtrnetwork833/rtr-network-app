@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   useAccount,
   useBalance,
   useEstimateGas,
   useGasPrice,
-  useReadContract,
+  useReadContracts,
   useSendTransaction,
   useSwitchChain,
   useWriteContract,
 } from "wagmi";
-import { useAppKit } from "@reown/appkit/react";
+import { useAppKit, useAppKitAccount } from "@reown/appkit/react";
+import { SwapController, type SwapControllerState } from "@reown/appkit-controllers";
 import {
   encodeFunctionData,
   formatUnits,
@@ -31,6 +32,7 @@ import {
   ChevronRight,
   Landmark,
   LoaderCircle,
+  RefreshCw,
   UsersRound,
   X,
 } from "lucide-react";
@@ -41,9 +43,20 @@ interface CustomSendModalProps {
 }
 
 type Screen = "methods" | "bank" | "onchain" | "internal" | "review" | "success";
-type Token = "ETH" | "RTR";
+type AppKitToken = NonNullable<SwapControllerState["myTokensWithBalance"]>[number];
+const emptyWalletTokens: AppKitToken[] = [];
 
-const rtrTokenAbi = [
+interface WalletAsset {
+  key: string;
+  address: Address | null;
+  symbol: string;
+  name: string;
+  decimals: number;
+  logoUri?: string;
+  isNative: boolean;
+}
+
+const erc20Abi = [
   {
     inputs: [{ name: "_owner", type: "address" }],
     name: "balanceOf",
@@ -63,28 +76,23 @@ const rtrTokenAbi = [
   },
 ] as const;
 
-const configuredRtrAddress = process.env.NEXT_PUBLIC_RTR_TOKEN_ADDRESS;
-const rtrTokenAddress =
-  configuredRtrAddress && isAddress(configuredRtrAddress)
-    ? getAddress(configuredRtrAddress)
-    : undefined;
-const zeroAddress = "0x0000000000000000000000000000000000000000";
+const nativeTokenAddress = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
-function parseTokenAmount(value: string) {
+function parseTokenAmount(value: string, decimals: number) {
   if (!value || !/^\d*\.?\d*$/.test(value) || value === "." || value === "") return null;
   try {
-    return parseUnits(value, 18);
+    return parseUnits(value, decimals);
   } catch {
     return null;
   }
 }
 
-function formatTokenAmount(value: bigint) {
-  return formatUnits(value, 18).replace(/(\.\d*?[1-9])0+$|\.0+$/, "$1");
+function formatTokenAmount(value: bigint, decimals: number) {
+  return formatUnits(value, decimals).replace(/(\.\d*?[1-9])0+$|\.0+$/, "$1");
 }
 
-function conciseAmount(value: bigint, precision = 6) {
-  const formatted = formatTokenAmount(value);
+function conciseAmount(value: bigint, decimals: number, precision = 6) {
+  const formatted = formatTokenAmount(value, decimals);
   const [whole, fraction] = formatted.split(".");
   const visiblePrecision =
     fraction && !/[1-9]/.test(fraction.slice(0, precision)) && /[1-9]/.test(fraction.slice(precision))
@@ -97,49 +105,174 @@ function conciseAmount(value: bigint, precision = 6) {
 
 export default function CustomSendModal({ activeWalletAddress, onClose }: CustomSendModalProps) {
   const { address, chainId, isConnected } = useAccount();
+  const { address: appKitAddress } = useAppKitAccount();
   const { open } = useAppKit();
   const { switchChainAsync, isPending: isSwitchingChain } = useSwitchChain();
   const { sendTransactionAsync, isPending: isNativePending, error: nativeError } = useSendTransaction();
   const { writeContractAsync, isPending: isTokenPending, error: tokenError } = useWriteContract();
 
   const [screen, setScreen] = useState<Screen>("methods");
-  const [selectedToken, setSelectedToken] = useState<Token>("ETH");
+  const [selectedTokenKey, setSelectedTokenKey] = useState("");
   const [destinationAddress, setDestinationAddress] = useState("");
   const [amount, setAmount] = useState("");
   const [sendError, setSendError] = useState("");
   const [transactionHash, setTransactionHash] = useState("");
+  const [assetSnapshot, setAssetSnapshot] = useState<{
+    address: string;
+    refreshCount: number;
+    tokens: AppKitToken[];
+    error?: string;
+  } | null>(null);
+  const [assetRefreshCount, setAssetRefreshCount] = useState(0);
 
-  const ethBalance = useBalance({
-    address: activeWalletAddress ?? undefined,
-    query: { enabled: Boolean(activeWalletAddress) },
+  const connectedToActiveWallet = Boolean(
+    address &&
+    appKitAddress &&
+    activeWalletAddress &&
+    address.toLowerCase() === activeWalletAddress.toLowerCase() &&
+    appKitAddress.toLowerCase() === activeWalletAddress.toLowerCase(),
+  );
+  const balanceAddress = connectedToActiveWallet ? address : undefined;
+  const snapshotMatchesWallet =
+    Boolean(balanceAddress && assetSnapshot?.address === balanceAddress.toLowerCase());
+  const assetListLoading = Boolean(
+    balanceAddress &&
+    (!snapshotMatchesWallet || assetSnapshot?.refreshCount !== assetRefreshCount),
+  );
+  const assetListError =
+    snapshotMatchesWallet && assetSnapshot?.refreshCount === assetRefreshCount
+      ? assetSnapshot.error ?? ""
+      : "";
+  const discoveredTokens = snapshotMatchesWallet ? assetSnapshot?.tokens ?? emptyWalletTokens : emptyWalletTokens;
+
+  useEffect(() => {
+    let active = true;
+
+    if (!isConnected || !connectedToActiveWallet || !address) {
+      return () => {
+        active = false;
+      };
+    }
+
+    const walletAddress = address.toLowerCase();
+    void SwapController.getMyTokensWithBalance()
+      .then(() => {
+        if (active) {
+          setAssetSnapshot({
+            address: walletAddress,
+            refreshCount: assetRefreshCount,
+            tokens: [...(SwapController.state.myTokensWithBalance ?? [])],
+          });
+        }
+      })
+      .catch((error: unknown) => {
+        console.error("Unable to load wallet assets for sending:", error);
+        if (active) {
+          setAssetSnapshot({
+            address: walletAddress,
+            refreshCount: assetRefreshCount,
+            tokens: [],
+            error: "Unable to load wallet assets. Please refresh and try again.",
+          });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [activeWalletAddress, address, assetRefreshCount, connectedToActiveWallet, isConnected]);
+
+  const assetCandidates = useMemo(() => {
+    const uniqueAssets = new Map<string, WalletAsset>();
+    for (const token of discoveredTokens) {
+      const caipPrefix = `eip155:${base.id}:`;
+      if (!token?.address?.startsWith(caipPrefix) || !Number.isInteger(token.decimals) || token.decimals < 0) continue;
+      const reportedBalance = parseTokenAmount(token.quantity?.numeric ?? "", token.decimals);
+      if (reportedBalance === null || reportedBalance <= BigInt(0)) continue;
+      const rawAddress = token.address.slice(caipPrefix.length);
+      if (!isAddress(rawAddress)) continue;
+      const isNative = rawAddress.toLowerCase() === nativeTokenAddress;
+      const key = token.address.toLowerCase();
+      if (!uniqueAssets.has(key)) {
+        uniqueAssets.set(key, {
+          key,
+          address: isNative ? null : getAddress(rawAddress),
+          symbol: token.symbol,
+          name: token.name,
+          decimals: token.decimals,
+          logoUri: token.logoUri || undefined,
+          isNative,
+        });
+      }
+    }
+    return [...uniqueAssets.values()];
+  }, [discoveredTokens]);
+
+  const nativeBalance = useBalance({
+    address: balanceAddress,
+    chainId: base.id,
+    query: {
+      enabled: Boolean(balanceAddress && assetCandidates.some((token) => token.isNative)),
+      refetchInterval: 12_000,
+    },
   });
-  const rtrBalance = useReadContract({
-    address: rtrTokenAddress ?? zeroAddress,
-    abi: rtrTokenAbi,
-    functionName: "balanceOf",
-    args: activeWalletAddress && rtrTokenAddress ? [activeWalletAddress] : undefined,
-    query: { enabled: Boolean(activeWalletAddress && rtrTokenAddress) },
+  const erc20Assets = assetCandidates.filter(
+    (token): token is WalletAsset & { address: Address } => !token.isNative && token.address !== null,
+  );
+  const erc20Balances = useReadContracts({
+    contracts: balanceAddress
+      ? erc20Assets.map((token) => ({
+          address: token.address,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [balanceAddress],
+          chainId: base.id,
+        }))
+      : [],
+    query: {
+      enabled: Boolean(balanceAddress && erc20Assets.length),
+      refetchInterval: 12_000,
+    },
   });
 
-  const amountValue = parseTokenAmount(amount);
+  const liveAssets = useMemo(() => {
+    let erc20Index = 0;
+    return assetCandidates.flatMap((token) => {
+      const balance = token.isNative
+        ? nativeBalance.data?.value
+        : erc20Balances.data?.[erc20Index++]?.result;
+      return typeof balance === "bigint" && balance > BigInt(0)
+        ? [{ ...token, balance }]
+        : [];
+    });
+  }, [assetCandidates, erc20Balances.data, nativeBalance.data?.value]);
+  const selectedToken =
+    liveAssets.find((token) => token.key === selectedTokenKey) ?? liveAssets[0];
+  const amountValue = selectedToken ? parseTokenAmount(amount, selectedToken.decimals) : null;
   const destination = isAddress(destinationAddress) ? getAddress(destinationAddress) : undefined;
-  const tokenBalance = selectedToken === "ETH" ? ethBalance.data?.value : rtrBalance.data;
-  const balanceKnown = selectedToken === "ETH"
-    ? Boolean(ethBalance.data)
-    : typeof rtrBalance.data === "bigint";
+  const tokenBalance = selectedToken?.balance;
+  const balanceKnown = Boolean(selectedToken && typeof tokenBalance === "bigint");
+  const assetBalanceLoading = Boolean(
+    assetCandidates.length &&
+    ((assetCandidates.some((token) => token.isNative) && nativeBalance.isPending) ||
+      (erc20Assets.length > 0 && erc20Balances.isPending)),
+  );
+  const assetBalanceError =
+    nativeBalance.isError ||
+    Boolean(erc20Balances.data?.some((result) => result.status === "failure"));
   const insufficientBalance =
     balanceKnown && amountValue !== null && tokenBalance !== undefined && amountValue > tokenBalance;
   const amountIsPositive = amountValue !== null && amountValue > BigInt(0);
   const validForm = Boolean(
     activeWalletAddress &&
+    connectedToActiveWallet &&
+    selectedToken &&
     destination &&
     amountIsPositive &&
     balanceKnown &&
     !insufficientBalance &&
-    (selectedToken === "ETH" || rtrTokenAddress),
+    (selectedToken.isNative || selectedToken.address),
   );
-  const connectedToActiveWallet =
-    Boolean(address && activeWalletAddress && address.toLowerCase() === activeWalletAddress.toLowerCase());
   const estimateReady = Boolean(
     screen === "review" &&
     validForm &&
@@ -149,18 +282,18 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
   );
 
   const transferData =
-    selectedToken === "RTR" && destination && amountValue !== null
+    selectedToken && !selectedToken.isNative && destination && amountValue !== null
       ? encodeFunctionData({
-          abi: rtrTokenAbi,
+          abi: erc20Abi,
           functionName: "transfer",
           args: [destination, amountValue],
         })
       : undefined;
   const gasEstimate = useEstimateGas({
     account: address,
-    to: selectedToken === "ETH" ? destination : rtrTokenAddress ?? zeroAddress,
-    value: selectedToken === "ETH" ? amountValue ?? undefined : undefined,
-    data: selectedToken === "RTR" ? transferData : undefined,
+    to: selectedToken?.isNative ? destination : selectedToken?.address,
+    value: selectedToken?.isNative ? amountValue ?? undefined : undefined,
+    data: selectedToken && !selectedToken.isNative ? transferData : undefined,
     chainId: base.id,
     query: { enabled: estimateReady, retry: false },
   });
@@ -194,7 +327,7 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
 
   const handleSend = async () => {
     setSendError("");
-    if (!activeWalletAddress || !destination || amountValue === null || !validForm) {
+    if (!activeWalletAddress || !selectedToken || !destination || amountValue === null || !validForm) {
       setSendError("Check the destination, amount, and available balance before continuing.");
       return;
     }
@@ -213,17 +346,17 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
       }
 
       let hash: Hash;
-      if (selectedToken === "ETH") {
+      if (selectedToken.isNative) {
         hash = await sendTransactionAsync({
           to: destination,
           value: amountValue,
           chainId: base.id,
         });
       } else {
-        if (!rtrTokenAddress) throw new Error("RTR token contract is not configured.");
+        if (!selectedToken.address) throw new Error("The selected token contract is unavailable.");
         hash = await writeContractAsync({
-          address: rtrTokenAddress,
-          abi: rtrTokenAbi,
+          address: selectedToken.address,
+          abi: erc20Abi,
           functionName: "transfer",
           args: [destination, amountValue],
           chainId: base.id,
@@ -356,37 +489,72 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
 
           {screen === "onchain" && (
             <div className="space-y-5">
-              {!activeWalletAddress && (
+              {(!activeWalletAddress || !connectedToActiveWallet) && (
                 <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">
-                  Link a wallet to your profile to view balances and send crypto.
+                  Connect the wallet linked to your profile to view its assets and send crypto.
                 </div>
               )}
 
               <div>
-                <p className="mb-2 text-sm font-medium text-[#94a3b8]">Asset</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {(["ETH", "RTR"] as const).map((token) => (
-                    <button
-                      aria-pressed={selectedToken === token}
-                      className={`rounded-xl border px-4 py-3 font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] ${
-                        selectedToken === token
-                          ? "border-[#3b82f6] bg-blue-500/10 text-white"
-                          : "border-[#1e293b] bg-[#16223f] text-slate-400 hover:border-[#3b82f6]"
-                      }`}
-                      disabled={token === "RTR" && !rtrTokenAddress}
-                      key={token}
-                      onClick={() => {
-                        setSelectedToken(token);
-                        setSendError("");
-                      }}
-                      type="button"
-                    >
-                      {token}
-                    </button>
-                  ))}
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label className="text-sm font-medium text-[#94a3b8]" htmlFor="send-asset">
+                    Asset
+                  </label>
+                  <button
+                    aria-label="Refresh wallet assets"
+                    className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-blue-300 transition-colors hover:bg-[#16223f] hover:text-white disabled:opacity-50"
+                    disabled={assetListLoading || !connectedToActiveWallet}
+                    onClick={() => {
+                      void nativeBalance.refetch();
+                      void erc20Balances.refetch();
+                      setAssetRefreshCount((count) => count + 1);
+                    }}
+                    type="button"
+                  >
+                    <RefreshCw aria-hidden="true" className={assetListLoading ? "animate-spin" : ""} size={14} />
+                    Refresh
+                  </button>
                 </div>
-                {selectedToken === "RTR" && !rtrTokenAddress && (
-                  <p className="mt-2 text-xs text-amber-200">RTR transfers are unavailable because the token contract is not configured.</p>
+                <select
+                  aria-busy={assetListLoading || assetBalanceLoading}
+                  className="w-full rounded-xl border border-[#1e293b] bg-[#16223f] px-4 py-3 text-sm text-white outline-none transition-colors focus:border-[#3b82f6] focus:ring-1 focus:ring-[#3b82f6] disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={!liveAssets.length}
+                  id="send-asset"
+                  onChange={(event) => {
+                    setSelectedTokenKey(event.target.value);
+                    setAmount("");
+                    setSendError("");
+                  }}
+                  value={selectedToken?.key ?? ""}
+                >
+                  {liveAssets.length ? (
+                    liveAssets.map((token) => (
+                      <option key={token.key} value={token.key}>
+                        {token.symbol} — {formatTokenAmount(token.balance, token.decimals)}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">
+                      {assetListLoading || assetBalanceLoading
+                        ? "Loading wallet assets..."
+                        : "No assets with balance"}
+                    </option>
+                  )}
+                </select>
+                {assetListError && (
+                  <p className="mt-2 text-xs text-red-300" role="alert">{assetListError}</p>
+                )}
+                {!assetListLoading && !assetListError && !assetBalanceLoading && !assetBalanceError && !liveAssets.length && (
+                  <p className="mt-2 text-xs text-[#94a3b8]">
+                    {connectedToActiveWallet
+                      ? "No supported Base assets with a positive balance were found."
+                      : "Connect the profile wallet to scan for assets."}
+                  </p>
+                )}
+                {assetBalanceError && (
+                  <p className="mt-2 text-xs text-red-300" role="alert">
+                    Unable to verify one or more wallet balances. Refresh assets and try again.
+                  </p>
                 )}
               </div>
 
@@ -418,35 +586,33 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
                   inputMode="decimal"
                   onChange={(event) => setAmount(event.target.value)}
                   placeholder="0.00"
-                  type="number"
-                  min="0"
-                  step="any"
+                  type="text"
                   value={amount}
                 />
                 <div className="mt-2 flex items-center justify-between gap-3">
                   <p className="text-xs text-[#94a3b8]">
-                    {tokenBalance !== undefined
-                      ? `Available: ${conciseAmount(tokenBalance)} ${selectedToken}`
-                      : (selectedToken === "ETH" ? ethBalance.isError : rtrBalance.isError)
-                        ? "Balance unavailable"
-                        : activeWalletAddress
-                          ? "Loading balance..."
-                          : `Available: 0 ${selectedToken}`}
+                    {selectedToken && tokenBalance !== undefined
+                      ? `Available: ${formatTokenAmount(tokenBalance, selectedToken.decimals)} ${selectedToken.symbol}`
+                      : assetBalanceLoading || assetListLoading
+                        ? "Loading balance..."
+                        : "Available: —"}
                   </p>
                   <button
                     className="rounded-lg border border-[#1e293b] bg-[#16223f] px-3 py-1.5 text-xs font-bold text-blue-300 transition-colors hover:border-[#3b82f6] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={tokenBalance === undefined}
                     onClick={() => {
-                      if (tokenBalance !== undefined) setAmount(formatTokenAmount(tokenBalance));
+                      if (selectedToken && tokenBalance !== undefined) {
+                        setAmount(formatTokenAmount(tokenBalance, selectedToken.decimals));
+                      }
                     }}
                     type="button"
                   >
                     Max
                   </button>
                 </div>
-                {(selectedToken === "ETH" ? ethBalance.isError : rtrBalance.isError) && (
+                {assetBalanceError && (
                   <p className="mt-2 text-xs text-red-300" role="alert">
-                    Unable to load your {selectedToken} balance. Refresh the wallet connection and try again.
+                    Unable to load the live balance. Refresh wallet assets and try again.
                   </p>
                 )}
                 {insufficientBalance && (
@@ -492,7 +658,7 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
               <div className="space-y-3 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4">
                 <div className="flex justify-between gap-4 text-sm">
                   <span className="text-[#94a3b8]">You send</span>
-                  <span className="font-semibold text-white">{amount} {selectedToken}</span>
+                  <span className="font-semibold text-white">{amount} {selectedToken?.symbol}</span>
                 </div>
                 <div className="flex justify-between gap-4 text-sm">
                   <span className="text-[#94a3b8]">To</span>
@@ -505,7 +671,7 @@ export default function CustomSendModal({ activeWalletAddress, onClose }: Custom
                       {gasEstimate.isFetching || gasPrice.isFetching
                         ? "Estimating..."
                         : estimatedFee !== undefined
-                          ? `${conciseAmount(estimatedFee, 8)} ETH`
+                          ? `${conciseAmount(estimatedFee, 18, 8)} ETH`
                           : "Unavailable"}
                     </span>
                   </div>
