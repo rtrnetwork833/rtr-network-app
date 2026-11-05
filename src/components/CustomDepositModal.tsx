@@ -86,9 +86,7 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
 
   return (
     <div
-      className={`fixed inset-0 z-[100] flex justify-center bg-[#0d1527]/95 p-0 backdrop-blur-md sm:p-6 ${
-        view === "methods" ? "items-end" : "items-start sm:items-center"
-      }`}
+      className="fixed inset-0 z-[100] flex items-start justify-center bg-[#0d1527]/95 p-0 backdrop-blur-md sm:p-6"
       onClick={(event) => {
         if (event.target === event.currentTarget) closeModal();
       }}
