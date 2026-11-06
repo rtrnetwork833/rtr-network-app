@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAppKitAccount } from "@reown/appkit/react";
+import { useAccount } from "wagmi";
 import {
   ArrowDownCircle,
   ArrowLeft,
@@ -10,7 +12,6 @@ import {
   ChevronRight,
   Copy,
   CreditCard,
-  LoaderCircle,
   ShieldCheck,
   WalletCards,
   X,
@@ -33,6 +34,14 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const depositAddress = activeWalletAddress ?? placeholderWalletAddress;
+  const { address: appKitAddress } = useAppKitAccount();
+  const { address: wagmiAddress } = useAccount();
+  const bankTransferUrl = new URL("https://fonbnk.com");
+  bankTransferUrl.searchParams.set("source", process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID ?? "");
+  const bankTransferAddress = appKitAddress ?? wagmiAddress;
+  if (bankTransferAddress) bankTransferUrl.searchParams.set("address", bankTransferAddress);
+  bankTransferUrl.searchParams.set("network", "BASE");
+  bankTransferUrl.searchParams.set("asset", "USDC");
 
   const qrCodeQuery = useQuery({
     queryKey: ["deposit-wallet-qr", depositAddress],
@@ -208,15 +217,11 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
                 </p>
               </div>
 
-              <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-600 bg-[#16223f] px-6 py-10 text-center">
-                <span className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-[#1e293b] bg-[#0d1527] text-blue-400">
-                  <LoaderCircle aria-hidden="true" className="animate-spin" size={27} />
-                </span>
-                <p className="font-medium text-white">Connecting to Fonbnk Secure Gateway...</p>
-                <p className="mt-2 max-w-xs text-sm leading-6 text-[#94a3b8]">
-                  The secure bank transfer experience will be available here.
-                </p>
-              </div>
+              <iframe
+                className="min-h-[480px] w-full border-none"
+                src={bankTransferUrl.toString()}
+                title="Fonbnk secure bank transfer"
+              />
             </>
           )}
 
