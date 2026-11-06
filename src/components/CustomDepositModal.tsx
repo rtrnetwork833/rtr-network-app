@@ -220,7 +220,7 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
 
               <iframe
                 className="min-h-[480px] w-full border-none"
-                src={`https://fonbnk.com?${bankTransferUrl.toString()}`}
+                src={`https://sandbox-pay.fonbnk.com?${bankTransferUrl.toString()}`}
                 title="Fonbnk secure bank transfer"
               />
             </>
