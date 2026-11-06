@@ -36,12 +36,13 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
   const depositAddress = activeWalletAddress ?? placeholderWalletAddress;
   const { address: appKitAddress } = useAppKitAccount();
   const { address: wagmiAddress } = useAccount();
-  const bankTransferUrl = new URL("https://fonbnk.com");
-  bankTransferUrl.searchParams.set("source", process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID ?? "");
+  const bankTransferUrl = new URLSearchParams({
+    source: process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID ?? "",
+    network: "BASE",
+    asset: "USDC",
+  });
   const bankTransferAddress = appKitAddress ?? wagmiAddress;
-  if (bankTransferAddress) bankTransferUrl.searchParams.set("address", bankTransferAddress);
-  bankTransferUrl.searchParams.set("network", "BASE");
-  bankTransferUrl.searchParams.set("asset", "USDC");
+  if (bankTransferAddress) bankTransferUrl.set("address", bankTransferAddress);
 
   const qrCodeQuery = useQuery({
     queryKey: ["deposit-wallet-qr", depositAddress],
@@ -219,7 +220,7 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
 
               <iframe
                 className="min-h-[480px] w-full border-none"
-                src={bankTransferUrl.toString()}
+                src={`https://fonbnk.com?${bankTransferUrl.toString()}`}
                 title="Fonbnk secure bank transfer"
               />
             </>
