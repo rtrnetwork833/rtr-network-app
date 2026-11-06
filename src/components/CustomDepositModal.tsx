@@ -30,9 +30,16 @@ const placeholderWalletAddress = "0x284bEa823901923481239841239841D7F2";
 export default function CustomDepositModal({ activeWalletAddress, onClose }: CustomDepositModalProps) {
   const [view, setView] = useState<DepositView>("methods");
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
+  const [hasMounted, setHasMounted] = useState(false);
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const depositAddress = activeWalletAddress ?? placeholderWalletAddress;
   const { address } = useAccount();
+
+  useEffect(() => {
+    // Keep the wallet iframe out of server-rendered and pre-hydration markup.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHasMounted(true);
+  }, []);
 
   const qrCodeQuery = useQuery({
     queryKey: ["deposit-wallet-qr", depositAddress],
@@ -209,11 +216,24 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
                 </div>
               </div>
 
-              <iframe
-                className="min-h-[80vh] w-full flex-1 border-none"
-                src={`https://sandbox-pay.fonbnk.com?source=${process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID}&walletAddress=${address || ''}&network=BASE&asset=USDC`}
-                title="Fonbnk secure bank transfer"
-              />
+              {hasMounted && address ? (
+                <iframe
+                  className="min-h-[80vh] w-full flex-1 border-none"
+                  src={`https://sandbox-pay.fonbnk.com?source=${process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID}&walletAddress=${encodeURIComponent(address)}&network=BASE&asset=USDC`}
+                  title="Fonbnk secure bank transfer"
+                />
+              ) : (
+                <div
+                  className="flex min-h-[80vh] w-full flex-1 flex-col items-center justify-center gap-4 text-slate-300"
+                  role="status"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="h-8 w-8 animate-spin rounded-full border-2 border-slate-600 border-t-blue-400"
+                  />
+                  <span>Initializing secure transaction rails...</span>
+                </div>
+              )}
             </>
           )}
 
