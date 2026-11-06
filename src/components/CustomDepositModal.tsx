@@ -219,7 +219,7 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
               {hasMounted && address ? (
                 <iframe
                   className="min-h-[80vh] w-full flex-1 border-none"
-                  src={`https://sandbox-pay.fonbnk.com?source=${process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID}&walletAddress=${encodeURIComponent(address)}&network=BASE&asset=USDC`}
+                  src={`https://fonbnk.com?source=${process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID}&walletAddress=${encodeURIComponent(address || '')}&network=BASE&asset=USDC`}
                   title="Fonbnk secure bank transfer"
                 />
               ) : (
