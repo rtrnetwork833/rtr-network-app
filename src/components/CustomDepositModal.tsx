@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useAppKitAccount } from "@reown/appkit/react";
 import { useAccount } from "wagmi";
 import {
   ArrowDownCircle,
@@ -12,7 +11,6 @@ import {
   ChevronRight,
   Copy,
   CreditCard,
-  ShieldCheck,
   WalletCards,
   X,
 } from "lucide-react";
@@ -34,15 +32,13 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const depositAddress = activeWalletAddress ?? placeholderWalletAddress;
-  const { address: appKitAddress } = useAppKitAccount();
-  const { address: wagmiAddress } = useAccount();
+  const { address } = useAccount();
   const bankTransferUrl = new URLSearchParams({
     source: process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID ?? "",
     network: "BASE",
     asset: "USDC",
   });
-  const bankTransferAddress = appKitAddress ?? wagmiAddress;
-  if (bankTransferAddress) bankTransferUrl.set("address", bankTransferAddress);
+  if (address) bankTransferUrl.set("walletAddress", address);
 
   const qrCodeQuery = useQuery({
     queryKey: ["deposit-wallet-qr", depositAddress],
@@ -96,7 +92,9 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center bg-[#0d1527]/95 p-0 backdrop-blur-md sm:p-6"
+      className={`fixed inset-0 z-[100] flex items-start justify-center bg-[#0d1527]/95 backdrop-blur-md ${
+        view === "bank" ? "p-0" : "p-0 sm:p-6"
+      }`}
       onClick={(event) => {
         if (event.target === event.currentTarget) closeModal();
       }}
@@ -104,10 +102,16 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
       <section
         aria-labelledby="deposit-modal-title"
         aria-modal="true"
-        className={`deposit-modal-sheet relative w-full max-w-lg overflow-y-auto border border-[#1e293b] bg-[#0d1527] p-5 pb-24 shadow-[0_24px_100px_rgba(0,0,0,0.55)] sm:rounded-3xl sm:p-7 sm:pb-24 ${
+        className={`deposit-modal-sheet relative w-full overflow-y-auto bg-[#0d1527] ${
+          view === "bank"
+            ? "h-[100dvh] max-h-[100dvh] max-w-none border-0 p-0 shadow-none"
+            : "max-w-lg border border-[#1e293b] p-5 pb-24 shadow-[0_24px_100px_rgba(0,0,0,0.55)] sm:rounded-3xl sm:p-7 sm:pb-24"
+        } ${
           view === "methods"
             ? "max-h-[92dvh] rounded-t-3xl rounded-b-none"
-            : "max-h-[100dvh] min-h-[100dvh] rounded-none sm:max-h-[92dvh] sm:min-h-0"
+            : view === "bank"
+              ? "rounded-none"
+              : "max-h-[100dvh] min-h-[100dvh] rounded-none sm:max-h-[92dvh] sm:min-h-0"
         }`}
         role="dialog"
       >
@@ -120,7 +124,7 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
           <X aria-hidden="true" size={19} />
         </button>
 
-        <div key={view} className="deposit-modal-view">
+        <div key={view} className={`deposit-modal-view ${view === "bank" ? "flex h-full flex-col" : ""}`}>
           {view === "methods" && (
             <>
               <div className="mb-7 pr-12">
@@ -192,7 +196,7 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
 
           {view === "bank" && (
             <>
-              <div className="mb-7 flex items-start gap-3 pr-12">
+              <div className="flex shrink-0 items-start gap-3 pr-12">
                 <button
                   aria-label="Back to select method"
                   className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#16223f] text-slate-300 transition-colors hover:border-[#3b82f6] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6]"
@@ -211,15 +215,8 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
                 </div>
               </div>
 
-              <div className="mb-5 flex items-start gap-3 rounded-xl border border-[#1e293b] bg-[#16223f] px-4 py-3.5">
-                <ShieldCheck aria-hidden="true" className="mt-0.5 shrink-0 text-[#94a3b8]" size={18} />
-                <p className="text-sm leading-6 text-[#94a3b8]">
-                  Asset to Receive: <span className="font-medium text-white">USDC (Base Network)</span>
-                </p>
-              </div>
-
               <iframe
-                className="min-h-[480px] w-full border-none"
+                className="min-h-[80vh] w-full flex-1 border-none"
                 src={`https://sandbox-pay.fonbnk.com?${bankTransferUrl.toString()}`}
                 title="Fonbnk secure bank transfer"
               />
