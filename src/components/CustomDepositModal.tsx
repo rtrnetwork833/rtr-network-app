@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useAccount } from "wagmi";
 import {
   ArrowDownCircle,
   ArrowLeft,
@@ -27,13 +26,15 @@ type CopyStatus = "idle" | "copied" | "error";
 
 const placeholderWalletAddress = "0x284bEa823901923481239841239841D7F2";
 
-export default function CustomDepositModal({ activeWalletAddress, onClose }: CustomDepositModalProps) {
+export default function CustomDepositModal({
+  activeWalletAddress: supabaseWalletAddress,
+  onClose,
+}: CustomDepositModalProps) {
   const [view, setView] = useState<DepositView>("methods");
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
   const [hasMounted, setHasMounted] = useState(false);
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const depositAddress = activeWalletAddress ?? placeholderWalletAddress;
-  const { address } = useAccount();
+  const depositAddress = supabaseWalletAddress ?? placeholderWalletAddress;
 
   useEffect(() => {
     // Keep the wallet iframe out of server-rendered and pre-hydration markup.
@@ -216,10 +217,10 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
                 </div>
               </div>
 
-              {hasMounted && address ? (
+              {hasMounted && supabaseWalletAddress ? (
                 <iframe
                   className="min-h-[80vh] w-full flex-1 border-none"
-                  src={`https://fonbnk.com?source=${process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID}&walletAddress=${encodeURIComponent(address || '')}&network=BASE&asset=USDC`}
+                  src={`https://fonbnk.com?source=${process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID}&walletAddress=${encodeURIComponent(supabaseWalletAddress || '')}&network=BASE&asset=USDC`}
                   title="Fonbnk secure bank transfer"
                 />
               ) : (
@@ -305,7 +306,7 @@ export default function CustomDepositModal({ activeWalletAddress, onClose }: Cus
                   {copyStatus === "copied" ? "Copied!" : copyStatus === "error" ? "Failed" : "Copy"}
                 </button>
               </div>
-              {!activeWalletAddress && (
+              {!supabaseWalletAddress && (
                 <p className="mt-2 text-xs text-amber-300">
                   Example address only. Connect a wallet to see your address.
                 </p>
