@@ -19,9 +19,6 @@ import QRCode from "qrcode";
 interface CustomDepositModalProps {
   activeWalletAddress: `0x${string}` | null;
   walletProfileLoading: boolean;
-  initialView: "methods" | "bank";
-  onSelectBankTransfer: () => void;
-  onBackToMethods: () => void;
   onClose: () => void;
 }
 
@@ -33,12 +30,9 @@ const placeholderWalletAddress = "0x284bEa823901923481239841239841D7F2";
 export default function CustomDepositModal({
   activeWalletAddress: supabaseWalletAddress,
   walletProfileLoading,
-  initialView,
-  onSelectBankTransfer,
-  onBackToMethods,
   onClose,
 }: CustomDepositModalProps) {
-  const [view, setView] = useState<DepositView>(initialView);
+  const [view, setView] = useState<DepositView>("methods");
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
   const [hasMounted, setHasMounted] = useState(false);
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -152,10 +146,7 @@ export default function CustomDepositModal({
               <div className="space-y-3">
                 <button
                   className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] sm:p-5"
-                  onClick={() => {
-                    onSelectBankTransfer();
-                    setView("bank");
-                  }}
+                  onClick={() => setView("bank")}
                   type="button"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#0d1527] text-white transition-colors group-hover:border-blue-500/50">
@@ -213,10 +204,7 @@ export default function CustomDepositModal({
                 <button
                   aria-label="Back to select method"
                   className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#16223f] text-slate-300 transition-colors hover:border-[#3b82f6] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6]"
-                  onClick={() => {
-                    onBackToMethods();
-                    setView("methods");
-                  }}
+                  onClick={() => setView("methods")}
                   type="button"
                 >
                   <ArrowLeft aria-hidden="true" size={19} />
@@ -234,7 +222,7 @@ export default function CustomDepositModal({
               {hasMounted && supabaseWalletAddress ? (
                 <iframe
                   className="min-h-[80vh] w-full flex-1 border-none"
-                  src={`https://sandbox-pay.fonbnk.com?source=${process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID}&address=${encodeURIComponent(supabaseWalletAddress || '')}&network=BASE&asset=USDC`}
+                  src={`https://sandbox-pay.fonbnk.com?source=${process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID}&address=${encodeURIComponent(supabaseWalletAddress)}&network=BASE&asset=USDC`}
                   title="Fonbnk secure bank transfer"
                   allow="payment"
                 />
