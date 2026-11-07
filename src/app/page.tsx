@@ -188,6 +188,7 @@ export default function Home() {
   const [activeWalletAddress, setActiveWalletAddress] = useState<Address | null>(null);
   const [walletProfileLoading, setWalletProfileLoading] = useState(true);
   const [showDepositModal, setShowDepositModal] = useState(false);
+  const [depositAction, setDepositAction] = useState<"deposit" | "deposit_fonbnk" | null>(null);
   const [, setPinState] = useState("");
   const [profileName, setProfileName] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -235,8 +236,9 @@ export default function Home() {
 
   useEffect(() => {
     const mountTimer = window.setTimeout(() => {
-      const depositRequested = new URLSearchParams(window.location.search).get("action") === "deposit";
-      if (depositRequested) {
+      const action = new URLSearchParams(window.location.search).get("action");
+      if (action === "deposit" || action === "deposit_fonbnk") {
+        setDepositAction(action);
         setView("portfolio");
         setShowDepositModal(true);
       } else {
@@ -252,9 +254,11 @@ export default function Home() {
 
   useEffect(() => {
     const syncDepositRoute = () => {
-      const depositRequested = new URLSearchParams(window.location.search).get("action") === "deposit";
-      setShowDepositModal(depositRequested);
-      if (depositRequested) setView("portfolio");
+      const action = new URLSearchParams(window.location.search).get("action");
+      const depositAction = action === "deposit" || action === "deposit_fonbnk" ? action : null;
+      setDepositAction(depositAction);
+      setShowDepositModal(depositAction !== null);
+      if (depositAction) setView("portfolio");
     };
 
     window.addEventListener("popstate", syncDepositRoute);
@@ -307,6 +311,7 @@ export default function Home() {
           .maybeSingle();
         if (walletError) throw walletError;
         if (cancelled || requestId !== walletRequestId) return;
+        console.log("Fetched address:", data?.wallet_address);
         const walletAddress = data?.wallet_address;
         setActiveWalletAddress(
           typeof walletAddress === "string" && isAddress(walletAddress)
@@ -444,8 +449,23 @@ export default function Home() {
       url.searchParams.set("action", "deposit");
       window.history.pushState(null, "", url.toString());
     }
+    setDepositAction("deposit");
     setView("portfolio");
     setShowDepositModal(true);
+  };
+
+  const openFonbnkTransfer = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("action", "deposit_fonbnk");
+    window.history.pushState(null, "", url.toString());
+    setDepositAction("deposit_fonbnk");
+  };
+
+  const returnToDepositMethods = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("action", "deposit");
+    window.history.replaceState(null, "", url.toString());
+    setDepositAction("deposit");
   };
 
   const closeDepositModal = () => {
@@ -454,6 +474,7 @@ export default function Home() {
       url.searchParams.delete("action");
       window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
     }
+    setDepositAction(null);
     setShowDepositModal(false);
   };
 
@@ -530,8 +551,12 @@ export default function Home() {
 
       {showDepositModal && (
         <CustomDepositModal
+          key={depositAction}
           activeWalletAddress={activeWalletAddress}
           walletProfileLoading={walletProfileLoading}
+          initialView={depositAction === "deposit_fonbnk" ? "bank" : "methods"}
+          onSelectBankTransfer={openFonbnkTransfer}
+          onBackToMethods={returnToDepositMethods}
           onClose={closeDepositModal}
         />
       )}
