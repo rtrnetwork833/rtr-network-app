@@ -187,6 +187,7 @@ export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [activeWalletAddress, setActiveWalletAddress] = useState<Address | null>(null);
   const [walletProfileLoading, setWalletProfileLoading] = useState(true);
+  const [showDepositModal, setShowDepositModal] = useState(false);
   const [, setPinState] = useState("");
   const [profileName, setProfileName] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -234,13 +235,30 @@ export default function Home() {
 
   useEffect(() => {
     const mountTimer = window.setTimeout(() => {
-      const savedView = window.localStorage.getItem("active_tab");
-      if (savedView === "dashboard" || savedView === "upgrades" || savedView === "market" || savedView === "trading" || savedView === "game" || savedView === "portfolio") {
-        setView(savedView);
+      const depositRequested = new URLSearchParams(window.location.search).get("action") === "deposit";
+      if (depositRequested) {
+        setView("portfolio");
+        setShowDepositModal(true);
+      } else {
+        const savedView = window.localStorage.getItem("active_tab");
+        if (savedView === "dashboard" || savedView === "upgrades" || savedView === "market" || savedView === "trading" || savedView === "game" || savedView === "portfolio") {
+          setView(savedView);
+        }
       }
       setNavigationReady(true);
     }, 0);
     return () => window.clearTimeout(mountTimer);
+  }, []);
+
+  useEffect(() => {
+    const syncDepositRoute = () => {
+      const depositRequested = new URLSearchParams(window.location.search).get("action") === "deposit";
+      setShowDepositModal(depositRequested);
+      if (depositRequested) setView("portfolio");
+    };
+
+    window.addEventListener("popstate", syncDepositRoute);
+    return () => window.removeEventListener("popstate", syncDepositRoute);
   }, []);
 
   useEffect(() => {
@@ -420,6 +438,25 @@ export default function Home() {
     }
   }
 
+  const openDepositModal = () => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("action") !== "deposit") {
+      url.searchParams.set("action", "deposit");
+      window.history.pushState(null, "", url.toString());
+    }
+    setView("portfolio");
+    setShowDepositModal(true);
+  };
+
+  const closeDepositModal = () => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("action") === "deposit") {
+      url.searchParams.delete("action");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+    setShowDepositModal(false);
+  };
+
   async function signOut() {
     setPinState("");
     window.dispatchEvent(new Event("rtr-auth-reset"));
@@ -429,12 +466,12 @@ export default function Home() {
     setActivation(null);
     setActive(false);
     setBalance(0);
-    
+
     // Save email for login memory
     if (typeof window !== 'undefined' && email) {
       window.localStorage.setItem('last_logged_in_email', email);
     }
-    
+
     try {
       await supabase.auth.signOut();
       await disconnect();
@@ -488,8 +525,16 @@ export default function Home() {
         {view === "market" && <MarketView market={market} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
         {view === "game" && <PlaceholderView icon={<Gamepad2 />} title="Node quests" text="Complete community missions to unlock bonus points." />}
-        {view === "portfolio" && <PortfolioView market={market} activeWalletAddress={activeWalletAddress} walletProfileLoading={walletProfileLoading} />}
+        {view === "portfolio" && <PortfolioView market={market} activeWalletAddress={activeWalletAddress} walletProfileLoading={walletProfileLoading} onOpenDeposit={openDepositModal} />}
       </section>
+
+      {showDepositModal && (
+        <CustomDepositModal
+          activeWalletAddress={activeWalletAddress}
+          walletProfileLoading={walletProfileLoading}
+          onClose={closeDepositModal}
+        />
+      )}
 
       <nav className="bottom-nav" aria-label="Primary navigation">
         <NavItem icon={<LayoutDashboard />} label="Dashboard" active={view === "dashboard"} onClick={() => setView("dashboard")} />
@@ -514,10 +559,9 @@ function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, 
     <div className="metric-grid"><div><span>Network</span><strong>Base Mainnet</strong></div><div><span>Protocol</span><strong>v2.4.8</strong></div><div><span>Multiplier</span><strong>1.0x</strong><small>Standard Hashrate Protocol</small></div></div>
   </div>;
 }
-function PortfolioView({ market, activeWalletAddress, walletProfileLoading }: { market: MarketAsset[]; activeWalletAddress: Address | null; walletProfileLoading: boolean }) {
+function PortfolioView({ market, activeWalletAddress, walletProfileLoading, onOpenDeposit }: { market: MarketAsset[]; activeWalletAddress: Address | null; walletProfileLoading: boolean; onOpenDeposit: () => void }) {
   const [isPrivate, setIsPrivate] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
-  const [showDepositModal, setShowDepositModal] = useState(false);
   const [showSwapModal, setShowSwapModal] = useState(false);
   const [showSendModal, setShowSendModal] = useState(false);
   const [showActivityLedger, setShowActivityLedger] = useState(false);
@@ -633,7 +677,13 @@ function PortfolioView({ market, activeWalletAddress, walletProfileLoading }: { 
         
         {/* BUTTON 1: DEPOSIT - OPEN CUSTOM DEPOSIT MODAL */}
         <button
-          onClick={() => handleAction(() => setShowDepositModal(true))}
+          onClick={() => {
+            if (!activeWalletAddress && !walletProfileLoading) {
+              setShowWalletError(true);
+              return;
+            }
+            onOpenDeposit();
+          }}
           className="flex flex-col items-center justify-center group focus:outline-none w-full"
         >
           <div className="w-full aspect-square max-w-[72px] rounded-2xl bg-[#1a2b4c] border border-blue-500/30 flex items-center justify-center text-[#3b82f6] shadow-lg shadow-blue-500/5 transition-all duration-200 group-hover:scale-105 group-hover:bg-[#223a66] group-hover:border-blue-400/50">
@@ -717,7 +767,6 @@ function PortfolioView({ market, activeWalletAddress, walletProfileLoading }: { 
       </div>
 
       {/* Custom Modals */}
-      {showDepositModal && <CustomDepositModal activeWalletAddress={activeWalletAddress} onClose={() => setShowDepositModal(false)} />}
       {showSwapModal && <CustomSwapModal activeWalletAddress={activeWalletAddress} onClose={() => setShowSwapModal(false)} />}
       {showSendModal && <CustomSendModal onClose={() => setShowSendModal(false)} />}
       {showActivityLedger && <CustomActivityLedger activeWalletAddress={activeWalletAddress} onClose={() => setShowActivityLedger(false)} />}

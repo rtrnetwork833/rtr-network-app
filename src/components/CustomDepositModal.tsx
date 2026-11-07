@@ -18,6 +18,7 @@ import QRCode from "qrcode";
 
 interface CustomDepositModalProps {
   activeWalletAddress: `0x${string}` | null;
+  walletProfileLoading: boolean;
   onClose: () => void;
 }
 
@@ -28,6 +29,7 @@ const placeholderWalletAddress = "0x284bEa823901923481239841239841D7F2";
 
 export default function CustomDepositModal({
   activeWalletAddress: supabaseWalletAddress,
+  walletProfileLoading,
   onClose,
 }: CustomDepositModalProps) {
   const [view, setView] = useState<DepositView>("methods");
@@ -224,7 +226,7 @@ export default function CustomDepositModal({
                   title="Fonbnk secure bank transfer"
                   allow="payment"
                 />
-              ) : (
+              ) : !hasMounted || walletProfileLoading ? (
                 <div
                   className="flex min-h-[80vh] w-full flex-1 flex-col items-center justify-center gap-4 text-sm"
                   role="status"
@@ -234,6 +236,13 @@ export default function CustomDepositModal({
                     className="h-8 w-8 animate-spin rounded-full border-2 border-slate-600 border-t-blue-400"
                   />
                   <span>Initializing secure transaction rails...</span>
+                </div>
+              ) : (
+                <div
+                  className="flex min-h-[80vh] w-full flex-1 items-center justify-center px-6 text-center text-sm text-amber-300"
+                  role="alert"
+                >
+                  No wallet address is linked to your profile.
                 </div>
               )}
             </>
