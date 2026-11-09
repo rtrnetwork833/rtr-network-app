@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { getAddress, isAddress, type Address } from "viem";
 import {
   ArrowDownCircle,
   ArrowLeft,
@@ -15,10 +16,9 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import QRCode from "qrcode";
+import { createClient } from "@/lib/supabase/client";
 
 interface CustomDepositModalProps {
-  activeWalletAddress: `0x${string}` | null;
-  walletProfileLoading: boolean;
   onClose: () => void;
 }
 
@@ -26,17 +26,61 @@ type DepositView = "methods" | "bank" | "onchain" | "checkout";
 type CopyStatus = "idle" | "copied" | "error";
 
 const placeholderWalletAddress = "0x284bEa823901923481239841239841D7F2";
+const supabase = createClient();
 
 export default function CustomDepositModal({
-  activeWalletAddress: supabaseWalletAddress,
-  walletProfileLoading,
   onClose,
 }: CustomDepositModalProps) {
   const [view, setView] = useState<DepositView>("methods");
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
   const [hasMounted, setHasMounted] = useState(false);
+  const [supabaseWalletAddress, setSupabaseWalletAddress] = useState<Address | null>(null);
+  const [walletProfileLoading, setWalletProfileLoading] = useState(true);
+  const [walletProfileError, setWalletProfileError] = useState(false);
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const depositAddress = supabaseWalletAddress ?? placeholderWalletAddress;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadProfileWallet = async () => {
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError) throw authError;
+        if (!user) {
+          if (!cancelled) setWalletProfileLoading(false);
+          return;
+        }
+
+        const { data, error: profileError } = await supabase
+          .from("profiles")
+          .select("wallet_address")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (profileError) throw profileError;
+
+        if (!cancelled) {
+          const walletAddress = data?.wallet_address;
+          setSupabaseWalletAddress(
+            typeof walletAddress === "string" && isAddress(walletAddress)
+              ? getAddress(walletAddress)
+              : null,
+          );
+          setWalletProfileLoading(false);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Failed to load profile wallet address for deposit:", error);
+        setWalletProfileError(true);
+        setWalletProfileLoading(false);
+      }
+    };
+
+    void loadProfileWallet();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     // Keep the wallet iframe out of server-rendered and pre-hydration markup.
@@ -220,12 +264,12 @@ export default function CustomDepositModal({
               </div>
 
               {hasMounted && supabaseWalletAddress ? (
-<iframe
-              className="min-h-[80vh] w-full flex-1 border-none"
-              src={`https://fonbnk.com{process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID}&address=${encodeURIComponent(supabaseWalletAddress || '')}&network=BASE&asset=USDC`}
-              title="Fonbnk secure bank transfer"
-              allow="payment"
-            />
+                <iframe
+                  className="min-h-[80vh] w-full flex-1 border-none"
+                  src={`https://fonbnk.com?source=${process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID}&address=${encodeURIComponent(supabaseWalletAddress)}&network=BASE&asset=USDC`}
+                  title="Fonbnk secure bank transfer"
+                  allow="payment"
+                />
               ) : !hasMounted || walletProfileLoading ? (
                 <div
                   className="flex min-h-[80vh] w-full flex-1 flex-col items-center justify-center gap-4 text-sm"
@@ -236,6 +280,13 @@ export default function CustomDepositModal({
                     className="h-8 w-8 animate-spin rounded-full border-2 border-slate-600 border-t-blue-400"
                   />
                   <span>Initializing secure transaction rails...</span>
+                </div>
+              ) : walletProfileError ? (
+                <div
+                  className="flex min-h-[80vh] w-full flex-1 items-center justify-center px-6 text-center text-sm text-amber-300"
+                  role="alert"
+                >
+                  Unable to load your profile wallet address.
                 </div>
               ) : (
                 <div
