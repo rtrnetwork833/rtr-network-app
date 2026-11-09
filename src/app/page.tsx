@@ -193,6 +193,7 @@ export default function Home() {
   const [profileLoading, setProfileLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(true);
   const [view, setView] = useState<View>("dashboard");
+  const previousView = useRef(view);
   const [navigationReady, setNavigationReady] = useState(false);
   const [avatar, setAvatar] = useState<string | null>(null);
   const [active, setActive] = useState(false);
@@ -247,6 +248,14 @@ export default function Home() {
   useEffect(() => {
     if (navigationReady) window.localStorage.setItem("active_tab", view);
   }, [navigationReady, view]);
+
+  useEffect(() => {
+    if (previousView.current === view) return;
+    previousView.current = view;
+    // Close the overlay whenever the active app tab changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setShowDepositModal(false);
+  }, [view]);
 
   useEffect(() => {
     window.setTimeout(() => {
@@ -426,6 +435,11 @@ export default function Home() {
     setShowDepositModal(true);
   };
 
+  const changeTab = (nextView: View) => {
+    setShowDepositModal(false);
+    setView(nextView);
+  };
+
   async function signOut() {
     setPinState("");
     window.dispatchEvent(new Event("rtr-auth-reset"));
@@ -506,12 +520,12 @@ export default function Home() {
       )}
 
       <nav className="bottom-nav" aria-label="Primary navigation">
-        <NavItem icon={<LayoutDashboard />} label="Dashboard" active={view === "dashboard"} onClick={() => setView("dashboard")} />
-        <NavItem icon={<Crown />} label="Upgrades" active={view === "upgrades"} onClick={() => setView("upgrades")} />
-        <NavItem icon={<TrendingUp />} label="Market" active={view === "market"} onClick={() => setView("market")} />
-        <NavItem icon={<Activity />} label="Trading" active={view === "trading"} onClick={() => setView("trading")} />
-        <NavItem icon={<Gamepad2 />} label="Game" active={view === "game"} onClick={() => setView("game")} />
-        <NavItem icon={<WalletIcon />} label="Portfolio" active={view === "portfolio"} onClick={() => setView("portfolio")} />
+        <NavItem icon={<LayoutDashboard />} label="Dashboard" active={view === "dashboard"} onClick={() => changeTab("dashboard")} />
+        <NavItem icon={<Crown />} label="Upgrades" active={view === "upgrades"} onClick={() => changeTab("upgrades")} />
+        <NavItem icon={<TrendingUp />} label="Market" active={view === "market"} onClick={() => changeTab("market")} />
+        <NavItem icon={<Activity />} label="Trading" active={view === "trading"} onClick={() => changeTab("trading")} />
+        <NavItem icon={<Gamepad2 />} label="Game" active={view === "game"} onClick={() => changeTab("game")} />
+        <NavItem icon={<WalletIcon />} label="Portfolio" active={view === "portfolio"} onClick={() => changeTab("portfolio")} />
       </nav>
 
     </main>

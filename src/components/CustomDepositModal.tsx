@@ -209,8 +209,16 @@ export default function CustomDepositModal({
                 >
                   <ArrowLeft aria-hidden="true" size={19} />
                 </button>
-               <div className="hidden"></div>
-            
+                <div>
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">
+                    Bank transfer
+                  </p>
+                  <h2 className="text-xl font-bold tracking-tight text-white sm:text-2xl" id="deposit-modal-title">
+                    Bank Transfer Deposit
+                  </h2>
+                </div>
+              </div>
+
               {hasMounted && supabaseWalletAddress ? (
                 <iframe
                   className="min-h-[80vh] w-full flex-1 border-none"
