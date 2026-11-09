@@ -220,12 +220,12 @@ export default function CustomDepositModal({
               </div>
 
               {hasMounted && supabaseWalletAddress ? (
-                <iframe
-                  className="min-h-[80vh] w-full flex-1 border-none"
-                  src={`https://fonbnk.com?source=${process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID}&address=${encodeURIComponent(supabaseWalletAddress || '')}&network=BASE&asset=USDC`}
-                  title="Fonbnk secure bank transfer"
-                  allow="payment"
-                />
+<iframe
+              className="min-h-[80vh] w-full flex-1 border-none"
+              src={`https://fonbnk.com{process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID}&address=${encodeURIComponent(supabaseWalletAddress || '')}&network=BASE&asset=USDC`}
+              title="Fonbnk secure bank transfer"
+              allow="payment"
+            />
               ) : !hasMounted || walletProfileLoading ? (
                 <div
                   className="flex min-h-[80vh] w-full flex-1 flex-col items-center justify-center gap-4 text-sm"
