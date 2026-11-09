@@ -195,6 +195,7 @@ export default function Home() {
   const [view, setView] = useState<View>("dashboard");
   const previousView = useRef(view);
   const [navigationReady, setNavigationReady] = useState(false);
+  const [depositStorageReady, setDepositStorageReady] = useState(false);
   const [avatar, setAvatar] = useState<string | null>(null);
   const [active, setActive] = useState(false);
   const [activation, setActivation] = useState<Activation | null>(null);
@@ -236,11 +237,19 @@ export default function Home() {
 
   useEffect(() => {
     const mountTimer = window.setTimeout(() => {
-      const savedView = window.localStorage.getItem("active_tab");
-      if (savedView === "dashboard" || savedView === "upgrades" || savedView === "market" || savedView === "trading" || savedView === "game" || savedView === "portfolio") {
-        setView(savedView);
+      const restoreDeposit = window.localStorage.getItem("rtr-deposit-modal-open") === "true";
+      if (restoreDeposit) {
+        previousView.current = "portfolio";
+        setView("portfolio");
+        setShowDepositModal(true);
+      } else {
+        const savedView = window.localStorage.getItem("active_tab");
+        if (savedView === "dashboard" || savedView === "upgrades" || savedView === "market" || savedView === "trading" || savedView === "game" || savedView === "portfolio") {
+          setView(savedView);
+        }
       }
       setNavigationReady(true);
+      setDepositStorageReady(true);
     }, 0);
     return () => window.clearTimeout(mountTimer);
   }, []);
@@ -256,6 +265,16 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setShowDepositModal(false);
   }, [view]);
+
+  useEffect(() => {
+    if (!depositStorageReady) return;
+    if (showDepositModal) {
+      window.localStorage.setItem("rtr-deposit-modal-open", "true");
+    } else {
+      window.localStorage.removeItem("rtr-deposit-modal-open");
+      window.localStorage.removeItem("rtr-deposit-modal-step");
+    }
+  }, [depositStorageReady, showDepositModal]);
 
   useEffect(() => {
     window.setTimeout(() => {
@@ -432,12 +451,21 @@ export default function Home() {
   }
 
   const openDepositModal = () => {
+    window.localStorage.setItem("rtr-deposit-modal-step", "menu");
     setShowDepositModal(true);
   };
 
   const changeTab = (nextView: View) => {
     setShowDepositModal(false);
+    window.localStorage.removeItem("rtr-deposit-modal-open");
+    window.localStorage.removeItem("rtr-deposit-modal-step");
     setView(nextView);
+  };
+
+  const closeDepositModal = () => {
+    window.localStorage.removeItem("rtr-deposit-modal-open");
+    window.localStorage.removeItem("rtr-deposit-modal-step");
+    setShowDepositModal(false);
   };
 
   async function signOut() {
@@ -460,6 +488,8 @@ export default function Home() {
       await disconnect();
     } finally {
       window.localStorage.removeItem("active_tab");
+      window.localStorage.removeItem("rtr-deposit-modal-open");
+      window.localStorage.removeItem("rtr-deposit-modal-step");
       window.localStorage.removeItem(LEGACY_AUTH_EMAIL_STORAGE_KEY);
       window.localStorage.removeItem("rtr-balance-visible");
       window.sessionStorage.removeItem("rtr-auth-view");
@@ -513,7 +543,9 @@ export default function Home() {
 
       {showDepositModal && (
         <CustomDepositModal
-          onClose={() => setShowDepositModal(false)}
+          userWalletAddress={activeWalletAddress ?? ""}
+          walletProfileLoading={walletProfileLoading}
+          onClose={closeDepositModal}
         />
       )}
 

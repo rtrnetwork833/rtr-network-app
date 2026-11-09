@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getAddress, isAddress, type Address } from "viem";
 import {
   ArrowDownCircle,
   ArrowLeft,
@@ -16,9 +15,10 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import QRCode from "qrcode";
-import { createClient } from "@/lib/supabase/client";
 
 interface CustomDepositModalProps {
+  userWalletAddress: string;
+  walletProfileLoading: boolean;
   onClose: () => void;
 }
 
@@ -26,61 +26,35 @@ type DepositView = "methods" | "bank" | "onchain" | "checkout";
 type CopyStatus = "idle" | "copied" | "error";
 
 const placeholderWalletAddress = "0x284bEa823901923481239841239841D7F2";
-const supabase = createClient();
+const depositModalStepKey = "rtr-deposit-modal-step";
+
+function getStoredDepositView(): DepositView {
+  if (typeof window === "undefined") return "methods";
+
+  const savedStep = window.localStorage.getItem(depositModalStepKey);
+  if (savedStep === "fonbnk") return "bank";
+  if (savedStep === "onchain" || savedStep === "checkout") return savedStep;
+  return "methods";
+}
 
 export default function CustomDepositModal({
+  userWalletAddress,
+  walletProfileLoading,
   onClose,
 }: CustomDepositModalProps) {
-  const [view, setView] = useState<DepositView>("methods");
+  const [view, setView] = useState<DepositView>(getStoredDepositView);
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
   const [hasMounted, setHasMounted] = useState(false);
-  const [supabaseWalletAddress, setSupabaseWalletAddress] = useState<Address | null>(null);
-  const [walletProfileLoading, setWalletProfileLoading] = useState(true);
-  const [walletProfileError, setWalletProfileError] = useState(false);
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const depositAddress = supabaseWalletAddress ?? placeholderWalletAddress;
+  const depositAddress = userWalletAddress || placeholderWalletAddress;
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadProfileWallet = async () => {
-      try {
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError) throw authError;
-        if (!user) {
-          if (!cancelled) setWalletProfileLoading(false);
-          return;
-        }
-
-        const { data, error: profileError } = await supabase
-          .from("profiles")
-          .select("wallet_address")
-          .eq("id", user.id)
-          .maybeSingle();
-        if (profileError) throw profileError;
-
-        if (!cancelled) {
-          const walletAddress = data?.wallet_address;
-          setSupabaseWalletAddress(
-            typeof walletAddress === "string" && isAddress(walletAddress)
-              ? getAddress(walletAddress)
-              : null,
-          );
-          setWalletProfileLoading(false);
-        }
-      } catch (error) {
-        if (cancelled) return;
-        console.error("Failed to load profile wallet address for deposit:", error);
-        setWalletProfileError(true);
-        setWalletProfileLoading(false);
-      }
-    };
-
-    void loadProfileWallet();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const updateView = (nextView: DepositView) => {
+    setView(nextView);
+    if (typeof window !== "undefined") {
+      const savedStep = nextView === "methods" ? "menu" : nextView === "bank" ? "fonbnk" : nextView;
+      window.localStorage.setItem(depositModalStepKey, savedStep);
+    }
+  };
 
   useEffect(() => {
     // Keep the wallet iframe out of server-rendered and pre-hydration markup.
@@ -190,7 +164,7 @@ export default function CustomDepositModal({
               <div className="space-y-3">
                 <button
                   className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] sm:p-5"
-                  onClick={() => setView("bank")}
+                  onClick={() => updateView("bank")}
                   type="button"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#0d1527] text-white transition-colors group-hover:border-blue-500/50">
@@ -207,7 +181,7 @@ export default function CustomDepositModal({
 
                 <button
                   className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] sm:p-5"
-                  onClick={() => setView("onchain")}
+                  onClick={() => updateView("onchain")}
                   type="button"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#0d1527] text-white transition-colors group-hover:border-blue-500/50">
@@ -224,7 +198,7 @@ export default function CustomDepositModal({
 
                 <button
                   className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] sm:p-5"
-                  onClick={() => setView("checkout")}
+                  onClick={() => updateView("checkout")}
                   type="button"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#0d1527] text-white transition-colors group-hover:border-blue-500/50">
@@ -248,7 +222,7 @@ export default function CustomDepositModal({
                 <button
                   aria-label="Back to select method"
                   className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#16223f] text-slate-300 transition-colors hover:border-[#3b82f6] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6]"
-                  onClick={() => setView("methods")}
+                  onClick={() => updateView("methods")}
                   type="button"
                 >
                   <ArrowLeft aria-hidden="true" size={19} />
@@ -263,10 +237,10 @@ export default function CustomDepositModal({
                 </div>
               </div>
 
-              {hasMounted && supabaseWalletAddress ? (
+              {hasMounted && userWalletAddress ? (
                 <iframe
                   className="min-h-[80vh] w-full flex-1 border-none"
-                  src={`https://fonbnk.com?source=${process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID}&address=${encodeURIComponent(supabaseWalletAddress)}&network=BASE&asset=USDC`}
+                  src={`https://fonbnk.com?source=${process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID}&address=${encodeURIComponent(userWalletAddress)}&network=BASE&asset=USDC`}
                   title="Fonbnk secure bank transfer"
                   allow="payment"
                 />
@@ -281,19 +255,12 @@ export default function CustomDepositModal({
                   />
                   <span>Initializing secure transaction rails...</span>
                 </div>
-              ) : walletProfileError ? (
-                <div
-                  className="flex min-h-[80vh] w-full flex-1 items-center justify-center px-6 text-center text-sm text-amber-300"
-                  role="alert"
-                >
-                  Unable to load your profile wallet address.
-                </div>
               ) : (
                 <div
                   className="flex min-h-[80vh] w-full flex-1 items-center justify-center px-6 text-center text-sm text-amber-300"
                   role="alert"
                 >
-                  No wallet address is linked to your profile.
+                  {userWalletAddress ? "Unable to initialize the payment widget." : "No wallet address is linked to your profile."}
                 </div>
               )}
             </>
@@ -305,7 +272,7 @@ export default function CustomDepositModal({
                 <button
                   aria-label="Back to select method"
                   className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#16223f] text-slate-300 transition-colors hover:border-[#3b82f6] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6]"
-                  onClick={() => setView("methods")}
+                  onClick={() => updateView("methods")}
                   type="button"
                 >
                   <ArrowLeft aria-hidden="true" size={19} />
@@ -367,7 +334,7 @@ export default function CustomDepositModal({
                   {copyStatus === "copied" ? "Copied!" : copyStatus === "error" ? "Failed" : "Copy"}
                 </button>
               </div>
-              {!supabaseWalletAddress && (
+              {!userWalletAddress && (
                 <p className="mt-2 text-xs text-amber-300">
                   Example address only. Connect a wallet to see your address.
                 </p>
@@ -387,7 +354,7 @@ export default function CustomDepositModal({
                 <button
                   aria-label="Back to select method"
                   className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#16223f] text-slate-300 transition-colors hover:border-[#3b82f6] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6]"
-                  onClick={() => setView("methods")}
+                  onClick={() => updateView("methods")}
                   type="button"
                 >
                   <ArrowLeft aria-hidden="true" size={19} />
