@@ -260,13 +260,73 @@ export default function CustomDepositModal({
                   <span>Initializing secure transaction rails...</span>
                 </div>
               ) : (
-                <div className="flex min-h-[80vh] w-full flex-1 flex-col items-center justify-center px-6 text-center">
-                  <Building2 aria-hidden="true" className="mb-4 text-blue-400" size={34} />
-                  <p className="font-semibold text-white">NGN deposits are paused to protect your funds</p>
-                  <p className="mt-2 max-w-sm text-sm leading-6 text-[#94a3b8]">
-                    The Exchange NGN wallet belongs to the merchant account. It cannot provide an individual bank account or reliably credit a transfer as USDC to your connected wallet. Please do not send funds to shared account details.
-                  </p>
-                </div>
+               <div className="flex w-full flex-col gap-4 px-5 py-6 text-white">
+  <div className="rounded-xl border border-slate-800 bg-[#0d1424] p-4">
+    <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-slate-400">
+      Amount to Deposit (NGN)
+    </label>
+    <input
+      id="quidax-ngn-input"
+      type="number"
+      min="2000"
+      placeholder="e.g. 5000"
+      className="w-full rounded-lg border border-slate-700 bg-[#070b14] px-4 py-3 text-lg font-semibold text-white outline-none focus:border-blue-500"
+    />
+    <p className="mt-2 text-xs text-slate-400">
+      Minimum deposit: ₦2,000 • Credited as USDC to your connected wallet
+    </p>
+  </div>
+
+  <div id="quidax-bank-box" className="hidden rounded-xl border border-blue-500/30 bg-blue-950/20 p-4 text-sm">
+    <p className="font-semibold text-blue-300">Transfer NGN to this Bank Account:</p>
+    <div id="quidax-bank-details" className="mt-2 space-y-1 text-slate-200"></div>
+  </div>
+
+  <button
+    type="button"
+    onClick={async (e) => {
+      const btn = e.currentTarget;
+      const input = document.getElementById("quidax-ngn-input") as HTMLInputElement;
+      const box = document.getElementById("quidax-bank-box");
+      const details = document.getElementById("quidax-bank-details");
+      const amount = Number(input?.value || 0);
+      if (amount < 2000) {
+        alert("Please enter at least ₦2,000");
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = "Generating Account...";
+      try {
+        const res = await fetch("/api/quidax", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "deposit", amount }),
+        });
+        const json = await res.json();
+        const bank = json?.deposit?.data || json?.deposit || {};
+        if (!res.ok) throw new Error(json?.error || "Failed to load bank details");
+        if (box && details) {
+          box.classList.remove("hidden");
+          details.innerHTML = `
+            <p><span class="text-slate-400">Bank:</span> <strong>${bank.bank_name || bank.bank || "Quidax Virtual Bank"}</strong></p>
+            <p><span class="text-slate-400">Account Number:</span> <strong>${bank.account_number || bank.address || "Check Quidax Dashboard"}</strong></p>
+            <p><span class="text-slate-400">Account Name:</span> <strong>${bank.account_name || "RTR Network / Quidax"}</strong></p>
+            <p><span class="text-slate-400">Amount:</span> <strong>₦${amount.toLocaleString()}</strong></p>
+          `;
+        }
+        btn.textContent = "I Have Sent the Money";
+      } catch (err: unknown) {
+        alert(err instanceof Error ? err.message : "Could not load bank details");
+        btn.textContent = "Get Bank Transfer Details";
+      } finally {
+        btn.disabled = false;
+      }
+    }}
+    className="w-full rounded-xl bg-blue-600 py-3.5 text-sm font-semibold text-white transition hover:bg-blue-500"
+  >
+    Get Bank Transfer Details
+  </button>
+</div>
               )}
             </>
           )}

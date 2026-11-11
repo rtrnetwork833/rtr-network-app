@@ -125,16 +125,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "A valid action is required." }, { status: 400 });
   }
 
-  if (body.action !== "verify") {
-    return NextResponse.json(
-      {
-        error:
-          "Exchange-account NGN deposit and withdrawal processing is not enabled for customer requests.",
-      },
-      { status: 409 },
-    );
+ if (body.action === "deposit") {
+    const walletResult = await quidaxRequest("/users/me/wallets/ngn/address");
+    if (!walletResult.ok) {
+      return NextResponse.json(
+        { error: "Unable to load NGN deposit bank details from Quidax." },
+        { status: 502 }
+      );
+    }
+    return NextResponse.json({ deposit: walletResult.data });
   }
 
+  if (body.action !== "verify") {
+    return NextResponse.json({ error: "Unsupported action." }, { status: 400 });
+  }
   if (
     !("accountNumber" in body) ||
     typeof body.accountNumber !== "string" ||
