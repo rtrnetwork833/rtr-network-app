@@ -125,15 +125,50 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "A valid action is required." }, { status: 400 });
   }
 
- if (body.action === "deposit") {
-    const walletResult = await quidaxRequest("/users/me/wallets/ngn/address");
-    if (!walletResult.ok) {
+if (body.action === "deposit") {
+    const walletResult = await quidaxRequest("/users/me/wallets/ngn");
+    const walletData = walletResult.data?.data as Record<string, unknown> | undefined;
+    const bankDetails =
+      (walletData?.deposit_address as Record<string, unknown>) ||
+      (walletData?.bank_account as Record<string, unknown>) ||
+      walletData;
+
+    if (!walletResult.ok || !bankDetails) {
       return NextResponse.json(
-        { error: "Unable to load NGN deposit bank details from Quidax." },
+        {
+          error:
+            (walletResult.data?.message as string) ||
+            "Quidax NGN deposit bank details unavailable.",
+        },
         { status: 502 }
       );
     }
-    return NextResponse.json({ deposit: walletResult.data });
+    return NextResponse.json({ deposit: bankDetails });
+  }
+
+  if (body.action === "withdraw") {
+    const withdrawResult = await quidaxRequest("/users/me/withdraws", {
+      method: "POST",
+      body: JSON.stringify({
+        currency: "ngn",
+        amount: String(body.amount),
+        fund_uid: body.accountNumber,
+        bank_code: body.bankCode,
+        transaction_note: `RTR Withdrawal - ${body.walletAddress || user.id}`,
+      }),
+    });
+
+    if (!withdrawResult.ok) {
+      return NextResponse.json(
+        {
+          error:
+            (withdrawResult.data?.message as string) ||
+            "Unable to submit NGN bank withdrawal.",
+        },
+        { status: 502 }
+      );
+    }
+    return NextResponse.json({ withdrawal: withdrawResult.data });
   }
 
   if (body.action !== "verify") {

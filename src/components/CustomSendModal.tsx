@@ -517,13 +517,81 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
               </div>
 
               {cashoutRegion === "NG" ? (
-                <div className="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-600 bg-[#16223f] px-6 py-10 text-center">
-                  <Landmark aria-hidden="true" className="mb-5 text-blue-400" size={34} />
-                  <p className="font-medium text-white">NGN payouts are paused to protect customer funds</p>
-                  <p className="mt-2 max-w-sm text-sm leading-6 text-[#94a3b8]">
-                    Quidax bank verification is available, but its standard withdrawal endpoint spends from the shared merchant wallet. Customer payouts need per-user balance attribution and reconciliation before funds can be sent safely.
-                  </p>
-                </div>
+              <div className="flex flex-col gap-3 rounded-2xl border border-[#1e293b] bg-[#16223f] p-5 text-white">
+  <div>
+    <label className="mb-1.5 block text-xs text-slate-400">Amount to Withdraw (NGN)</label>
+    <div className="flex items-center rounded-xl border border-slate-700 bg-[#0b1326] px-3 py-2.5 focus-within:border-blue-500">
+      <span className="mr-2 font-bold text-blue-400">₦</span>
+      <input
+        id="ngn-withdraw-amount"
+        type="text"
+        inputMode="numeric"
+        placeholder="5,000"
+        onInput={(e) => {
+          const el = e.currentTarget;
+          const raw = el.value.replace(/\D/g, "");
+          el.value = raw ? Number(raw).toLocaleString("en-US") : "";
+        }}
+        className="w-full bg-transparent text-base font-semibold text-white outline-none"
+      />
+    </div>
+  </div>
+
+  <div>
+    <label className="mb-1.5 block text-xs text-slate-400">Bank Code (e.g. 058 GTBank, 044 Access, 057 Zenith)</label>
+    <input
+      id="ngn-bank-code"
+      type="text"
+      placeholder="e.g. 058"
+      className="w-full rounded-xl border border-slate-700 bg-[#0b1326] px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500"
+    />
+  </div>
+
+  <div>
+    <label className="mb-1.5 block text-xs text-slate-400">10-Digit Account Number</label>
+    <input
+      id="ngn-account-number"
+      type="text"
+      maxLength={10}
+      inputMode="numeric"
+      placeholder="0123456789"
+      className="w-full rounded-xl border border-slate-700 bg-[#0b1326] px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500"
+    />
+  </div>
+
+  <button
+    type="button"
+    onClick={async (e) => {
+      const btn = e.currentTarget;
+      const amount = Number(((document.getElementById("ngn-withdraw-amount") as HTMLInputElement)?.value || "").replace(/,/g, ""));
+      const bankCode = (document.getElementById("ngn-bank-code") as HTMLInputElement)?.value.trim();
+      const accountNumber = (document.getElementById("ngn-account-number") as HTMLInputElement)?.value.trim();
+      if (amount < 2000) return alert("Minimum withdrawal is ₦2,000");
+      if (!bankCode || accountNumber.length !== 10) return alert("Enter a valid bank code and 10-digit account number");
+
+      btn.disabled = true;
+      btn.textContent = "Processing Payout...";
+      try {
+        const res = await fetch("/api/quidax", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "withdraw", amount, bankCode, accountNumber }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error || "Withdrawal failed");
+        alert("Withdrawal submitted! Your Naira payout is on the way.");
+      } catch (err: unknown) {
+        alert(err instanceof Error ? err.message : "Could not process withdrawal");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Withdraw Naira to Bank";
+      }
+    }}
+    className="mt-2 w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white transition hover:bg-blue-500"
+  >
+    Withdraw Naira to Bank
+  </button>
+</div>
               ) : (
                 <div className="rounded-2xl border border-[#1e293b] bg-[#16223f] p-5">
                   <p className="font-semibold text-white">Global &amp; Mobile Money Cashout</p>

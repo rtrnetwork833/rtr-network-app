@@ -260,18 +260,26 @@ export default function CustomDepositModal({
                   <span>Initializing secure transaction rails...</span>
                 </div>
               ) : (
-               <div className="flex w-full flex-col gap-4 px-5 py-6 text-white">
+              <div className="flex w-full flex-col gap-4 px-5 py-6 text-white">
   <div className="rounded-xl border border-slate-800 bg-[#0d1424] p-4">
     <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-slate-400">
       Amount to Deposit (NGN)
     </label>
-    <input
-      id="quidax-ngn-input"
-      type="number"
-      min="2000"
-      placeholder="e.g. 5000"
-      className="w-full rounded-lg border border-slate-700 bg-[#070b14] px-4 py-3 text-lg font-semibold text-white outline-none focus:border-blue-500"
-    />
+    <div className="flex items-center rounded-lg border border-slate-700 bg-[#070b14] px-4 py-3 focus-within:border-blue-500">
+      <span className="mr-2 text-lg font-bold text-blue-400">₦</span>
+      <input
+        id="quidax-ngn-input"
+        type="text"
+        inputMode="numeric"
+        placeholder="5,000"
+        onInput={(e) => {
+          const el = e.currentTarget;
+          const rawDigits = el.value.replace(/\D/g, "");
+          el.value = rawDigits ? Number(rawDigits).toLocaleString("en-US") : "";
+        }}
+        className="w-full bg-transparent text-lg font-semibold text-white outline-none placeholder:text-slate-600"
+      />
+    </div>
     <p className="mt-2 text-xs text-slate-400">
       Minimum deposit: ₦2,000 • Credited as USDC to your connected wallet
     </p>
@@ -289,7 +297,7 @@ export default function CustomDepositModal({
       const input = document.getElementById("quidax-ngn-input") as HTMLInputElement;
       const box = document.getElementById("quidax-bank-box");
       const details = document.getElementById("quidax-bank-details");
-      const amount = Number(input?.value || 0);
+      const amount = Number((input?.value || "").replace(/,/g, ""));
       if (amount < 2000) {
         alert("Please enter at least ₦2,000");
         return;
