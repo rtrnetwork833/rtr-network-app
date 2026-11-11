@@ -40,7 +40,8 @@ createAppKit({
     socials: ['google'],
     analytics: false,
     emailShowWallets: true,
-    swaps: true
+    swaps: true,
+    onramp: true,
   },
   themeMode: 'dark'
 });

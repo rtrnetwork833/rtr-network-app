@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAppKit } from "@reown/appkit/react";
 import {
   ArrowDownCircle,
   ArrowLeft,
@@ -44,9 +45,10 @@ export default function CustomDepositModal({
 }: CustomDepositModalProps) {
   const [view, setView] = useState<DepositView>(getStoredDepositView);
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
-  const [hasMounted, setHasMounted] = useState(false);
+  const [onrampError, setOnrampError] = useState("");
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const depositAddress = userWalletAddress || placeholderWalletAddress;
+  const { open } = useAppKit();
 
   const updateView = (nextView: DepositView) => {
     setView(nextView);
@@ -55,12 +57,6 @@ export default function CustomDepositModal({
       window.localStorage.setItem(depositModalStepKey, savedStep);
     }
   };
-
-  useEffect(() => {
-    // Keep the wallet iframe out of server-rendered and pre-hydration markup.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setHasMounted(true);
-  }, []);
 
   const qrCodeQuery = useQuery({
     queryKey: ["deposit-wallet-qr", depositAddress],
@@ -110,6 +106,16 @@ export default function CustomDepositModal({
   const closeModal = () => {
     if (copyTimeout.current) clearTimeout(copyTimeout.current);
     onClose();
+  };
+
+  const openOnramp = async () => {
+    setOnrampError("");
+    try {
+      await open({ view: "OnRampProviders" });
+    } catch (error) {
+      console.error("Failed to open Reown on-ramp:", error);
+      setOnrampError(error instanceof Error ? error.message : "Unable to open the on-ramp.");
+    }
   };
 
   return (
@@ -171,9 +177,9 @@ export default function CustomDepositModal({
                     <Building2 aria-hidden="true" size={22} strokeWidth={1.8} />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block font-semibold text-white">Deposit</span>
+                    <span className="block font-semibold text-white">Quidax NGN Deposit</span>
                     <span className="mt-1 block text-sm leading-5 text-[#94a3b8]">
-                      Deposit via bank transfer or top-ups wallets
+                      NGN bank transfers (Quidax Ramp setup required)
                     </span>
                   </span>
                   <ChevronRight aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={20} />
@@ -198,7 +204,7 @@ export default function CustomDepositModal({
 
                 <button
                   className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] sm:p-5"
-                  onClick={() => updateView("checkout")}
+                  onClick={() => void openOnramp()}
                   type="button"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#0d1527] text-white transition-colors group-hover:border-blue-500/50">
@@ -213,6 +219,11 @@ export default function CustomDepositModal({
                   <ChevronRight aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={20} />
                 </button>
               </div>
+              {onrampError && (
+                <p className="mt-3 text-sm text-red-300" role="alert">
+                  {onrampError}
+                </p>
+              )}
             </>
           )}
 
@@ -229,22 +240,15 @@ export default function CustomDepositModal({
                 </button>
                 <div>
                   <p className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">
-                    Bank transfer
+                    Quidax NGN deposit
                   </p>
                   <h2 className="text-xl font-bold tracking-tight text-white sm:text-2xl" id="deposit-modal-title">
-                    Bank Transfer Deposit
+                    NGN Bank Transfer
                   </h2>
                 </div>
               </div>
 
-              {hasMounted && userWalletAddress ? (
-                <iframe
-                  className="min-h-[80vh] w-full flex-1 border-none"
-                  src={`https://fonbnk.com?source=${process.env.NEXT_PUBLIC_FONBNK_CLIENT_ID}&address=${encodeURIComponent(userWalletAddress || '')}&network=BASE&asset=USDC`}
-                  title="Fonbnk secure bank transfer"
-                  allow="payment"
-                />
-              ) : !hasMounted || walletProfileLoading ? (
+              {walletProfileLoading ? (
                 <div
                   className="flex min-h-[80vh] w-full flex-1 flex-col items-center justify-center gap-4 text-sm"
                   role="status"
@@ -257,10 +261,13 @@ export default function CustomDepositModal({
                 </div>
               ) : (
                 <div
-                  className="flex min-h-[80vh] w-full flex-1 items-center justify-center px-6 text-center text-sm text-amber-300"
-                  role="alert"
+                  className="flex min-h-[80vh] w-full flex-1 flex-col items-center justify-center px-6 text-center"
                 >
-                  {userWalletAddress ? "Unable to initialize the payment widget." : "No wallet address is linked to your profile."}
+                  <Building2 aria-hidden="true" className="mb-4 text-blue-400" size={34} />
+                  <p className="font-semibold text-white">Quidax NGN deposits are not configured</p>
+                  <p className="mt-2 max-w-sm text-sm leading-6 text-[#94a3b8]">
+                    This flow requires Quidax Ramp merchant access. The current Exchange API credentials cannot create Ramp virtual bank accounts.
+                  </p>
                 </div>
               )}
             </>

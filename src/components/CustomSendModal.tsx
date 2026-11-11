@@ -30,6 +30,7 @@ import {
   ArrowUpCircle,
   CheckCircle2,
   ChevronRight,
+  ExternalLink,
   Landmark,
   LoaderCircle,
   RefreshCw,
@@ -42,6 +43,7 @@ interface CustomSendModalProps {
 }
 
 type Screen = "methods" | "bank" | "onchain" | "internal" | "review" | "success";
+type CashoutRegion = "NG" | "GH" | "KE" | "ZA" | "global";
 type ReownBalance = Awaited<ReturnType<typeof BalanceUtil.getMyTokensWithBalance>>[number];
 const emptyWalletTokens: ReownBalance[] = [];
 
@@ -112,6 +114,7 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
   const { writeContractAsync, isPending: isTokenPending, error: tokenError } = useWriteContract();
 
   const [screen, setScreen] = useState<Screen>("methods");
+  const [cashoutRegion, setCashoutRegion] = useState<CashoutRegion>("NG");
   const [selectedTokenKey, setSelectedTokenKey] = useState("");
   const [destinationAddress, setDestinationAddress] = useState("");
   const [amount, setAmount] = useState("");
@@ -483,9 +486,61 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
           )}
 
           {screen === "bank" && (
-            <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-600 bg-[#16223f] px-6 py-10 text-center">
-              <LoaderCircle aria-hidden="true" className="mb-5 animate-spin text-blue-400" size={34} />
-              <p className="font-medium text-white">Connecting to Fonbnk Withdrawal Gateway...</p>
+            <div className="space-y-5">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-[#94a3b8]" htmlFor="cashout-region">
+                  Country / payout region
+                </label>
+                <select
+                  className="w-full rounded-xl border border-[#1e293b] bg-[#16223f] px-4 py-3 text-white outline-none transition-colors focus:border-[#3b82f6] focus:ring-2 focus:ring-[#3b82f6]/30"
+                  id="cashout-region"
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    if (
+                      value === "NG" ||
+                      value === "GH" ||
+                      value === "KE" ||
+                      value === "ZA" ||
+                      value === "global"
+                    ) {
+                      setCashoutRegion(value);
+                    }
+                  }}
+                  value={cashoutRegion}
+                >
+                  <option value="NG">Nigeria (NGN)</option>
+                  <option value="GH">Ghana (GHS)</option>
+                  <option value="KE">Kenya (KES)</option>
+                  <option value="ZA">South Africa (ZAR)</option>
+                  <option value="global">Other / Global</option>
+                </select>
+              </div>
+
+              {cashoutRegion === "NG" ? (
+                <div className="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-600 bg-[#16223f] px-6 py-10 text-center">
+                  <Landmark aria-hidden="true" className="mb-5 text-blue-400" size={34} />
+                  <p className="font-medium text-white">Quidax NGN withdrawals are not configured</p>
+                  <p className="mt-2 max-w-sm text-sm leading-6 text-[#94a3b8]">
+                    NGN cashouts require Quidax Ramp merchant access and a verified bank-account flow. Exchange API credentials alone cannot safely process this payout.
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-[#1e293b] bg-[#16223f] p-5">
+                  <p className="font-semibold text-white">Global &amp; Mobile Money Cashout</p>
+                  <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
+                    Transak is not configured as an in-app off-ramp. This link opens its public website and does not connect your wallet or prefill a sale.
+                  </p>
+                  <a
+                    className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#3b82f6] bg-[#1d4ed8] px-4 py-3 font-semibold text-white transition-colors hover:bg-[#2563eb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60a5fa]"
+                    href="https://transak.com"
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    Visit Transak
+                    <ExternalLink aria-hidden="true" size={17} />
+                  </a>
+                </div>
+              )}
             </div>
           )}
 
