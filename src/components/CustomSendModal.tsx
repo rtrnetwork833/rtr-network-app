@@ -519,9 +519,9 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
               {cashoutRegion === "NG" ? (
                 <div className="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-600 bg-[#16223f] px-6 py-10 text-center">
                   <Landmark aria-hidden="true" className="mb-5 text-blue-400" size={34} />
-                  <p className="font-medium text-white">Quidax NGN withdrawals are not configured</p>
+                  <p className="font-medium text-white">NGN payouts are paused to protect customer funds</p>
                   <p className="mt-2 max-w-sm text-sm leading-6 text-[#94a3b8]">
-                    NGN cashouts require Quidax Ramp merchant access and a verified bank-account flow. Exchange API credentials alone cannot safely process this payout.
+                    Quidax bank verification is available, but its standard withdrawal endpoint spends from the shared merchant wallet. Customer payouts need per-user balance attribution and reconciliation before funds can be sent safely.
                   </p>
                 </div>
               ) : (

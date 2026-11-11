@@ -260,13 +260,11 @@ export default function CustomDepositModal({
                   <span>Initializing secure transaction rails...</span>
                 </div>
               ) : (
-                <div
-                  className="flex min-h-[80vh] w-full flex-1 flex-col items-center justify-center px-6 text-center"
-                >
+                <div className="flex min-h-[80vh] w-full flex-1 flex-col items-center justify-center px-6 text-center">
                   <Building2 aria-hidden="true" className="mb-4 text-blue-400" size={34} />
-                  <p className="font-semibold text-white">Quidax NGN deposits are not configured</p>
+                  <p className="font-semibold text-white">NGN deposits are paused to protect your funds</p>
                   <p className="mt-2 max-w-sm text-sm leading-6 text-[#94a3b8]">
-                    This flow requires Quidax Ramp merchant access. The current Exchange API credentials cannot create Ramp virtual bank accounts.
+                    The Exchange NGN wallet belongs to the merchant account. It cannot provide an individual bank account or reliably credit a transfer as USDC to your connected wallet. Please do not send funds to shared account details.
                   </p>
                 </div>
               )}
