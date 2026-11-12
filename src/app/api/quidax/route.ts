@@ -125,42 +125,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "A valid action is required." }, { status: 400 });
   }
 
-if (String(body.action) === "deposit") {
-    const walletResult = await quidaxRequest("/users/me/wallets/ngn");
-    const walletData = walletResult.data?.data as Record<string, unknown> | undefined;
-    const bankDetails =
-      (walletData?.deposit_address as Record<string, unknown>) ||
-      (walletData?.bank_account as Record<string, unknown>) ||
-      walletData;
-
-   if (String(body.action) === "withdraw") {
-    const payload = body as Record<string, unknown>;
-    const withdrawResult = await quidaxRequest("/users/me/withdraws", {
-      method: "POST",
-      body: JSON.stringify({
-        currency: "ngn",
-        amount: String(payload.amount ?? ""),
-        fund_uid: String(payload.accountNumber ?? ""),
-        bank_code: String(payload.bankCode ?? ""),
-        transaction_note: `RTR Withdrawal - ${String(payload.walletAddress ?? "")}`,
-      }),
-    });
-
-    if (!withdrawResult.ok) {
-      return NextResponse.json(
-        {
-          error:
-            (withdrawResult.data?.message as string) ||
-            "Unable to submit NGN bank withdrawal.",
-        },
-        { status: 502 }
-      );
-    }
-    return NextResponse.json({ withdrawal: withdrawResult.data });
+  const action = String(body.action);
+  if (action === "deposit") {
+    return NextResponse.json(
+      {
+        error:
+          "Customer deposits are unavailable: the Quidax NGN wallet belongs to the merchant account and cannot provide customer-specific bank details.",
+      },
+      { status: 409 },
+    );
   }
-  if (body.action !== "verify") {
+
+  if (action === "withdraw") {
+    return NextResponse.json(
+      {
+        error:
+          "Customer withdrawals are unavailable: Quidax would debit the shared merchant NGN wallet.",
+      },
+      { status: 409 },
+    );
+  }
+
+  if (action !== "verify") {
     return NextResponse.json({ error: "Unsupported action." }, { status: 400 });
   }
+
   if (
     !("accountNumber" in body) ||
     typeof body.accountNumber !== "string" ||
@@ -202,7 +191,5 @@ if (String(body.action) === "deposit") {
       { status: 502 },
     );
   }
-
   return NextResponse.json({ accountName });
-}
 }
