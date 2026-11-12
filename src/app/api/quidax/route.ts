@@ -125,7 +125,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "A valid action is required." }, { status: 400 });
   }
 
-if (body.action === "deposit") {
+if (String(body.action) === "deposit") {
     const walletResult = await quidaxRequest("/users/me/wallets/ngn");
     const walletData = walletResult.data?.data as Record<string, unknown> | undefined;
     const bankDetails =
@@ -133,7 +133,7 @@ if (body.action === "deposit") {
       (walletData?.bank_account as Record<string, unknown>) ||
       walletData;
 
-   if (body.action === "withdraw") {
+   if (String(body.action) === "withdraw") {
     const payload = body as Record<string, unknown>;
     const withdrawResult = await quidaxRequest("/users/me/withdraws", {
       method: "POST",
