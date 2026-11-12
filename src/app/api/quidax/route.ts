@@ -133,28 +133,16 @@ if (body.action === "deposit") {
       (walletData?.bank_account as Record<string, unknown>) ||
       walletData;
 
-    if (!walletResult.ok || !bankDetails) {
-      return NextResponse.json(
-        {
-          error:
-            (walletResult.data?.message as string) ||
-            "Quidax NGN deposit bank details unavailable.",
-        },
-        { status: 502 }
-      );
-    }
-    return NextResponse.json({ deposit: bankDetails });
-  }
-
-  if (body.action === "withdraw") {
+   if (body.action === "withdraw") {
+    const payload = body as Record<string, unknown>;
     const withdrawResult = await quidaxRequest("/users/me/withdraws", {
       method: "POST",
       body: JSON.stringify({
         currency: "ngn",
-        amount: String(body.amount),
-        fund_uid: body.accountNumber,
-        bank_code: body.bankCode,
-        transaction_note: `RTR Withdrawal - ${body.walletAddress || user.id}`,
+        amount: String(payload.amount ?? ""),
+        fund_uid: String(payload.accountNumber ?? ""),
+        bank_code: String(payload.bankCode ?? ""),
+        transaction_note: `RTR Withdrawal - ${String(payload.walletAddress ?? "")}`,
       }),
     });
 
@@ -170,7 +158,6 @@ if (body.action === "deposit") {
     }
     return NextResponse.json({ withdrawal: withdrawResult.data });
   }
-
   if (body.action !== "verify") {
     return NextResponse.json({ error: "Unsupported action." }, { status: 400 });
   }
