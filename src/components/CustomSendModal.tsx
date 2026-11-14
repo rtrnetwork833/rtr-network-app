@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   useAccount,
   useBalance,
@@ -30,8 +30,8 @@ import {
   ArrowUpCircle,
   CheckCircle2,
   ChevronRight,
+  CreditCard,
   ExternalLink,
-  Landmark,
   LoaderCircle,
   RefreshCw,
   UsersRound,
@@ -42,12 +42,7 @@ interface CustomSendModalProps {
   onClose: () => void;
 }
 
-type Screen = "methods" | "bank" | "onchain" | "internal" | "review" | "success";
-type CashoutRegion = "NG" | "GH" | "KE" | "ZA" | "global";
-interface NigerianBank {
-  code: string;
-  name: string;
-}
+type Screen = "methods" | "onchain" | "internal" | "review" | "success";
 
 type ReownBalance = Awaited<ReturnType<typeof BalanceUtil.getMyTokensWithBalance>>[number];
 const emptyWalletTokens: ReownBalance[] = [];
@@ -119,17 +114,6 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
   const { writeContractAsync, isPending: isTokenPending, error: tokenError } = useWriteContract();
 
   const [screen, setScreen] = useState<Screen>("methods");
-  const [cashoutRegion, setCashoutRegion] = useState<CashoutRegion>("NG");
-  const [nigerianBanks, setNigerianBanks] = useState<NigerianBank[]>([]);
-  const [isLoadingNigerianBanks, setIsLoadingNigerianBanks] = useState(false);
-  const [nigerianBanksError, setNigerianBanksError] = useState("");
-  const [nigerianBankCode, setNigerianBankCode] = useState("");
-  const [nigerianAccountNumber, setNigerianAccountNumber] = useState("");
-  const [nigerianAccountName, setNigerianAccountName] = useState("");
-  const [isVerifyingNigerianAccount, setIsVerifyingNigerianAccount] = useState(false);
-  const [nigerianAccountVerificationError, setNigerianAccountVerificationError] = useState("");
-  const [nigerianWithdrawalAmount, setNigerianWithdrawalAmount] = useState("");
-  const [nigerianWithdrawalError, setNigerianWithdrawalError] = useState("");
   const [selectedTokenKey, setSelectedTokenKey] = useState("");
   const [destinationAddress, setDestinationAddress] = useState("");
   const [amount, setAmount] = useState("");
@@ -142,7 +126,6 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
     error?: string;
   } | null>(null);
   const [assetRefreshCount, setAssetRefreshCount] = useState(0);
-  const accountVerificationController = useRef<AbortController | null>(null);
 
   const walletAddress = address ?? (appKitAddress && isAddress(appKitAddress) ? getAddress(appKitAddress) : undefined);
   const walletSessionConnected = Boolean((isConnected || isAppKitConnected) && walletAddress);
@@ -163,110 +146,6 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
     snapshotMatchesWallet && assetSnapshot?.refreshCount === assetRefreshCount
       ? assetSnapshot.tokens
       : emptyWalletTokens;
-
-  const loadNigerianBanks = async () => {
-    if (isLoadingNigerianBanks || nigerianBanks.length > 0) return;
-    setIsLoadingNigerianBanks(true);
-    setNigerianBanksError("");
-
-    try {
-      const response = await fetch("/api/quidax?action=banks");
-      const result: unknown = await response.json();
-      if (!response.ok) {
-        const message =
-          typeof result === "object" &&
-          result !== null &&
-          "error" in result &&
-          typeof result.error === "string"
-            ? result.error
-            : "Unable to load Nigerian banks.";
-        throw new Error(message);
-      }
-      if (
-        typeof result !== "object" ||
-        result === null ||
-        !("banks" in result) ||
-        !Array.isArray(result.banks)
-      ) {
-        throw new Error("The bank list response was invalid.");
-      }
-
-      const banks = result.banks.filter(
-        (bank): bank is NigerianBank =>
-          typeof bank === "object" &&
-          bank !== null &&
-          "code" in bank &&
-          typeof bank.code === "string" &&
-          "name" in bank &&
-          typeof bank.name === "string",
-      );
-      setNigerianBanks(banks);
-    } catch (error: unknown) {
-      console.error("Unable to load Nigerian banks:", error);
-      setNigerianBanksError(
-        error instanceof Error ? error.message : "Unable to load Nigerian banks.",
-      );
-    } finally {
-      setIsLoadingNigerianBanks(false);
-    }
-  };
-
-  const verifyNigerianAccount = async (accountNumber: string, bankCode: string) => {
-    accountVerificationController.current?.abort();
-    setNigerianAccountName("");
-    setNigerianAccountVerificationError("");
-
-    if (!bankCode || !/^\d{10}$/.test(accountNumber)) {
-      setIsVerifyingNigerianAccount(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    accountVerificationController.current = controller;
-    setIsVerifyingNigerianAccount(true);
-    await new Promise((resolve) => setTimeout(resolve, 350));
-
-    try {
-      const response = await fetch("/api/quidax", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          action: "verify",
-          accountNumber,
-          bankCode,
-        }),
-      });
-      const result: unknown = await response.json();
-      if (!response.ok) {
-        const message =
-          typeof result === "object" &&
-          result !== null &&
-          "error" in result &&
-          typeof result.error === "string"
-            ? result.error
-            : "Unable to verify this account.";
-        throw new Error(message);
-      }
-      if (
-        typeof result !== "object" ||
-        result === null ||
-        !("accountName" in result) ||
-        typeof result.accountName !== "string"
-      ) {
-        throw new Error("Quidax did not return a verified account name.");
-      }
-      if (!controller.signal.aborted) setNigerianAccountName(result.accountName);
-    } catch (error: unknown) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      console.error("Unable to verify Nigerian bank account:", error);
-      setNigerianAccountVerificationError(
-        error instanceof Error ? error.message : "Unable to verify this account.",
-      );
-    } finally {
-      if (!controller.signal.aborted) setIsVerifyingNigerianAccount(false);
-    }
-  };
 
   useEffect(() => {
     let active = true;
@@ -539,23 +418,23 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
                 </p>
               </div>
               <div className="space-y-3">
-                <button
+                <a
                   className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] sm:p-5"
-                  onClick={() => {
-                    setScreen("bank");
-                    if (cashoutRegion === "NG") void loadNigerianBanks();
-                  }}
-                  type="button"
+                  href="https://transak.com"
+                  rel="noopener noreferrer"
+                  target="_blank"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#0d1527] text-white transition-colors group-hover:border-blue-500/50">
-                    <Landmark aria-hidden="true" size={23} strokeWidth={1.8} />
+                    <CreditCard aria-hidden="true" size={23} strokeWidth={1.8} />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block font-semibold text-white">Bank Withdrawal</span>
-                    <span className="mt-1 block text-sm leading-5 text-[#94a3b8]">Send to bank account</span>
+                    <span className="block font-semibold text-white">Fiat Withdrawal</span>
+                    <span className="mt-1 block text-sm leading-5 text-[#94a3b8]">
+                      Withdraw to Bank Transfer, Card, or local mobile wallets instantly
+                    </span>
                   </span>
-                  <ChevronRight aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={20} />
-                </button>
+                  <ExternalLink aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={18} />
+                </a>
 
                 <button
                   className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] sm:p-5"
@@ -592,7 +471,7 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
             </>
           )}
 
-          {(screen === "bank" || screen === "internal" || screen === "onchain") && (
+          {(screen === "internal" || screen === "onchain") && (
             <div className="mb-7 flex items-start gap-3 pr-12">
               <button
                 aria-label="Back to select method"
@@ -603,205 +482,8 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
                 <ArrowLeft aria-hidden="true" size={19} />
               </button>
               <h2 className="pt-1.5 text-xl font-bold tracking-tight text-white sm:text-2xl" id="send-modal-title">
-                {screen === "bank" ? "Bank Withdrawal" : screen === "internal" ? "Send to RTR users" : "On-Chain Send"}
+                {screen === "internal" ? "Send to RTR users" : "On-Chain Send"}
               </h2>
-            </div>
-          )}
-
-          {screen === "bank" && (
-            <div className="space-y-5">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-[#94a3b8]" htmlFor="cashout-region">
-                  Country / payout region
-                </label>
-                <select
-                  className="w-full rounded-xl border border-[#1e293b] bg-[#16223f] px-4 py-3 text-white outline-none transition-colors focus:border-[#3b82f6] focus:ring-2 focus:ring-[#3b82f6]/30"
-                  id="cashout-region"
-                  onChange={(event) => {
-                    const value = event.currentTarget.value;
-                    if (
-                      value === "NG" ||
-                      value === "GH" ||
-                      value === "KE" ||
-                      value === "ZA" ||
-                      value === "global"
-                    ) {
-                      setCashoutRegion(value);
-                      if (value === "NG") void loadNigerianBanks();
-                    }
-                  }}
-                  value={cashoutRegion}
-                >
-                  <option value="NG">Nigeria (NGN)</option>
-                  <option value="GH">Ghana (GHS)</option>
-                  <option value="KE">Kenya (KES)</option>
-                  <option value="ZA">South Africa (ZAR)</option>
-                  <option value="global">Other / Global</option>
-                </select>
-              </div>
-
-              {cashoutRegion === "NG" ? (
-                <div className="flex flex-col gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-5 text-white">
-                  <div>
-                    <label className="mb-1.5 block text-xs text-slate-400" htmlFor="ngn-account-number">
-                      10-Digit Account Number
-                    </label>
-                    <input
-                      autoComplete="off"
-                      className="w-full rounded-xl border border-slate-700 bg-[#0b1326] px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500"
-                      id="ngn-account-number"
-                      inputMode="numeric"
-                      maxLength={10}
-                      onChange={(event) => {
-                        const accountNumber = event.currentTarget.value.replace(/\D/g, "").slice(0, 10);
-                        setNigerianAccountNumber(accountNumber);
-                        void verifyNigerianAccount(accountNumber, nigerianBankCode);
-                      }}
-                      placeholder="0123456789"
-                      value={nigerianAccountNumber}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-xs text-slate-400" htmlFor="ngn-bank-select">
-                      Select Bank
-                    </label>
-                    <select
-                      className="w-full rounded-xl border border-slate-700 bg-[#0b1326] px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 disabled:opacity-60"
-                      disabled={isLoadingNigerianBanks || nigerianBanks.length === 0}
-                      id="ngn-bank-select"
-                      onChange={(event) => {
-                        const bankCode = event.currentTarget.value;
-                        setNigerianBankCode(bankCode);
-                        void verifyNigerianAccount(nigerianAccountNumber, bankCode);
-                      }}
-                      value={nigerianBankCode}
-                    >
-                      <option value="">
-                        {isLoadingNigerianBanks ? "Loading Nigerian banks..." : "Select your bank"}
-                      </option>
-                      {nigerianBanks.map((bank) => (
-                        <option key={bank.code} value={bank.code}>
-                          {bank.name}
-                        </option>
-                      ))}
-                    </select>
-                    {nigerianBanksError && (
-                      <p className="mt-2 text-xs text-red-300" role="alert">
-                        {nigerianBanksError}
-                      </p>
-                    )}
-                    {isVerifyingNigerianAccount && (
-                      <p className="mt-2 text-xs text-slate-400" role="status">
-                        Verifying account...
-                      </p>
-                    )}
-                    {nigerianAccountName && (
-                      <p className="mt-2 text-sm font-medium text-emerald-400" role="status">
-                        Account name: {nigerianAccountName}
-                      </p>
-                    )}
-                    {nigerianAccountVerificationError && (
-                      <p className="mt-2 text-xs text-red-300" role="alert">
-                        {nigerianAccountVerificationError}
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-xs text-slate-400" htmlFor="ngn-withdraw-amount">
-                      Amount to Withdraw (NGN)
-                    </label>
-                    <div className="flex items-center rounded-xl border border-slate-700 bg-[#0b1326] px-3 py-2.5 focus-within:border-blue-500">
-                      <span className="mr-2 font-bold text-blue-400">₦</span>
-                      <input
-                        className="w-full bg-transparent text-base font-semibold text-white outline-none"
-                        id="ngn-withdraw-amount"
-                        inputMode="numeric"
-                        onChange={(event) => {
-                          const digits = event.currentTarget.value.replace(/\D/g, "");
-                          setNigerianWithdrawalAmount(
-                            digits ? Number(digits).toLocaleString("en-US") : "",
-                          );
-                          setNigerianWithdrawalError("");
-                        }}
-                        placeholder="5,000"
-                        type="text"
-                        value={nigerianWithdrawalAmount}
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    className="mt-1 w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={
-                      !nigerianAccountName ||
-                      !nigerianWithdrawalAmount ||
-                      Number(nigerianWithdrawalAmount.replace(/,/g, "")) < 2000
-                    }
-                    onClick={async () => {
-                      setNigerianWithdrawalError("");
-                      try {
-                        const response = await fetch("/api/quidax", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            action: "withdraw",
-                            amount: nigerianWithdrawalAmount.replace(/,/g, ""),
-                            bankCode: nigerianBankCode,
-                            accountNumber: nigerianAccountNumber,
-                          }),
-                        });
-                        const result: unknown = await response.json();
-                        if (!response.ok) {
-                          const message =
-                            typeof result === "object" &&
-                            result !== null &&
-                            "error" in result &&
-                            typeof result.error === "string"
-                              ? result.error
-                              : "Unable to submit the bank withdrawal.";
-                          throw new Error(message);
-                        }
-                      } catch (error) {
-                        console.error("Unable to submit Nigerian bank withdrawal:", error);
-                        setNigerianWithdrawalError(
-                          error instanceof Error
-                            ? error.message
-                            : "Unable to submit the bank withdrawal.",
-                        );
-                      }
-                    }}
-                    type="button"
-                  >
-                    Withdraw to Bank
-                  </button>
-                  {nigerianWithdrawalError && (
-                    <p className="text-sm text-amber-300" role="alert">
-                      {nigerianWithdrawalError}
-                    </p>
-                  )}
-                  <p className="text-xs leading-5 text-slate-400">
-                    NGN payouts remain paused until customer funds can be attributed to segregated Quidax balances.
-                  </p>
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-[#1e293b] bg-[#16223f] p-5">
-                  <p className="font-semibold text-white">Global &amp; Mobile Money Cashout</p>
-                  <p className="mt-2 text-sm leading-6 text-[#94a3b8]">
-                    Transak is not configured as an in-app off-ramp. This link opens its public website and does not connect your wallet or prefill a sale.
-                  </p>
-                  <a
-                    className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#3b82f6] bg-[#1d4ed8] px-4 py-3 font-semibold text-white transition-colors hover:bg-[#2563eb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#60a5fa]"
-                    href="https://transak.com"
-                    rel="noopener noreferrer"
-                    target="_blank"
-                  >
-                    Visit Transak
-                    <ExternalLink aria-hidden="true" size={17} />
-                  </a>
-                </div>
-              )}
             </div>
           )}
 

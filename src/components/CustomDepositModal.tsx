@@ -6,11 +6,9 @@ import { useAppKit } from "@reown/appkit/react";
 import {
   ArrowDownCircle,
   ArrowLeft,
-  Building2,
   Check,
   ChevronRight,
   Copy,
-  CreditCard,
   WalletCards,
   X,
 } from "lucide-react";
@@ -19,11 +17,10 @@ import QRCode from "qrcode";
 
 interface CustomDepositModalProps {
   userWalletAddress: string;
-  walletProfileLoading: boolean;
   onClose: () => void;
 }
 
-type DepositView = "methods" | "bank" | "onchain" | "checkout";
+type DepositView = "methods" | "onchain";
 type CopyStatus = "idle" | "copied" | "error";
 
 const placeholderWalletAddress = "0x284bEa823901923481239841239841D7F2";
@@ -33,14 +30,12 @@ function getStoredDepositView(): DepositView {
   if (typeof window === "undefined") return "methods";
 
   const savedStep = window.localStorage.getItem(depositModalStepKey);
-  if (savedStep === "fonbnk") return "bank";
-  if (savedStep === "onchain" || savedStep === "checkout") return savedStep;
+  if (savedStep === "onchain") return savedStep;
   return "methods";
 }
 
 export default function CustomDepositModal({
   userWalletAddress,
-  walletProfileLoading,
   onClose,
 }: CustomDepositModalProps) {
   const [view, setView] = useState<DepositView>(getStoredDepositView);
@@ -53,7 +48,7 @@ export default function CustomDepositModal({
   const updateView = (nextView: DepositView) => {
     setView(nextView);
     if (typeof window !== "undefined") {
-      const savedStep = nextView === "methods" ? "menu" : nextView === "bank" ? "fonbnk" : nextView;
+      const savedStep = nextView === "methods" ? "menu" : nextView;
       window.localStorage.setItem(depositModalStepKey, savedStep);
     }
   };
@@ -120,9 +115,7 @@ export default function CustomDepositModal({
 
   return (
     <div
-      className={`fixed inset-0 z-[100] flex items-start justify-center bg-[#0d1527]/95 backdrop-blur-md ${
-        view === "bank" ? "p-0" : "p-0 sm:p-6"
-      }`}
+      className="fixed inset-0 z-[100] flex items-start justify-center bg-[#0d1527]/95 p-0 backdrop-blur-md sm:p-6"
       onClick={(event) => {
         if (event.target === event.currentTarget) closeModal();
       }}
@@ -130,16 +123,10 @@ export default function CustomDepositModal({
       <section
         aria-labelledby="deposit-modal-title"
         aria-modal="true"
-        className={`deposit-modal-sheet relative w-full overflow-y-auto bg-[#0d1527] ${
-          view === "bank"
-            ? "h-[100dvh] max-h-[100dvh] max-w-none border-0 p-0 shadow-none"
-            : "max-w-lg border border-[#1e293b] p-5 pb-24 shadow-[0_24px_100px_rgba(0,0,0,0.55)] sm:rounded-3xl sm:p-7 sm:pb-24"
-        } ${
+        className={`deposit-modal-sheet relative w-full overflow-y-auto bg-[#0d1527] max-w-lg border border-[#1e293b] p-5 pb-24 shadow-[0_24px_100px_rgba(0,0,0,0.55)] sm:rounded-3xl sm:p-7 sm:pb-24 ${
           view === "methods"
             ? "max-h-[92dvh] rounded-t-3xl rounded-b-none"
-            : view === "bank"
-              ? "rounded-none"
-              : "max-h-[100dvh] min-h-[100dvh] rounded-none sm:max-h-[92dvh] sm:min-h-0"
+            : "max-h-[100dvh] min-h-[100dvh] rounded-none sm:max-h-[92dvh] sm:min-h-0"
         }`}
         role="dialog"
       >
@@ -152,7 +139,7 @@ export default function CustomDepositModal({
           <X aria-hidden="true" size={19} />
         </button>
 
-        <div key={view} className={`deposit-modal-view ${view === "bank" ? "flex h-full flex-col" : ""}`}>
+        <div key={view} className="deposit-modal-view">
           {view === "methods" && (
             <>
               <div className="mb-7 pr-12">
@@ -170,16 +157,16 @@ export default function CustomDepositModal({
               <div className="space-y-3">
                 <button
                   className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] sm:p-5"
-                  onClick={() => updateView("bank")}
+                  onClick={() => void openOnramp()}
                   type="button"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#0d1527] text-white transition-colors group-hover:border-blue-500/50">
-                    <Building2 aria-hidden="true" size={22} strokeWidth={1.8} />
+                    <WalletCards aria-hidden="true" size={23} strokeWidth={1.8} />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block font-semibold text-white">Quidax NGN Deposit</span>
+                    <span className="block font-semibold text-white">Fiat Deposit</span>
                     <span className="mt-1 block text-sm leading-5 text-[#94a3b8]">
-                      NGN bank transfers (Quidax Ramp setup required)
+                      Pay via Bank Transfer, Card, Google Pay, Apple Pay and more
                     </span>
                   </span>
                   <ChevronRight aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={20} />
@@ -196,24 +183,7 @@ export default function CustomDepositModal({
                   <span className="min-w-0 flex-1">
                     <span className="block font-semibold text-white">Onchain Deposit</span>
                     <span className="mt-1 block text-sm leading-5 text-[#94a3b8]">
-                      Deposit crypto from other exchanges or wallets
-                    </span>
-                  </span>
-                  <ChevronRight aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={20} />
-                </button>
-
-                <button
-                  className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] sm:p-5"
-                  onClick={() => void openOnramp()}
-                  type="button"
-                >
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#0d1527] text-white transition-colors group-hover:border-blue-500/50">
-                    <WalletCards aria-hidden="true" size={23} strokeWidth={1.8} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-semibold text-white">Buy with wallets</span>
-                    <span className="mt-1 block text-sm leading-5 text-[#94a3b8]">
-                      Buy via Apple Pay, card, Google Pay, and more
+                      Deposit crypto from other exchanges
                     </span>
                   </span>
                   <ChevronRight aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={20} />
@@ -223,118 +193,6 @@ export default function CustomDepositModal({
                 <p className="mt-3 text-sm text-red-300" role="alert">
                   {onrampError}
                 </p>
-              )}
-            </>
-          )}
-
-          {view === "bank" && (
-            <>
-              <div className="flex shrink-0 items-start gap-3 pr-12">
-                <button
-                  aria-label="Back to select method"
-                  className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#16223f] text-slate-300 transition-colors hover:border-[#3b82f6] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6]"
-                  onClick={() => updateView("methods")}
-                  type="button"
-                >
-                  <ArrowLeft aria-hidden="true" size={19} />
-                </button>
-                <div>
-                  <p className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">
-                    Quidax NGN deposit
-                  </p>
-                  <h2 className="text-xl font-bold tracking-tight text-white sm:text-2xl" id="deposit-modal-title">
-                    NGN Bank Transfer
-                  </h2>
-                </div>
-              </div>
-
-              {walletProfileLoading ? (
-                <div
-                  className="flex min-h-[80vh] w-full flex-1 flex-col items-center justify-center gap-4 text-sm"
-                  role="status"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="h-8 w-8 animate-spin rounded-full border-2 border-slate-600 border-t-blue-400"
-                  />
-                  <span>Initializing secure transaction rails...</span>
-                </div>
-              ) : (
-              <div className="flex w-full flex-col gap-4 px-5 py-6 text-white">
-  <div className="rounded-xl border border-slate-800 bg-[#0d1424] p-4">
-    <label className="mb-2 block text-xs font-medium uppercase tracking-wider text-slate-400">
-      Amount to Deposit (NGN)
-    </label>
-    <div className="flex items-center rounded-lg border border-slate-700 bg-[#070b14] px-4 py-3 focus-within:border-blue-500">
-      <span className="mr-2 text-lg font-bold text-blue-400">₦</span>
-      <input
-        id="quidax-ngn-input"
-        type="text"
-        inputMode="numeric"
-        placeholder="5,000"
-        onInput={(e) => {
-          const el = e.currentTarget;
-          const rawDigits = el.value.replace(/\D/g, "");
-          el.value = rawDigits ? Number(rawDigits).toLocaleString("en-US") : "";
-        }}
-        className="w-full bg-transparent text-lg font-semibold text-white outline-none placeholder:text-slate-600"
-      />
-    </div>
-    <p className="mt-2 text-xs text-slate-400">
-      Minimum deposit: ₦2,000 • Credited as USDC to your connected wallet
-    </p>
-  </div>
-
-  <div id="quidax-bank-box" className="hidden rounded-xl border border-blue-500/30 bg-blue-950/20 p-4 text-sm">
-    <p className="font-semibold text-blue-300">Transfer NGN to this Bank Account:</p>
-    <div id="quidax-bank-details" className="mt-2 space-y-1 text-slate-200"></div>
-  </div>
-
-  <button
-    type="button"
-    onClick={async (e) => {
-      const btn = e.currentTarget;
-      const input = document.getElementById("quidax-ngn-input") as HTMLInputElement;
-      const box = document.getElementById("quidax-bank-box");
-      const details = document.getElementById("quidax-bank-details");
-      const amount = Number((input?.value || "").replace(/,/g, ""));
-      if (amount < 2000) {
-        alert("Please enter at least ₦2,000");
-        return;
-      }
-      btn.disabled = true;
-      btn.textContent = "Generating Account...";
-      try {
-        const res = await fetch("/api/quidax", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "deposit", amount }),
-        });
-        const json = await res.json();
-        const bank = json?.deposit?.data || json?.deposit || {};
-        if (!res.ok) throw new Error(json?.error || "Failed to load bank details");
-        if (box && details) {
-          box.classList.remove("hidden");
-          details.innerHTML = `
-            <p><span class="text-slate-400">Bank:</span> <strong>${bank.bank_name || bank.bank || "Quidax Virtual Bank"}</strong></p>
-            <p><span class="text-slate-400">Account Number:</span> <strong>${bank.account_number || bank.address || "Check Quidax Dashboard"}</strong></p>
-            <p><span class="text-slate-400">Account Name:</span> <strong>${bank.account_name || "RTR Network / Quidax"}</strong></p>
-            <p><span class="text-slate-400">Amount:</span> <strong>₦${amount.toLocaleString()}</strong></p>
-          `;
-        }
-        btn.textContent = "I Have Sent the Money";
-      } catch (err: unknown) {
-        alert(err instanceof Error ? err.message : "Could not load bank details");
-        btn.textContent = "Get Bank Transfer Details";
-      } finally {
-        btn.disabled = false;
-      }
-    }}
-    className="w-full rounded-xl bg-blue-600 py-3.5 text-sm font-semibold text-white transition hover:bg-blue-500"
-  >
-    Get Bank Transfer Details
-  </button>
-</div>
               )}
             </>
           )}
@@ -421,38 +279,6 @@ export default function CustomDepositModal({
             </>
           )}
 
-          {view === "checkout" && (
-            <>
-              <div className="mb-7 flex items-start gap-3 pr-12">
-                <button
-                  aria-label="Back to select method"
-                  className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#16223f] text-slate-300 transition-colors hover:border-[#3b82f6] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6]"
-                  onClick={() => updateView("methods")}
-                  type="button"
-                >
-                  <ArrowLeft aria-hidden="true" size={19} />
-                </button>
-                <div>
-                  <p className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">
-                    Card checkout
-                  </p>
-                  <h2 className="text-xl font-bold tracking-tight text-white sm:text-2xl" id="deposit-modal-title">
-                    Buy with wallets
-                  </h2>
-                </div>
-              </div>
-
-              <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-600 bg-[#16223f] px-6 py-10 text-center">
-                <span className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-[#1e293b] bg-[#0d1527] text-blue-400">
-                  <CreditCard aria-hidden="true" size={25} strokeWidth={1.8} />
-                </span>
-                <p className="font-medium text-white">Secure checkout gateway</p>
-                <p className="mt-2 max-w-xs text-sm leading-6 text-[#94a3b8]">
-                  Apple Pay, Google Pay, and card payments will be available here.
-                </p>
-              </div>
-            </>
-          )}
         </div>
         <style>{`
           @keyframes depositModalSheetIn {

@@ -544,7 +544,6 @@ export default function Home() {
       {showDepositModal && (
         <CustomDepositModal
           userWalletAddress={activeWalletAddress ?? ""}
-          walletProfileLoading={walletProfileLoading}
           onClose={closeDepositModal}
         />
       )}

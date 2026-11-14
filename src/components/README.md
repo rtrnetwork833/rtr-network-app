@@ -5,10 +5,11 @@ This directory contains custom-built crypto interface components that replace th
 ## Components
 
 ### 1. CustomSendModal.tsx
-**Purpose:** A self-contained send workflow with method selection, bank withdrawal and internal transfer placeholders, plus on-chain crypto transfers.
+**Purpose:** A self-contained withdrawal workflow with fiat-provider, internal-transfer, and on-chain transfer options.
 **Features:**
-- Select-method screen with bank withdrawal, on-chain, and RTR-user transfer routes
-- Fonbnk withdrawal gateway placeholder and internal transfer placeholder
+- Select-method screen with a Transak link for fiat withdrawals, on-chain transfers, and RTR-user transfers
+- Opens the configured Transak URL in a new tab; no wallet-connected off-ramp widget is configured
+- Internal transfer placeholder
 - Dynamic on-chain asset selection from the connected Reown wallet's positive-balance Base assets
 - Amount input with a Max action and live selected-token balance validation
 - Review step with an estimated Base network fee before transaction execution
@@ -50,9 +51,9 @@ const [showSwapModal, setShowSwapModal] = useState(false);
 ### 3. CustomDepositModal.tsx
 **Purpose:** Receive funds & fiat on-ramp
 **Features:**
+- Fiat deposit opens Reown AppKit's native OnRampProviders view
 - Wallet address display with one-click copy
 - Dynamically generated QR code for wallet-to-wallet transfers
-- Fiat on-ramp integration (Transak, MoonPay)
 - Network info display (Base Mainnet)
 - Clean, professional UI
 
