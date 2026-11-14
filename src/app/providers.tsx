@@ -3,9 +3,9 @@
 import React, { ReactNode, useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createAppKit, useAppKitAccount, useDisconnect } from '@reown/appkit/react';
+import { base } from '@reown/appkit/networks';
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi';
 import { WagmiProvider, createStorage } from 'wagmi';
-import { base } from 'wagmi/chains';
 import { createClient } from '@supabase/supabase-js';
 
 const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID || "";
@@ -19,7 +19,7 @@ const metadata = {
   icons: ['https://rtrnetwork.com']
 };
 
-const networks = [{ ...base }] as any;
+const networks: [typeof base, ...typeof base[]] = [base];
 const wagmiAdapter = new WagmiAdapter({
   networks,
   projectId,
@@ -36,12 +36,8 @@ createAppKit({
   projectId,
   defaultNetwork: base,
   features: {
-    email: true,
-    socials: ['google'],
-    analytics: false,
-    emailShowWallets: true,
-    swaps: true,
     onramp: true,
+    swaps: true,
   },
   themeMode: 'dark'
 });

@@ -31,7 +31,6 @@ import {
   CheckCircle2,
   ChevronRight,
   CreditCard,
-  ExternalLink,
   LoaderCircle,
   RefreshCw,
   UsersRound,
@@ -418,11 +417,10 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
                 </p>
               </div>
               <div className="space-y-3">
-                <a
+                <button
                   className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] sm:p-5"
-                  href="https://transak.com"
-                  rel="noopener noreferrer"
-                  target="_blank"
+                  onClick={() => void open({ view: "Account" })}
+                  type="button"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#0d1527] text-white transition-colors group-hover:border-blue-500/50">
                     <CreditCard aria-hidden="true" size={23} strokeWidth={1.8} />
@@ -433,8 +431,8 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
                       Withdraw to Bank Transfer, Card, or local mobile wallets instantly
                     </span>
                   </span>
-                  <ExternalLink aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={18} />
-                </a>
+                  <ChevronRight aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={20} />
+                </button>
 
                 <button
                   className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] sm:p-5"

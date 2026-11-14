@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useAppKit } from "@reown/appkit/react";
+import { useAppKit, useAppKitAccount } from "@reown/appkit/react";
 import {
   ArrowDownCircle,
   ArrowLeft,
@@ -44,6 +44,7 @@ export default function CustomDepositModal({
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const depositAddress = userWalletAddress || placeholderWalletAddress;
   const { open } = useAppKit();
+  const { isConnected } = useAppKitAccount();
 
   const updateView = (nextView: DepositView) => {
     setView(nextView);
@@ -103,13 +104,13 @@ export default function CustomDepositModal({
     onClose();
   };
 
-  const openOnramp = async () => {
+  const openFiatDeposit = async () => {
     setOnrampError("");
     try {
-      await open({ view: "OnRampProviders" });
+      await open({ view: isConnected ? "OnRampProviders" : "Connect" });
     } catch (error) {
-      console.error("Failed to open Reown on-ramp:", error);
-      setOnrampError(error instanceof Error ? error.message : "Unable to open the on-ramp.");
+      console.error("Failed to open Reown payment flow:", error);
+      setOnrampError(error instanceof Error ? error.message : "Unable to open the payment flow.");
     }
   };
 
@@ -157,7 +158,7 @@ export default function CustomDepositModal({
               <div className="space-y-3">
                 <button
                   className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] sm:p-5"
-                  onClick={() => void openOnramp()}
+                  onClick={() => void openFiatDeposit()}
                   type="button"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#0d1527] text-white transition-colors group-hover:border-blue-500/50">
