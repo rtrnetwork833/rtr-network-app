@@ -51,7 +51,8 @@ const [showSwapModal, setShowSwapModal] = useState(false);
 ### 3. CustomDepositModal.tsx
 **Purpose:** Receive funds & fiat on-ramp
 **Features:**
-- Fiat deposit opens Reown AppKit's Connect view when disconnected and OnRampProviders when connected
+- Fiat deposit requires a connected wallet, checks a ₦13,000 minimum for Nigeria, then preloads NGN and the entered amount into Reown AppKit
+- The connected wallet address is supplied automatically by AppKit to the on-ramp provider
 - Wallet address display with one-click copy
 - Dynamically generated QR code for wallet-to-wallet transfers
 - Network info display (Base Mainnet)

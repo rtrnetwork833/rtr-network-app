@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAppKit, useAppKitAccount } from "@reown/appkit/react";
+import { OnRampController } from "@reown/appkit-controllers";
 import {
   ArrowDownCircle,
   ArrowLeft,
@@ -20,11 +21,12 @@ interface CustomDepositModalProps {
   onClose: () => void;
 }
 
-type DepositView = "methods" | "onchain";
+type DepositView = "methods" | "fiat" | "onchain";
 type CopyStatus = "idle" | "copied" | "error";
 
 const placeholderWalletAddress = "0x284bEa823901923481239841239841D7F2";
 const depositModalStepKey = "rtr-deposit-modal-step";
+const minimumNgnDeposit = 13_000;
 
 function getStoredDepositView(): DepositView {
   if (typeof window === "undefined") return "methods";
@@ -41,15 +43,22 @@ export default function CustomDepositModal({
   const [view, setView] = useState<DepositView>(getStoredDepositView);
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
   const [onrampError, setOnrampError] = useState("");
+  const [paymentRegion, setPaymentRegion] = useState<"NG" | "other">("NG");
+  const [ngnAmount, setNgnAmount] = useState("");
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const depositAddress = userWalletAddress || placeholderWalletAddress;
   const { open } = useAppKit();
-  const { isConnected } = useAppKitAccount();
+  const { address: appKitAddress, isConnected } = useAppKitAccount();
+  const parsedNgnAmount = Number(ngnAmount);
+  const ngnAmountIsBelowMinimum =
+    paymentRegion === "NG" &&
+    ngnAmount !== "" &&
+    (!Number.isFinite(parsedNgnAmount) || parsedNgnAmount < minimumNgnDeposit);
 
   const updateView = (nextView: DepositView) => {
     setView(nextView);
     if (typeof window !== "undefined") {
-      const savedStep = nextView === "methods" ? "menu" : nextView;
+      const savedStep = nextView === "onchain" ? "onchain" : "menu";
       window.localStorage.setItem(depositModalStepKey, savedStep);
     }
   };
@@ -107,10 +116,52 @@ export default function CustomDepositModal({
   const openFiatDeposit = async () => {
     setOnrampError("");
     try {
-      await open({ view: isConnected ? "OnRampProviders" : "Connect" });
+      if (!isConnected || !appKitAddress) {
+        await open({ view: "Connect" });
+        return;
+      }
+
+      updateView("fiat");
     } catch (error) {
-      console.error("Failed to open Reown payment flow:", error);
-      setOnrampError(error instanceof Error ? error.message : "Unable to open the payment flow.");
+      console.error("Failed to open Reown wallet connection:", error);
+      setOnrampError(error instanceof Error ? error.message : "Unable to connect a wallet.");
+    }
+  };
+
+  const continueToOnramp = async () => {
+    setOnrampError("");
+
+    if (paymentRegion === "NG") {
+      if (!Number.isFinite(parsedNgnAmount) || parsedNgnAmount < minimumNgnDeposit) {
+        setOnrampError("The minimum deposit is ₦13,000 to swap for USDC on the Base network.");
+        return;
+      }
+
+      try {
+        if (!OnRampController.state.paymentCurrencies.some((currency) => currency.id.toUpperCase() === "NGN")) {
+          await OnRampController.getAvailableCurrencies();
+        }
+        const ngnCurrency = OnRampController.state.paymentCurrencies.find(
+          (currency) => currency.id.toUpperCase() === "NGN",
+        );
+        if (!ngnCurrency) {
+          throw new Error("NGN is not currently available from the on-ramp provider.");
+        }
+
+        OnRampController.setPaymentCurrency(ngnCurrency);
+        OnRampController.setPaymentAmount(parsedNgnAmount);
+      } catch (error) {
+        console.error("Unable to prepare the NGN on-ramp:", error);
+        setOnrampError(error instanceof Error ? error.message : "Unable to prepare the NGN deposit.");
+        return;
+      }
+    }
+
+    try {
+      await open({ view: "OnRampProviders" });
+    } catch (error) {
+      console.error("Failed to open Reown on-ramp:", error);
+      setOnrampError(error instanceof Error ? error.message : "Unable to open the on-ramp.");
     }
   };
 
@@ -195,6 +246,104 @@ export default function CustomDepositModal({
                   {onrampError}
                 </p>
               )}
+            </>
+          )}
+
+          {view === "fiat" && (
+            <>
+              <div className="mb-6 flex items-start gap-3 pr-12">
+                <button
+                  aria-label="Back to select method"
+                  className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#16223f] text-slate-300 transition-colors hover:border-[#3b82f6] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6]"
+                  onClick={() => updateView("methods")}
+                  type="button"
+                >
+                  <ArrowLeft aria-hidden="true" size={19} />
+                </button>
+                <div>
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-blue-400">
+                    Fiat deposit
+                  </p>
+                  <h2 className="text-xl font-bold tracking-tight text-white sm:text-2xl" id="deposit-modal-title">
+                    Payment details
+                  </h2>
+                </div>
+              </div>
+
+              <div className="space-y-5">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-[#94a3b8]" htmlFor="deposit-payment-region">
+                    Payment region
+                  </label>
+                  <select
+                    className="w-full rounded-xl border border-[#1e293b] bg-[#16223f] px-4 py-3 text-white outline-none transition-colors focus:border-[#3b82f6] focus:ring-2 focus:ring-[#3b82f6]/30"
+                    id="deposit-payment-region"
+                    onChange={(event) => {
+                      setPaymentRegion(event.currentTarget.value === "NG" ? "NG" : "other");
+                      setOnrampError("");
+                    }}
+                    value={paymentRegion}
+                  >
+                    <option value="NG">Nigeria (NGN)</option>
+                    <option value="other">Other region / currency</option>
+                  </select>
+                </div>
+
+                {paymentRegion === "NG" && (
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-[#94a3b8]" htmlFor="deposit-ngn-amount">
+                      Deposit amount (NGN)
+                    </label>
+                    <div className="flex items-center rounded-xl border border-[#1e293b] bg-[#16223f] px-4 py-3 focus-within:border-[#3b82f6]">
+                      <span className="mr-2 font-semibold text-blue-300">₦</span>
+                      <input
+                        aria-describedby={ngnAmountIsBelowMinimum ? "deposit-ngn-minimum" : undefined}
+                        className="w-full bg-transparent text-lg font-semibold text-white outline-none placeholder:text-slate-500"
+                        id="deposit-ngn-amount"
+                        inputMode="numeric"
+                        onChange={(event) => {
+                          setNgnAmount(event.currentTarget.value.replace(/\D/g, ""));
+                          setOnrampError("");
+                        }}
+                        placeholder="13,000"
+                        type="text"
+                        value={ngnAmount ? Number(ngnAmount).toLocaleString("en-NG") : ""}
+                      />
+                    </div>
+                    {ngnAmountIsBelowMinimum && (
+                      <p className="mt-2 text-sm text-amber-300" id="deposit-ngn-minimum" role="alert">
+                        Minimum deposit is ₦13,000 to swap for USDC on the Base network.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {appKitAddress && (
+                  <p className="rounded-xl border border-[#1e293b] bg-[#16223f]/70 p-3 text-xs leading-5 text-[#94a3b8]">
+                    Funds will be sent to your connected wallet{" "}
+                    <span className="font-mono text-slate-200">
+                      {appKitAddress.slice(0, 6)}...{appKitAddress.slice(-4)}
+                    </span>
+                    . No address entry is needed.
+                  </p>
+                )}
+
+                {onrampError && (
+                  <p className="text-sm text-red-300" role="alert">
+                    {onrampError}
+                  </p>
+                )}
+
+                <button
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#3b82f6] px-4 py-3.5 font-bold text-white transition-colors hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={paymentRegion === "NG" && (!ngnAmount || ngnAmountIsBelowMinimum)}
+                  onClick={() => void continueToOnramp()}
+                  type="button"
+                >
+                  Continue to payment
+                  <ChevronRight aria-hidden="true" size={18} />
+                </button>
+              </div>
             </>
           )}
 
