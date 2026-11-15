@@ -198,7 +198,9 @@ export default function CustomDepositModal({
 
     if (paymentRegion === "NG") {
       if (!Number.isFinite(parsedNgnAmount) || parsedNgnAmount < minimumNgnDeposit) {
-        setOnrampError("The minimum deposit is ₦13,000 to swap for USDC on the Base network.");
+        setOnrampError(
+          "Minimum transaction is ₦13,000 (or equivalent) to secure Base network liquidity.",
+        );
         return;
       }
 
