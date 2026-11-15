@@ -23,6 +23,7 @@ import {
   type Address,
 } from "viem";
 import { base } from "wagmi/chains";
+import { resolveProfileWalletAddress } from "@/lib/profile-wallet";
 import {
   AlertCircle,
   ArrowLeft,
@@ -117,6 +118,7 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
   const [destinationAddress, setDestinationAddress] = useState("");
   const [amount, setAmount] = useState("");
   const [sendError, setSendError] = useState("");
+  const [fiatWithdrawalError, setFiatWithdrawalError] = useState("");
   const [transactionHash, setTransactionHash] = useState("");
   const [assetSnapshot, setAssetSnapshot] = useState<{
     address: string;
@@ -328,6 +330,33 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
+  useEffect(() => {
+    if (!isAppKitConnected || !appKitAddress) return;
+
+    let active = true;
+    void resolveProfileWalletAddress(appKitAddress)
+      .then((profileAddress) => {
+        if (!active) return;
+        setFiatWithdrawalError(
+          profileAddress && profileAddress.toLowerCase() !== appKitAddress.toLowerCase()
+            ? "Your connected wallet does not match the wallet saved to your profile."
+            : "",
+        );
+      })
+      .catch((error: unknown) => {
+        console.error("Unable to sync the connected wallet to the profile:", error);
+        if (active) {
+          setFiatWithdrawalError(
+            error instanceof Error ? error.message : "Unable to save your connected wallet.",
+          );
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [appKitAddress, isAppKitConnected]);
+
   const returnToMethods = () => {
     setScreen("methods");
     setSendError("");
@@ -336,6 +365,31 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
   const openReview = () => {
     setSendError("");
     setScreen("review");
+  };
+
+  const openFiatWithdrawal = async () => {
+    setFiatWithdrawalError("");
+    try {
+      const profileAddress = await resolveProfileWalletAddress(appKitAddress);
+      if (
+        profileAddress &&
+        appKitAddress &&
+        profileAddress.toLowerCase() !== appKitAddress.toLowerCase()
+      ) {
+        throw new Error("Your connected wallet does not match the wallet saved to your profile.");
+      }
+      if (!profileAddress && (!isAppKitConnected || !appKitAddress)) {
+        await open({ view: "Connect" });
+        return;
+      }
+
+      await open({ view: "Account" });
+    } catch (error) {
+      console.error("Unable to resolve the profile wallet for withdrawal:", error);
+      setFiatWithdrawalError(
+        error instanceof Error ? error.message : "Unable to load your profile wallet.",
+      );
+    }
   };
 
   const handleSend = async () => {
@@ -419,7 +473,7 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
               <div className="space-y-3">
                 <button
                   className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] sm:p-5"
-                  onClick={() => void open({ view: "Account" })}
+                  onClick={() => void openFiatWithdrawal()}
                   type="button"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#0d1527] text-white transition-colors group-hover:border-blue-500/50">
@@ -466,6 +520,11 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
                   <ChevronRight aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={20} />
                 </button>
               </div>
+              {fiatWithdrawalError && (
+                <p className="mt-3 text-sm text-red-300" role="alert">
+                  {fiatWithdrawalError}
+                </p>
+              )}
             </>
           )}
 

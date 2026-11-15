@@ -7,7 +7,8 @@ This directory contains custom-built crypto interface components that replace th
 ### 1. CustomSendModal.tsx
 **Purpose:** A self-contained withdrawal workflow with fiat-provider, internal-transfer, and on-chain transfer options.
 **Features:**
-- Select-method screen with AppKit account management for fiat withdrawal, on-chain transfers, and RTR-user transfers
+- Select-method screen checks the authenticated profile wallet and backfills an empty profile from a connected AppKit wallet before fiat withdrawal
+- AppKit account management for fiat withdrawal, on-chain transfers, and RTR-user transfers
 - Fiat withdrawal opens Reown AppKit's native Account view
 - Internal transfer placeholder
 - Dynamic on-chain asset selection from the connected Reown wallet's positive-balance Base assets
@@ -51,7 +52,7 @@ const [showSwapModal, setShowSwapModal] = useState(false);
 ### 3. CustomDepositModal.tsx
 **Purpose:** Receive funds & fiat on-ramp
 **Features:**
-- Fiat deposit requires a connected wallet, checks a ₦13,000 minimum for Nigeria, then preloads NGN and the entered amount into Reown AppKit
+- Fiat deposit checks the authenticated profile wallet, backfills an empty profile from a connected AppKit wallet, checks a ₦13,000 minimum for Nigeria, then preloads NGN and the entered amount into Reown AppKit
 - The connected wallet address is supplied automatically by AppKit to the on-ramp provider
 - Wallet address display with one-click copy
 - Dynamically generated QR code for wallet-to-wallet transfers

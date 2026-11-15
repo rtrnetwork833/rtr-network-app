@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAppKit, useAppKitAccount } from "@reown/appkit/react";
 import { OnRampController } from "@reown/appkit-controllers";
+import { resolveProfileWalletAddress } from "@/lib/profile-wallet";
 import {
   ArrowDownCircle,
   ArrowLeft,
@@ -45,6 +46,7 @@ export default function CustomDepositModal({
   const [onrampError, setOnrampError] = useState("");
   const [paymentRegion, setPaymentRegion] = useState<"NG" | "other">("NG");
   const [ngnAmount, setNgnAmount] = useState("");
+  const [paymentWalletAddress, setPaymentWalletAddress] = useState("");
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const depositAddress = userWalletAddress || placeholderWalletAddress;
   const { open } = useAppKit();
@@ -87,6 +89,36 @@ export default function CustomDepositModal({
     };
   }, [onClose]);
 
+  useEffect(() => {
+    if (!isConnected || !appKitAddress) return;
+
+    let active = true;
+    void resolveProfileWalletAddress(appKitAddress)
+      .then((profileAddress) => {
+        if (!active) return;
+        if (
+          profileAddress &&
+          profileAddress.toLowerCase() !== appKitAddress.toLowerCase()
+        ) {
+          setOnrampError("Your connected wallet does not match the wallet saved to your profile.");
+          return;
+        }
+        setPaymentWalletAddress(profileAddress ?? "");
+      })
+      .catch((error: unknown) => {
+        console.error("Unable to sync the connected wallet to the profile:", error);
+        if (active) {
+          setOnrampError(
+            error instanceof Error ? error.message : "Unable to save your connected wallet.",
+          );
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [appKitAddress, isConnected]);
+
   useEffect(
     () => () => {
       if (copyTimeout.current) clearTimeout(copyTimeout.current);
@@ -116,20 +148,53 @@ export default function CustomDepositModal({
   const openFiatDeposit = async () => {
     setOnrampError("");
     try {
-      if (!isConnected || !appKitAddress) {
+      const profileAddress = await resolveProfileWalletAddress(appKitAddress);
+      if (
+        profileAddress &&
+        appKitAddress &&
+        profileAddress.toLowerCase() !== appKitAddress.toLowerCase()
+      ) {
+        throw new Error("Your connected wallet does not match the wallet saved to your profile.");
+      }
+
+      setPaymentWalletAddress(profileAddress ?? "");
+      if (!profileAddress && (!isConnected || !appKitAddress)) {
         await open({ view: "Connect" });
         return;
       }
 
       updateView("fiat");
     } catch (error) {
-      console.error("Failed to open Reown wallet connection:", error);
-      setOnrampError(error instanceof Error ? error.message : "Unable to connect a wallet.");
+      console.error("Unable to resolve the profile wallet for deposit:", error);
+      setOnrampError(error instanceof Error ? error.message : "Unable to load your profile wallet.");
     }
   };
 
   const continueToOnramp = async () => {
     setOnrampError("");
+    let profileAddress: string | null;
+    try {
+      profileAddress = await resolveProfileWalletAddress(appKitAddress);
+      if (
+        profileAddress &&
+        appKitAddress &&
+        profileAddress.toLowerCase() !== appKitAddress.toLowerCase()
+      ) {
+        throw new Error("Your connected wallet does not match the wallet saved to your profile.");
+      }
+      if (!profileAddress) {
+        if (!isConnected || !appKitAddress) {
+          await open({ view: "Connect" });
+          return;
+        }
+        throw new Error("Unable to resolve a wallet address for this deposit.");
+      }
+      setPaymentWalletAddress(profileAddress);
+    } catch (error) {
+      console.error("Unable to resolve the profile wallet for on-ramp:", error);
+      setOnrampError(error instanceof Error ? error.message : "Unable to load your profile wallet.");
+      return;
+    }
 
     if (paymentRegion === "NG") {
       if (!Number.isFinite(parsedNgnAmount) || parsedNgnAmount < minimumNgnDeposit) {
@@ -318,11 +383,11 @@ export default function CustomDepositModal({
                   </div>
                 )}
 
-                {appKitAddress && (
+                {paymentWalletAddress && (
                   <p className="rounded-xl border border-[#1e293b] bg-[#16223f]/70 p-3 text-xs leading-5 text-[#94a3b8]">
                     Funds will be sent to your connected wallet{" "}
                     <span className="font-mono text-slate-200">
-                      {appKitAddress.slice(0, 6)}...{appKitAddress.slice(-4)}
+                      {paymentWalletAddress.slice(0, 6)}...{paymentWalletAddress.slice(-4)}
                     </span>
                     . No address entry is needed.
                   </p>
