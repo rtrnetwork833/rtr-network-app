@@ -29,7 +29,7 @@ const wagmiAdapter = new WagmiAdapter({
   })
 });
 
-createAppKit({
+const appKit = createAppKit({
   adapters: [wagmiAdapter],
   networks,
   metadata,
@@ -46,6 +46,7 @@ createAppKit({
   },
   themeMode: 'dark'
 });
+appKit.setConnectMethodsOrder(['email', 'social', 'wallet']);
 
 function SessionMonitor() {
   const { disconnect } = useDisconnect();

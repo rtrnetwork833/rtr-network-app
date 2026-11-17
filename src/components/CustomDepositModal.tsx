@@ -61,6 +61,7 @@ export default function CustomDepositModal({
     open: isAppKitModalOpen,
   } = useAppKitState();
   const isAppKitInitializing = !appKitInitialized || appKitLoading;
+  const isWalletSessionPending = status === "connecting" || status === "reconnecting";
   const parsedNgnAmount = Number(ngnAmount);
   const ngnAmountIsBelowMinimum =
     paymentRegion === "NG" &&
@@ -213,6 +214,10 @@ export default function CustomDepositModal({
       setOnrampError("The secure payment terminal is still initializing. Please try again shortly.");
       return;
     }
+    if (isWalletSessionPending) {
+      setOnrampError("Your secure wallet session is still connecting. Please wait a moment.");
+      return;
+    }
 
     setIsVerifyingWallet(true);
     if (isConnected && appKitAddress) return;
@@ -334,12 +339,12 @@ export default function CustomDepositModal({
               <div className="space-y-3">
                 <button
                   className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] disabled:cursor-not-allowed disabled:opacity-70 sm:p-5"
-                  disabled={isVerifyingWallet || isAppKitInitializing}
+                  disabled={isVerifyingWallet || isAppKitInitializing || isWalletSessionPending}
                   onClick={() => void openFiatDeposit()}
                   type="button"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#0d1527] text-white transition-colors group-hover:border-blue-500/50">
-                    {isVerifyingWallet || isAppKitInitializing ? (
+                    {isVerifyingWallet || isAppKitInitializing || isWalletSessionPending ? (
                       <LoaderCircle aria-hidden="true" className="animate-spin text-blue-300" size={23} />
                     ) : (
                       <WalletCards aria-hidden="true" size={23} strokeWidth={1.8} />
@@ -352,12 +357,14 @@ export default function CustomDepositModal({
                         ? "Verifying secure wallet gateway..."
                         : isAppKitInitializing
                           ? "Initializing secure payment terminal..."
-                          : status === "reconnecting"
+                          : isWalletSessionPending
                             ? "Restoring your secure wallet session..."
-                            : "Pay via Bank Transfer, Card, Google Pay, Apple Pay and more"}
+                            : isConnected
+                              ? "Pay via Bank Transfer, Card, Google Pay, Apple Pay and more"
+                              : "Continue with email, social sign-in, or a connected wallet"}
                     </span>
                   </span>
-                  {isVerifyingWallet || isAppKitInitializing ? (
+                  {isVerifyingWallet || isAppKitInitializing || isWalletSessionPending ? (
                     <LoaderCircle aria-hidden="true" className="animate-spin text-blue-300" size={20} />
                   ) : (
                     <ChevronRight aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={20} />
