@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useAppKit, useAppKitAccount } from "@reown/appkit/react";
+import { useAppKit, useAppKitAccount, useAppKitState } from "@reown/appkit/react";
 import { OnRampController } from "@reown/appkit-controllers";
 import { resolveProfileWalletAddress } from "@/lib/profile-wallet";
 import {
@@ -11,6 +11,7 @@ import {
   Check,
   ChevronRight,
   Copy,
+  LoaderCircle,
   WalletCards,
   X,
 } from "lucide-react";
@@ -47,10 +48,19 @@ export default function CustomDepositModal({
   const [paymentRegion, setPaymentRegion] = useState<"NG" | "other">("NG");
   const [ngnAmount, setNgnAmount] = useState("");
   const [paymentWalletAddress, setPaymentWalletAddress] = useState("");
+  const [isVerifyingWallet, setIsVerifyingWallet] = useState(false);
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectModalWasOpened = useRef(false);
+  const walletVerificationRequest = useRef(0);
   const depositAddress = userWalletAddress || placeholderWalletAddress;
   const { open } = useAppKit();
-  const { address: appKitAddress, isConnected } = useAppKitAccount();
+  const { address: appKitAddress, isConnected, status } = useAppKitAccount();
+  const {
+    initialized: appKitInitialized,
+    loading: appKitLoading,
+    open: isAppKitModalOpen,
+  } = useAppKitState();
+  const isAppKitInitializing = !appKitInitialized || appKitLoading;
   const parsedNgnAmount = Number(ngnAmount);
   const ngnAmountIsBelowMinimum =
     paymentRegion === "NG" &&
@@ -119,6 +129,58 @@ export default function CustomDepositModal({
     };
   }, [appKitAddress, isConnected]);
 
+  useEffect(() => {
+    if (!isVerifyingWallet) return;
+
+    if (isAppKitModalOpen) {
+      connectModalWasOpened.current = true;
+      return;
+    }
+
+    if (connectModalWasOpened.current && !isConnected) {
+      connectModalWasOpened.current = false;
+      setIsVerifyingWallet(false);
+      setOnrampError("Wallet verification was cancelled. Try again to continue with your deposit.");
+    }
+  }, [isAppKitModalOpen, isConnected, isVerifyingWallet]);
+
+  useEffect(() => {
+    if (!isVerifyingWallet || !isConnected || !appKitAddress) return;
+
+    let active = true;
+    const requestId = ++walletVerificationRequest.current;
+    void resolveProfileWalletAddress(appKitAddress)
+      .then((profileAddress) => {
+        if (!active || requestId !== walletVerificationRequest.current) return;
+        if (!profileAddress) {
+          throw new Error("Unable to resolve a wallet address for this deposit.");
+        }
+        if (
+          profileAddress.toLowerCase() !== appKitAddress.toLowerCase() ||
+          (userWalletAddress &&
+            userWalletAddress.toLowerCase() !== appKitAddress.toLowerCase())
+        ) {
+          throw new Error("The connected wallet does not match the wallet saved to your profile.");
+        }
+
+        connectModalWasOpened.current = false;
+        setPaymentWalletAddress(profileAddress);
+        updateView("fiat");
+        setIsVerifyingWallet(false);
+      })
+      .catch((error: unknown) => {
+        if (!active || requestId !== walletVerificationRequest.current) return;
+        console.error("Unable to verify the connected wallet for deposit:", error);
+        connectModalWasOpened.current = false;
+        setOnrampError(error instanceof Error ? error.message : "Unable to verify your wallet.");
+        setIsVerifyingWallet(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [appKitAddress, isConnected, isVerifyingWallet, userWalletAddress]);
+
   useEffect(
     () => () => {
       if (copyTimeout.current) clearTimeout(copyTimeout.current);
@@ -147,31 +209,31 @@ export default function CustomDepositModal({
 
   const openFiatDeposit = async () => {
     setOnrampError("");
+    if (isAppKitInitializing) {
+      setOnrampError("The secure payment terminal is still initializing. Please try again shortly.");
+      return;
+    }
+
+    setIsVerifyingWallet(true);
+    if (isConnected && appKitAddress) return;
+
     try {
-      const profileAddress = await resolveProfileWalletAddress(appKitAddress);
-      if (
-        profileAddress &&
-        appKitAddress &&
-        profileAddress.toLowerCase() !== appKitAddress.toLowerCase()
-      ) {
-        throw new Error("Your connected wallet does not match the wallet saved to your profile.");
-      }
-
-      setPaymentWalletAddress(profileAddress ?? "");
-      if (!profileAddress && (!isConnected || !appKitAddress)) {
-        await open({ view: "Connect" });
-        return;
-      }
-
-      updateView("fiat");
+      await open({ view: "Connect" });
     } catch (error) {
-      console.error("Unable to resolve the profile wallet for deposit:", error);
-      setOnrampError(error instanceof Error ? error.message : "Unable to load your profile wallet.");
+      console.error("Failed to open AppKit wallet verification:", error);
+      setOnrampError(error instanceof Error ? error.message : "Unable to verify your wallet.");
+      setIsVerifyingWallet(false);
     }
   };
 
   const continueToOnramp = async () => {
     setOnrampError("");
+    if (!isConnected || !appKitAddress) {
+      updateView("methods");
+      setOnrampError("Your wallet session needs verification. Select Fiat Deposit to reconnect securely.");
+      return;
+    }
+
     let profileAddress: string | null;
     try {
       profileAddress = await resolveProfileWalletAddress(appKitAddress);
@@ -183,10 +245,6 @@ export default function CustomDepositModal({
         throw new Error("Your connected wallet does not match the wallet saved to your profile.");
       }
       if (!profileAddress) {
-        if (!isConnected || !appKitAddress) {
-          await open({ view: "Connect" });
-          return;
-        }
         throw new Error("Unable to resolve a wallet address for this deposit.");
       }
       setPaymentWalletAddress(profileAddress);
@@ -275,20 +333,35 @@ export default function CustomDepositModal({
 
               <div className="space-y-3">
                 <button
-                  className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] sm:p-5"
+                  className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] disabled:cursor-not-allowed disabled:opacity-70 sm:p-5"
+                  disabled={isVerifyingWallet || isAppKitInitializing}
                   onClick={() => void openFiatDeposit()}
                   type="button"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#0d1527] text-white transition-colors group-hover:border-blue-500/50">
-                    <WalletCards aria-hidden="true" size={23} strokeWidth={1.8} />
+                    {isVerifyingWallet || isAppKitInitializing ? (
+                      <LoaderCircle aria-hidden="true" className="animate-spin text-blue-300" size={23} />
+                    ) : (
+                      <WalletCards aria-hidden="true" size={23} strokeWidth={1.8} />
+                    )}
                   </span>
-                  <span className="min-w-0 flex-1">
+                  <span aria-live="polite" className="min-w-0 flex-1">
                     <span className="block font-semibold text-white">Fiat Deposit</span>
                     <span className="mt-1 block text-sm leading-5 text-[#94a3b8]">
-                      Pay via Bank Transfer, Card, Google Pay, Apple Pay and more
+                      {isVerifyingWallet
+                        ? "Verifying secure wallet gateway..."
+                        : isAppKitInitializing
+                          ? "Initializing secure payment terminal..."
+                          : status === "reconnecting"
+                            ? "Restoring your secure wallet session..."
+                            : "Pay via Bank Transfer, Card, Google Pay, Apple Pay and more"}
                     </span>
                   </span>
-                  <ChevronRight aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={20} />
+                  {isVerifyingWallet || isAppKitInitializing ? (
+                    <LoaderCircle aria-hidden="true" className="animate-spin text-blue-300" size={20} />
+                  ) : (
+                    <ChevronRight aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={20} />
+                  )}
                 </button>
 
                 <button

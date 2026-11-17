@@ -35,9 +35,14 @@ createAppKit({
   metadata,
   projectId,
   defaultNetwork: base,
+  defaultAccountTypes: {
+    eip155: 'smartAccount',
+  },
   features: {
     onramp: true,
     swaps: true,
+    email: true,
+    socials: ['google', 'apple', 'github', 'facebook', 'x', 'discord', 'farcaster'],
   },
   themeMode: 'dark'
 });
@@ -51,9 +56,8 @@ function SessionMonitor() {
 
     const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      // On sign out or token refresh (session switch), disconnect wallet
-      if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
         if (isConnected) {
           disconnect();
         }
