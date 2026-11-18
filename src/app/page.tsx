@@ -37,7 +37,7 @@ import type { User } from "@supabase/supabase-js";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/client";
-import { useBalance, useReadContract, useDisconnect } from 'wagmi';
+import { useBalance, useReadContract } from 'wagmi';
 import { formatUnits, getAddress, isAddress, type Address } from 'viem';
 import { base } from 'wagmi/chains';
 import { saveProfileWalletAddress } from "@/lib/wallet-profile";
@@ -183,7 +183,6 @@ export default function Home() {
   const pathname = usePathname();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { disconnect } = useDisconnect();
   const [user, setUser] = useState<User | null>(null);
   const [activeWalletAddress, setActiveWalletAddress] = useState<Address | null>(null);
   const [walletProfileLoading, setWalletProfileLoading] = useState(true);
@@ -485,27 +484,23 @@ export default function Home() {
 
     try {
       await supabase.auth.signOut();
-      await disconnect();
     } finally {
       window.localStorage.removeItem("active_tab");
       window.localStorage.removeItem("rtr-deposit-modal-open");
       window.localStorage.removeItem("rtr-deposit-modal-step");
+      window.localStorage.removeItem("saved_wallet_address");
       window.localStorage.removeItem(LEGACY_AUTH_EMAIL_STORAGE_KEY);
       window.localStorage.removeItem("rtr-balance-visible");
       window.sessionStorage.removeItem("rtr-auth-view");
       window.sessionStorage.removeItem("rtr-signup-verification");
       window.sessionStorage.removeItem("rtr-signup-email");
-      document.cookie.split(";").forEach((cookie) => {
-        const name = cookie.split("=")[0]?.trim();
-        if (name) document.cookie = `${name}=; Max-Age=0; path=/`;
-      });
       window.location.replace("/login");
     }
   }
 
   if (splashVisible) return <SplashGate exiting={splashExiting} />;
   if (!user) return <AuthOverlay />;
-  if (pathname === "/settings") return <AccountSettings profileName={profileName} avatar={avatar} onBack={() => router.push("/")} onSignOut={() => { disconnect(); void signOut(); }} />;
+  if (pathname === "/settings") return <AccountSettings profileName={profileName} avatar={avatar} onBack={() => router.push("/")} onSignOut={signOut} />;
 
   return (
     <main className="app-shell" data-build={BUILD_TIMESTAMP}>

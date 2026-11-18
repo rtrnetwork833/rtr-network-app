@@ -118,7 +118,6 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
   const [destinationAddress, setDestinationAddress] = useState("");
   const [amount, setAmount] = useState("");
   const [sendError, setSendError] = useState("");
-  const [isLoggingWithdrawal, setIsLoggingWithdrawal] = useState(false);
   const [transactionHash, setTransactionHash] = useState("");
   const [assetSnapshot, setAssetSnapshot] = useState<{
     address: string;
@@ -340,22 +339,8 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
     setScreen("review");
   };
 
-  const handleFiatWithdrawal = async () => {
-    setSendError("");
-    setIsLoggingWithdrawal(true);
-    try {
-      await createProfileTransaction({
-        transactionType: "withdrawal",
-        status: "pending",
-        platform: "Native",
-      });
-      await open({ view: "Account" });
-    } catch (error) {
-      console.error("Unable to open the withdrawal flow:", error);
-      setSendError(error instanceof Error ? error.message : "Unable to open the withdrawal flow.");
-    } finally {
-      setIsLoggingWithdrawal(false);
-    }
+  const handleFiatWithdrawal = () => {
+    setSendError("Fiat withdrawals are not available in the configured AppKit providers. Use On Chain to send crypto.");
   };
 
   const handleSend = async () => {
@@ -450,29 +435,20 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
               </div>
               <div className="space-y-3">
                 <button
-                  className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] disabled:cursor-not-allowed disabled:opacity-70 sm:p-5"
-                  disabled={isLoggingWithdrawal}
+                  className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] sm:p-5"
                   onClick={() => void handleFiatWithdrawal()}
                   type="button"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#0d1527] text-white transition-colors group-hover:border-blue-500/50">
-                    {isLoggingWithdrawal ? (
-                      <LoaderCircle aria-hidden="true" className="animate-spin" size={23} />
-                    ) : (
-                      <CreditCard aria-hidden="true" size={23} strokeWidth={1.8} />
-                    )}
+                    <CreditCard aria-hidden="true" size={23} strokeWidth={1.8} />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block font-semibold text-white">Fiat Withdrawal</span>
                     <span className="mt-1 block text-sm leading-5 text-[#94a3b8]">
-                      Withdraw to Bank Transfer, Card, or local mobile wallets instantly
+                      Fiat off-ramp is not enabled for this AppKit project yet
                     </span>
                   </span>
-                  {isLoggingWithdrawal ? (
-                    <LoaderCircle aria-hidden="true" className="animate-spin text-blue-300" size={20} />
-                  ) : (
-                    <ChevronRight aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={20} />
-                  )}
+                  <ChevronRight aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={20} />
                 </button>
 
                 <button
