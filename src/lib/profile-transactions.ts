@@ -1,23 +1,11 @@
 export type TransactionType = "deposit" | "withdrawal" | "swap";
 export type TransactionPlatform = "Meld" | "Native";
-export type TransactionStatus = "pending" | "completed" | "failed";
+export type TransactionStatus = "pending" | "completed";
 
 interface CreateTransactionInput {
-  type: TransactionType;
+  transactionType: TransactionType;
   status: TransactionStatus;
   platform: TransactionPlatform;
-  amount: number;
-  tokenSymbol: string;
-}
-
-interface UpdateTransactionInput {
-  status: TransactionStatus;
-  txHash?: string;
-}
-
-interface TransactionResponse {
-  transaction?: { id: string };
-  error?: string;
 }
 
 async function getResponseError(response: Response, fallback: string) {
@@ -43,23 +31,13 @@ export async function createProfileTransaction(input: CreateTransactionInput) {
     throw new Error(await getResponseError(response, "Unable to record this transaction."));
   }
 
-  const body = await response.json() as TransactionResponse;
-  if (!body.transaction?.id) {
+  const body: unknown = await response.json();
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    !("logged" in body) ||
+    body.logged !== true
+  ) {
     throw new Error("The transaction logging response was invalid.");
-  }
-  return body.transaction.id;
-}
-
-export async function updateProfileTransaction(
-  transactionId: string,
-  input: UpdateTransactionInput,
-) {
-  const response = await fetch("/api/profile/transactions", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ transactionId, ...input }),
-  });
-  if (!response.ok) {
-    throw new Error(await getResponseError(response, "Unable to update transaction history."));
   }
 }

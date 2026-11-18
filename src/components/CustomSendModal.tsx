@@ -23,7 +23,7 @@ import {
   type Address,
 } from "viem";
 import { base } from "wagmi/chains";
-import { createProfileTransaction, updateProfileTransaction } from "@/lib/profile-transactions";
+import { createProfileTransaction } from "@/lib/profile-transactions";
 import {
   AlertCircle,
   ArrowLeft,
@@ -343,24 +343,14 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
   const handleFiatWithdrawal = async () => {
     setSendError("");
     setIsLoggingWithdrawal(true);
-    let transactionId: string | undefined;
     try {
-      transactionId = await createProfileTransaction({
-        type: "withdrawal",
+      await createProfileTransaction({
+        transactionType: "withdrawal",
         status: "pending",
         platform: "Native",
-        amount: 0,
-        tokenSymbol: "FIAT",
       });
       await open({ view: "Account" });
     } catch (error) {
-      if (transactionId) {
-        try {
-          await updateProfileTransaction(transactionId, { status: "failed" });
-        } catch (updateError) {
-          console.error("Unable to mark the failed withdrawal intent:", updateError);
-        }
-      }
       console.error("Unable to open the withdrawal flow:", error);
       setSendError(error instanceof Error ? error.message : "Unable to open the withdrawal flow.");
     } finally {
@@ -393,49 +383,32 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
         setSendError("Enter a valid amount before sending.");
         return;
       }
-      const transactionId = await createProfileTransaction({
-        type: "withdrawal",
+      await createProfileTransaction({
+        transactionType: "withdrawal",
         status: "pending",
         platform: "Native",
-        amount: amountNumber,
-        tokenSymbol: selectedToken.symbol,
       });
 
       let hash: Hash;
-      try {
-        if (selectedToken.isNative) {
-          hash = await sendTransactionAsync({
-            to: destination,
-            value: amountValue,
-            chainId: base.id,
-          });
-        } else {
-          if (!selectedToken.address) throw new Error("The selected token contract is unavailable.");
-          hash = await writeContractAsync({
-            address: selectedToken.address,
-            abi: erc20Abi,
-            functionName: "transfer",
-            args: [destination, amountValue],
-            chainId: base.id,
-          });
-        }
-      } catch (error) {
-        try {
-          await updateProfileTransaction(transactionId, { status: "failed" });
-        } catch (updateError) {
-          console.error("Unable to mark the failed send transaction:", updateError);
-        }
-        throw error;
+      if (selectedToken.isNative) {
+        hash = await sendTransactionAsync({
+          to: destination,
+          value: amountValue,
+          chainId: base.id,
+        });
+      } else {
+        if (!selectedToken.address) throw new Error("The selected token contract is unavailable.");
+        hash = await writeContractAsync({
+          address: selectedToken.address,
+          abi: erc20Abi,
+          functionName: "transfer",
+          args: [destination, amountValue],
+          chainId: base.id,
+        });
       }
 
       setTransactionHash(hash);
       setScreen("success");
-      try {
-        await updateProfileTransaction(transactionId, { status: "completed", txHash: hash });
-      } catch (error) {
-        console.error("Transaction sent but history update failed:", error);
-        setSendError("Transaction sent successfully, but its history status could not be updated.");
-      }
     } catch (error) {
       console.error("Transaction failed:", error);
       setSendError(error instanceof Error ? error.message : "Transaction failed. Please try again.");

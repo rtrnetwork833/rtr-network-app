@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { X, ExternalLink, Search, Clock, ArrowDown, ArrowUp, RefreshCw } from "lucide-react";
+import { X, Search, ArrowDown, ArrowUp, RefreshCw } from "lucide-react";
 
 interface CustomActivityLedgerProps {
   activeWalletAddress: `0x${string}` | null;
@@ -10,20 +10,16 @@ interface CustomActivityLedgerProps {
 }
 
 interface TransactionRecord {
-  id: string;
+  user_id: string;
   wallet_address: string;
-  type: "deposit" | "swap" | "withdrawal";
-  amount: string | number;
-  token_symbol: string;
-  status: "completed" | "pending" | "failed";
-  tx_hash: string | null;
-  created_at: string;
-  platform?: "Meld" | "Native";
+  transaction_type: "deposit" | "swap" | "withdrawal";
+  status: "completed" | "pending";
+  platform: "Meld" | "Native";
 }
 
 export default function CustomActivityLedger({ activeWalletAddress, onClose }: CustomActivityLedgerProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterType, setFilterType] = useState<"all" | TransactionRecord["type"]>("all");
+  const [filterType, setFilterType] = useState<"all" | TransactionRecord["transaction_type"]>("all");
   const transactionQuery = useQuery({
     queryKey: ["profile-transactions", activeWalletAddress],
     enabled: Boolean(activeWalletAddress),
@@ -38,22 +34,20 @@ export default function CustomActivityLedger({ activeWalletAddress, onClose }: C
 
   const filteredTransactions = transactions.filter((transaction) => {
     const query = searchQuery.toLowerCase();
-    const matchesSearch = (transaction.tx_hash ?? "").toLowerCase().includes(query)
-      || transaction.wallet_address.toLowerCase().includes(query);
-    const matchesFilter = filterType === "all" || transaction.type === filterType;
+    const matchesSearch = transaction.wallet_address.toLowerCase().includes(query)
+      || transaction.platform.toLowerCase().includes(query);
+    const matchesFilter = filterType === "all" || transaction.transaction_type === filterType;
     return matchesSearch && matchesFilter;
   });
 
-  const formatTimestamp = (timestamp: string) => new Date(timestamp).toLocaleString();
   const getStatusColor = (status: TransactionRecord["status"]) => {
     switch (status) {
       case "completed": return "text-emerald-400 bg-emerald-500/10 border-emerald-500/30";
       case "pending": return "text-yellow-400 bg-yellow-500/10 border-yellow-500/30";
-      case "failed": return "text-red-400 bg-red-500/10 border-red-500/30";
     }
   };
 
-  const getTypeIcon = (type: TransactionRecord["type"]) => {
+  const getTypeIcon = (type: TransactionRecord["transaction_type"]) => {
     switch (type) {
       case "deposit": return <ArrowDown size={16} className="text-emerald-400" />;
       case "withdrawal": return <ArrowUp size={16} className="text-red-400" />;
@@ -78,7 +72,7 @@ export default function CustomActivityLedger({ activeWalletAddress, onClose }: C
               type="text"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search by wallet or hash..."
+              placeholder="Search by wallet or platform..."
               className="w-full bg-[#1a2b4c] border border-blue-900/30 rounded-lg pl-10 pr-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors text-sm"
             />
           </div>
@@ -118,32 +112,21 @@ export default function CustomActivityLedger({ activeWalletAddress, onClose }: C
           ) : filteredTransactions.length === 0 ? (
             <div className="text-center py-8 text-slate-400">No transactions found</div>
           ) : (
-            filteredTransactions.map((transaction) => (
-              <div key={transaction.id} className="bg-[#1a2b4c] border border-blue-900/30 rounded-xl p-4 hover:border-blue-500/50 transition-colors">
+            filteredTransactions.map((transaction, index) => (
+              <div key={`${transaction.user_id}-${transaction.transaction_type}-${transaction.wallet_address}-${transaction.platform}-${index}`} className="bg-[#1a2b4c] border border-blue-900/30 rounded-xl p-4 hover:border-blue-500/50 transition-colors">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-[#11192e] border border-blue-900/30 flex items-center justify-center">
-                      {getTypeIcon(transaction.type)}
+                      {getTypeIcon(transaction.transaction_type)}
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-white font-bold capitalize">{transaction.type}</span>
-                        <span className="text-slate-400 text-sm">{transaction.token_symbol}</span>
+                        <span className="text-white font-bold capitalize">{transaction.transaction_type}</span>
+                        <span className="text-slate-400 text-sm">{transaction.platform}</span>
                       </div>
                       <div className="text-slate-500 text-xs font-mono">
                         {transaction.wallet_address.slice(0, 6)}...{transaction.wallet_address.slice(-4)}
                       </div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-white font-bold">
-                      {transaction.status === "pending" && Number(transaction.amount) === 0
-                        ? "Awaiting provider"
-                        : `${Number(transaction.amount).toLocaleString()} ${transaction.token_symbol}`}
-                    </div>
-                    <div className="flex items-center gap-1 text-slate-400 text-xs">
-                      <Clock size={12} />
-                      {formatTimestamp(transaction.created_at)}
                     </div>
                   </div>
                 </div>
@@ -151,17 +134,6 @@ export default function CustomActivityLedger({ activeWalletAddress, onClose }: C
                   <span className={`px-2 py-1 rounded text-xs font-bold border ${getStatusColor(transaction.status)}`}>
                     {transaction.status}
                   </span>
-                  {transaction.tx_hash && (
-                    <a
-                      href={`https://basescan.org/tx/${transaction.tx_hash}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-blue-400 text-xs hover:text-blue-300 transition-colors"
-                    >
-                      <span className="font-mono">{transaction.tx_hash.slice(0, 8)}...{transaction.tx_hash.slice(-6)}</span>
-                      <ExternalLink size={12} />
-                    </a>
-                  )}
                 </div>
               </div>
             ))

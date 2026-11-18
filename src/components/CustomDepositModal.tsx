@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAppKit, useAppKitAccount, useAppKitState } from "@reown/appkit/react";
 import { resolveProfileWalletAddress } from "@/lib/profile-wallet";
-import { createProfileTransaction, updateProfileTransaction } from "@/lib/profile-transactions";
+import { createProfileTransaction } from "@/lib/profile-transactions";
 import {
   ArrowDownCircle,
   ArrowLeft,
@@ -252,24 +252,14 @@ export default function CustomDepositModal({
     }
 
     setIsLoggingPayment(true);
-    let transactionId: string | undefined;
     try {
-      transactionId = await createProfileTransaction({
-        type: "deposit",
+      await createProfileTransaction({
+        transactionType: "deposit",
         status: "pending",
         platform: "Meld",
-        amount: 0,
-        tokenSymbol: "FIAT",
       });
       await open({ view: "OnRampProviders" });
     } catch (error) {
-      if (transactionId) {
-        try {
-          await updateProfileTransaction(transactionId, { status: "failed" });
-        } catch (updateError) {
-          console.error("Unable to mark the failed deposit intent:", updateError);
-        }
-      }
       console.error("Failed to open Reown on-ramp:", error);
       setOnrampError(error instanceof Error ? error.message : "Unable to open the on-ramp.");
     } finally {
