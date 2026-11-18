@@ -18,6 +18,7 @@ interface TransactionRecord {
   status: "completed" | "pending" | "failed";
   tx_hash: string | null;
   created_at: string;
+  platform?: "Meld" | "Native";
 }
 
 export default function CustomActivityLedger({ activeWalletAddress, onClose }: CustomActivityLedgerProps) {
@@ -27,7 +28,7 @@ export default function CustomActivityLedger({ activeWalletAddress, onClose }: C
     queryKey: ["profile-transactions", activeWalletAddress],
     enabled: Boolean(activeWalletAddress),
     queryFn: async () => {
-      const response = await fetch(`/api/profile/transactions?walletAddress=${encodeURIComponent(activeWalletAddress!)}`, { cache: "no-store" });
+      const response = await fetch("/api/profile/transactions", { cache: "no-store" });
       const body = await response.json() as { transactions?: TransactionRecord[]; error?: string };
       if (!response.ok) throw new Error(body.error ?? "Unable to load transaction history.");
       return body.transactions ?? [];
@@ -105,7 +106,9 @@ export default function CustomActivityLedger({ activeWalletAddress, onClose }: C
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-2">
-          {transactionQuery.isPending ? (
+          {!activeWalletAddress ? (
+            <div className="text-center py-8 text-slate-400">Link a wallet to view transaction history.</div>
+          ) : transactionQuery.isPending ? (
             <div className="text-center py-8 text-slate-400" role="status">
               <RefreshCw size={24} className="animate-spin mx-auto mb-2" />
               Loading transactions...
@@ -134,7 +137,9 @@ export default function CustomActivityLedger({ activeWalletAddress, onClose }: C
                   </div>
                   <div className="text-right">
                     <div className="text-white font-bold">
-                      {Number(transaction.amount).toLocaleString()} {transaction.token_symbol}
+                      {transaction.status === "pending" && Number(transaction.amount) === 0
+                        ? "Awaiting provider"
+                        : `${Number(transaction.amount).toLocaleString()} ${transaction.token_symbol}`}
                     </div>
                     <div className="flex items-center gap-1 text-slate-400 text-xs">
                       <Clock size={12} />

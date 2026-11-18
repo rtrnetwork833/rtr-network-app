@@ -23,6 +23,7 @@ import {
   type Address,
 } from "viem";
 import { base } from "wagmi/chains";
+import { createProfileTransaction, updateProfileTransaction } from "@/lib/profile-transactions";
 import {
   AlertCircle,
   ArrowLeft,
@@ -117,6 +118,7 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
   const [destinationAddress, setDestinationAddress] = useState("");
   const [amount, setAmount] = useState("");
   const [sendError, setSendError] = useState("");
+  const [isLoggingWithdrawal, setIsLoggingWithdrawal] = useState(false);
   const [transactionHash, setTransactionHash] = useState("");
   const [assetSnapshot, setAssetSnapshot] = useState<{
     address: string;
@@ -338,6 +340,34 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
     setScreen("review");
   };
 
+  const handleFiatWithdrawal = async () => {
+    setSendError("");
+    setIsLoggingWithdrawal(true);
+    let transactionId: string | undefined;
+    try {
+      transactionId = await createProfileTransaction({
+        type: "withdrawal",
+        status: "pending",
+        platform: "Native",
+        amount: 0,
+        tokenSymbol: "FIAT",
+      });
+      await open({ view: "Account" });
+    } catch (error) {
+      if (transactionId) {
+        try {
+          await updateProfileTransaction(transactionId, { status: "failed" });
+        } catch (updateError) {
+          console.error("Unable to mark the failed withdrawal intent:", updateError);
+        }
+      }
+      console.error("Unable to open the withdrawal flow:", error);
+      setSendError(error instanceof Error ? error.message : "Unable to open the withdrawal flow.");
+    } finally {
+      setIsLoggingWithdrawal(false);
+    }
+  };
+
   const handleSend = async () => {
     setSendError("");
     if (!walletSessionConnected || !selectedToken || !destination || amountValue === null || !validForm) {
@@ -358,25 +388,54 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
         return;
       }
 
-      let hash: Hash;
-      if (selectedToken.isNative) {
-        hash = await sendTransactionAsync({
-          to: destination,
-          value: amountValue,
-          chainId: base.id,
-        });
-      } else {
-        if (!selectedToken.address) throw new Error("The selected token contract is unavailable.");
-        hash = await writeContractAsync({
-          address: selectedToken.address,
-          abi: erc20Abi,
-          functionName: "transfer",
-          args: [destination, amountValue],
-          chainId: base.id,
-        });
+      const amountNumber = Number(amount);
+      if (!Number.isFinite(amountNumber)) {
+        setSendError("Enter a valid amount before sending.");
+        return;
       }
+      const transactionId = await createProfileTransaction({
+        type: "withdrawal",
+        status: "pending",
+        platform: "Native",
+        amount: amountNumber,
+        tokenSymbol: selectedToken.symbol,
+      });
+
+      let hash: Hash;
+      try {
+        if (selectedToken.isNative) {
+          hash = await sendTransactionAsync({
+            to: destination,
+            value: amountValue,
+            chainId: base.id,
+          });
+        } else {
+          if (!selectedToken.address) throw new Error("The selected token contract is unavailable.");
+          hash = await writeContractAsync({
+            address: selectedToken.address,
+            abi: erc20Abi,
+            functionName: "transfer",
+            args: [destination, amountValue],
+            chainId: base.id,
+          });
+        }
+      } catch (error) {
+        try {
+          await updateProfileTransaction(transactionId, { status: "failed" });
+        } catch (updateError) {
+          console.error("Unable to mark the failed send transaction:", updateError);
+        }
+        throw error;
+      }
+
       setTransactionHash(hash);
       setScreen("success");
+      try {
+        await updateProfileTransaction(transactionId, { status: "completed", txHash: hash });
+      } catch (error) {
+        console.error("Transaction sent but history update failed:", error);
+        setSendError("Transaction sent successfully, but its history status could not be updated.");
+      }
     } catch (error) {
       console.error("Transaction failed:", error);
       setSendError(error instanceof Error ? error.message : "Transaction failed. Please try again.");
@@ -418,12 +477,17 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
               </div>
               <div className="space-y-3">
                 <button
-                  className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] sm:p-5"
-                  onClick={() => void open({ view: "Account" })}
+                  className="group flex w-full items-center gap-4 rounded-2xl border border-[#1e293b] bg-[#16223f] p-4 text-left transition-all duration-200 hover:border-[#3b82f6] hover:bg-[#192949] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3b82f6] disabled:cursor-not-allowed disabled:opacity-70 sm:p-5"
+                  disabled={isLoggingWithdrawal}
+                  onClick={() => void handleFiatWithdrawal()}
                   type="button"
                 >
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] bg-[#0d1527] text-white transition-colors group-hover:border-blue-500/50">
-                    <CreditCard aria-hidden="true" size={23} strokeWidth={1.8} />
+                    {isLoggingWithdrawal ? (
+                      <LoaderCircle aria-hidden="true" className="animate-spin" size={23} />
+                    ) : (
+                      <CreditCard aria-hidden="true" size={23} strokeWidth={1.8} />
+                    )}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block font-semibold text-white">Fiat Withdrawal</span>
@@ -431,7 +495,11 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
                       Withdraw to Bank Transfer, Card, or local mobile wallets instantly
                     </span>
                   </span>
-                  <ChevronRight aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={20} />
+                  {isLoggingWithdrawal ? (
+                    <LoaderCircle aria-hidden="true" className="animate-spin text-blue-300" size={20} />
+                  ) : (
+                    <ChevronRight aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={20} />
+                  )}
                 </button>
 
                 <button
@@ -466,6 +534,9 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
                   <ChevronRight aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={20} />
                 </button>
               </div>
+              {screen === "methods" && sendError && (
+                <p className="mt-3 text-sm text-red-300" role="alert">{sendError}</p>
+              )}
             </>
           )}
 

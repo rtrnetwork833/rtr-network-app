@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAppKit, useAppKitAccount, useAppKitState } from "@reown/appkit/react";
-import { OnRampController } from "@reown/appkit-controllers";
 import { resolveProfileWalletAddress } from "@/lib/profile-wallet";
+import { createProfileTransaction, updateProfileTransaction } from "@/lib/profile-transactions";
 import {
   ArrowDownCircle,
   ArrowLeft,
@@ -26,9 +26,7 @@ interface CustomDepositModalProps {
 type DepositView = "methods" | "fiat" | "onchain";
 type CopyStatus = "idle" | "copied" | "error";
 
-const placeholderWalletAddress = "0x284bEa823901923481239841239841D7F2";
 const depositModalStepKey = "rtr-deposit-modal-step";
-const minimumNgnDeposit = 13_000;
 
 function getStoredDepositView(): DepositView {
   if (typeof window === "undefined") return "methods";
@@ -45,14 +43,13 @@ export default function CustomDepositModal({
   const [view, setView] = useState<DepositView>(getStoredDepositView);
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
   const [onrampError, setOnrampError] = useState("");
-  const [paymentRegion, setPaymentRegion] = useState<"NG" | "other">("NG");
-  const [ngnAmount, setNgnAmount] = useState("");
   const [paymentWalletAddress, setPaymentWalletAddress] = useState("");
   const [isVerifyingWallet, setIsVerifyingWallet] = useState(false);
+  const [isLoggingPayment, setIsLoggingPayment] = useState(false);
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const connectModalWasOpened = useRef(false);
   const walletVerificationRequest = useRef(0);
-  const depositAddress = userWalletAddress || placeholderWalletAddress;
+  const depositAddress = userWalletAddress;
   const { open } = useAppKit();
   const { address: appKitAddress, isConnected, status } = useAppKitAccount();
   const {
@@ -62,11 +59,6 @@ export default function CustomDepositModal({
   } = useAppKitState();
   const isAppKitInitializing = !appKitInitialized || appKitLoading;
   const isWalletSessionPending = status === "connecting" || status === "reconnecting";
-  const parsedNgnAmount = Number(ngnAmount);
-  const ngnAmountIsBelowMinimum =
-    paymentRegion === "NG" &&
-    ngnAmount !== "" &&
-    (!Number.isFinite(parsedNgnAmount) || parsedNgnAmount < minimumNgnDeposit);
 
   const updateView = (nextView: DepositView) => {
     setView(nextView);
@@ -84,7 +76,7 @@ export default function CustomDepositModal({
         margin: 2,
         errorCorrectionLevel: "M",
       }),
-    enabled: view === "onchain",
+    enabled: view === "onchain" && Boolean(depositAddress),
     staleTime: Infinity,
     retry: false,
   });
@@ -259,39 +251,29 @@ export default function CustomDepositModal({
       return;
     }
 
-    if (paymentRegion === "NG") {
-      if (!Number.isFinite(parsedNgnAmount) || parsedNgnAmount < minimumNgnDeposit) {
-        setOnrampError(
-          "Minimum transaction is ₦13,000 (or equivalent) to secure Base network liquidity.",
-        );
-        return;
-      }
-
-      try {
-        if (!OnRampController.state.paymentCurrencies.some((currency) => currency.id.toUpperCase() === "NGN")) {
-          await OnRampController.getAvailableCurrencies();
-        }
-        const ngnCurrency = OnRampController.state.paymentCurrencies.find(
-          (currency) => currency.id.toUpperCase() === "NGN",
-        );
-        if (!ngnCurrency) {
-          throw new Error("NGN is not currently available from the on-ramp provider.");
-        }
-
-        OnRampController.setPaymentCurrency(ngnCurrency);
-        OnRampController.setPaymentAmount(parsedNgnAmount);
-      } catch (error) {
-        console.error("Unable to prepare the NGN on-ramp:", error);
-        setOnrampError(error instanceof Error ? error.message : "Unable to prepare the NGN deposit.");
-        return;
-      }
-    }
-
+    setIsLoggingPayment(true);
+    let transactionId: string | undefined;
     try {
+      transactionId = await createProfileTransaction({
+        type: "deposit",
+        status: "pending",
+        platform: "Meld",
+        amount: 0,
+        tokenSymbol: "FIAT",
+      });
       await open({ view: "OnRampProviders" });
     } catch (error) {
+      if (transactionId) {
+        try {
+          await updateProfileTransaction(transactionId, { status: "failed" });
+        } catch (updateError) {
+          console.error("Unable to mark the failed deposit intent:", updateError);
+        }
+      }
       console.error("Failed to open Reown on-ramp:", error);
       setOnrampError(error instanceof Error ? error.message : "Unable to open the on-ramp.");
+    } finally {
+      setIsLoggingPayment(false);
     }
   };
 
@@ -418,58 +400,11 @@ export default function CustomDepositModal({
               </div>
 
               <div className="space-y-5">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-[#94a3b8]" htmlFor="deposit-payment-region">
-                    Payment region
-                  </label>
-                  <select
-                    className="w-full rounded-xl border border-[#1e293b] bg-[#16223f] px-4 py-3 text-white outline-none transition-colors focus:border-[#3b82f6] focus:ring-2 focus:ring-[#3b82f6]/30"
-                    id="deposit-payment-region"
-                    onChange={(event) => {
-                      setPaymentRegion(event.currentTarget.value === "NG" ? "NG" : "other");
-                      setOnrampError("");
-                    }}
-                    value={paymentRegion}
-                  >
-                    <option value="NG">Nigeria (NGN)</option>
-                    <option value="other">Other region / currency</option>
-                  </select>
-                </div>
-
-                {paymentRegion === "NG" && (
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-[#94a3b8]" htmlFor="deposit-ngn-amount">
-                      Deposit amount (NGN)
-                    </label>
-                    <div className="flex items-center rounded-xl border border-[#1e293b] bg-[#16223f] px-4 py-3 focus-within:border-[#3b82f6]">
-                      <span className="mr-2 font-semibold text-blue-300">₦</span>
-                      <input
-                        aria-describedby={ngnAmountIsBelowMinimum ? "deposit-ngn-minimum" : undefined}
-                        className="w-full bg-transparent text-lg font-semibold text-white outline-none placeholder:text-slate-500"
-                        id="deposit-ngn-amount"
-                        inputMode="numeric"
-                        onChange={(event) => {
-                          setNgnAmount(event.currentTarget.value.replace(/\D/g, ""));
-                          setOnrampError("");
-                        }}
-                        placeholder="13,000"
-                        type="text"
-                        value={ngnAmount ? Number(ngnAmount).toLocaleString("en-NG") : ""}
-                      />
-                    </div>
-                    {ngnAmountIsBelowMinimum && (
-                      <p className="mt-2 text-sm text-amber-300" id="deposit-ngn-minimum" role="alert">
-                        Minimum deposit is ₦13,000 to swap for USDC on the Base network.
-                      </p>
-                    )}
-                  </div>
-                )}
-
                 {paymentWalletAddress && (
                   <p className="rounded-xl border border-[#1e293b] bg-[#16223f]/70 p-3 text-xs leading-5 text-[#94a3b8]">
                     Funds will be sent to your connected wallet{" "}
                     <span className="font-mono text-slate-200">
-                      {paymentWalletAddress.slice(0, 6)}...{paymentWalletAddress.slice(-4)}
+                      {paymentWalletAddress}
                     </span>
                     . No address entry is needed.
                   </p>
@@ -483,12 +418,16 @@ export default function CustomDepositModal({
 
                 <button
                   className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#3b82f6] px-4 py-3.5 font-bold text-white transition-colors hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={paymentRegion === "NG" && (!ngnAmount || ngnAmountIsBelowMinimum)}
+                  disabled={isLoggingPayment}
                   onClick={() => void continueToOnramp()}
                   type="button"
                 >
-                  Continue to payment
-                  <ChevronRight aria-hidden="true" size={18} />
+                  {isLoggingPayment ? "Preparing secure payment..." : "Continue to payment"}
+                  {isLoggingPayment ? (
+                    <LoaderCircle aria-hidden="true" className="animate-spin" size={18} />
+                  ) : (
+                    <ChevronRight aria-hidden="true" size={18} />
+                  )}
                 </button>
               </div>
             </>
@@ -528,7 +467,11 @@ export default function CustomDepositModal({
                     />
                   ) : (
                     <div className="flex h-40 w-40 items-center justify-center px-3 text-center text-xs text-slate-600">
-                      {qrCodeQuery.isError ? "Unable to generate QR code" : "Generating QR code..."}
+                      {!depositAddress
+                        ? "Link a wallet to receive crypto"
+                        : qrCodeQuery.isError
+                          ? "Unable to generate QR code"
+                          : "Generating QR code..."}
                     </div>
                   )}
                 </div>
@@ -540,7 +483,7 @@ export default function CustomDepositModal({
               <p className="mb-2 text-sm font-medium text-[#94a3b8]">Deposit address</p>
               <div className="flex items-center gap-2 rounded-xl border border-[#1e293b] bg-[#16223f] p-2.5 sm:p-3">
                 <span className="min-w-0 flex-1 break-all font-mono text-xs leading-5 text-white sm:text-sm">
-                  {depositAddress}
+                  {depositAddress || "No profile wallet is linked"}
                 </span>
                 <button
                   aria-label={copyStatus === "copied" ? "Address copied" : "Copy deposit address"}
@@ -551,6 +494,7 @@ export default function CustomDepositModal({
                         ? "border-red-500/30 bg-red-500/10 text-red-300"
                         : "border-[#1e293b] bg-[#0d1527] text-white hover:border-[#3b82f6]"
                   }`}
+                  disabled={!depositAddress || copyStatus === "copied"}
                   onClick={handleCopyAddress}
                   type="button"
                 >
@@ -562,12 +506,6 @@ export default function CustomDepositModal({
                   {copyStatus === "copied" ? "Copied!" : copyStatus === "error" ? "Failed" : "Copy"}
                 </button>
               </div>
-              {!userWalletAddress && (
-                <p className="mt-2 text-xs text-amber-300">
-                  Example address only. Connect a wallet to see your address.
-                </p>
-              )}
-
               <div className="mt-5 rounded-xl border border-[#1e293b] bg-[#16223f]/70 p-3.5">
                 <p className="text-xs leading-5 text-[#94a3b8]">
                   Notice: Ensure you only send supported crypto assets to this address using the Base Network. Transferring funds via any other network will result in permanent loss.

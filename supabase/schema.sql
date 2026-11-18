@@ -38,14 +38,27 @@ CREATE TABLE IF NOT EXISTS public.transactions (
     token_symbol TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
     tx_hash TEXT,
+    platform TEXT NOT NULL DEFAULT 'Native' CHECK (platform IN ('Meld', 'Native')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
+
+ALTER TABLE public.transactions
+ADD COLUMN IF NOT EXISTS platform TEXT NOT NULL DEFAULT 'Native'
+CHECK (platform IN ('Meld', 'Native'));
 
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Users can read their own transactions" ON public.transactions;
 CREATE POLICY "Users can read their own transactions"
 ON public.transactions FOR SELECT USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can insert their own transactions" ON public.transactions;
+CREATE POLICY "Users can insert their own transactions"
+ON public.transactions FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update their own transactions" ON public.transactions;
+CREATE POLICY "Users can update their own transactions"
+ON public.transactions FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 CREATE INDEX IF NOT EXISTS transactions_user_wallet_created_at_idx
 ON public.transactions (user_id, wallet_address, created_at DESC);

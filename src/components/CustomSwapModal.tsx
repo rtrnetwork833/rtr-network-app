@@ -24,6 +24,7 @@ import { SwapController, type SwapControllerState } from "@reown/appkit-controll
 import { useAppKit, useAppKitAccount } from "@reown/appkit/react";
 import { base } from "wagmi/chains";
 import CustomActivityLedger from "@/components/CustomActivityLedger";
+import { createProfileTransaction, updateProfileTransaction } from "@/lib/profile-transactions";
 
 interface CustomSwapModalProps {
   activeWalletAddress: `0x${string}` | null;
@@ -344,7 +345,19 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
     if (!selectedFromToken || !selectedToToken || !fromAmount) return;
     setOpeningSwap(true);
     setPreviewError("");
+    let transactionId: string | undefined;
     try {
+      const amount = Number(fromAmount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error("Enter a valid amount before swapping.");
+      }
+      transactionId = await createProfileTransaction({
+        type: "swap",
+        status: "pending",
+        platform: "Native",
+        amount,
+        tokenSymbol: selectedFromToken.symbol,
+      });
       await open({
         view: "Swap",
         arguments: {
@@ -354,6 +367,13 @@ export default function CustomSwapModal({ activeWalletAddress, onClose }: Custom
         },
       });
     } catch (error) {
+      if (transactionId) {
+        try {
+          await updateProfileTransaction(transactionId, { status: "failed" });
+        } catch (updateError) {
+          console.error("Unable to mark the failed swap intent:", updateError);
+        }
+      }
       console.error("Unable to open the Reown swap view:", error);
       setPreviewError("Unable to open the secure Reown swap view. Please try again.");
     } finally {
