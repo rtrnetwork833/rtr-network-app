@@ -340,7 +340,7 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
   };
 
   const handleFiatWithdrawal = () => {
-    setSendError("Fiat withdrawals are not available in the configured AppKit providers. Use On Chain to send crypto.");
+    setSendError("Fiat off-ramp is not supported by the installed AppKit SDK. Use On Chain to send crypto.");
   };
 
   const handleSend = async () => {
@@ -445,7 +445,7 @@ export default function CustomSendModal({ onClose }: CustomSendModalProps) {
                   <span className="min-w-0 flex-1">
                     <span className="block font-semibold text-white">Fiat Withdrawal</span>
                     <span className="mt-1 block text-sm leading-5 text-[#94a3b8]">
-                      Fiat off-ramp is not enabled for this AppKit project yet
+                      Fiat off-ramp is not supported by the installed AppKit SDK
                     </span>
                   </span>
                   <ChevronRight aria-hidden="true" className="shrink-0 text-slate-500 transition-colors group-hover:text-[#3b82f6]" size={20} />
