@@ -14,6 +14,8 @@ BREVO_SENDER_NAME=RTR Network
 
 Recovery validates `profiles.email` and `profiles.date_of_birth`, stores a six-digit code in `profiles.recovery_code`, and sends it through Brevo's transactional email API. Never expose `BREVO_API_KEY` with a `NEXT_PUBLIC_` prefix.
 
+Fiat withdrawal checkout requires server-only `MELD_SECRET_KEY` and `MELD_PUBLIC_KEY` variables. The checkout URL is minted by Meld on demand; the API secret must never be exposed to the browser. `MELD_API_BASE_URL` defaults to `https://api.meld.io` and can be set to `https://api-sb.meld.io` for sandbox. If Meld returns a custom checkout domain, set its hostname in `MELD_CHECKOUT_HOST`.
+
 The token converter uses the token list and wallet execution provided by Reown AppKit. Its native swap view handles quote review, approvals, and transaction execution using the connected wallet.
 
 Before testing activations, run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. It creates the `booster_activations` table and row-level security policies. The free node is persisted for 24 hours; every paid tier is persisted for 30 days, with the countdown derived from the database `expires_at` timestamp after refresh.
