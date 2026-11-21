@@ -50,7 +50,7 @@ import CustomActivityLedger from '@/components/CustomActivityLedger';
 type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "portfolio";
 type Activation = { tier: string; activated_at: string; expires_at: string };
 type Profile = { full_name?: string | null; avatar_url: string | null; balance: number | string | null };
-type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null; sparkline?: number[]; address?: string; totalSupply?: string | null; circulatingSupply?: string | null; decimals?: number };
+type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null; sparkline?: number[]; address?: string; logoURI?: string; totalSupply?: string | null; circulatingSupply?: string | null; decimals?: number };
 const supabase = createClient();
 const rtrTokenAbi = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
 const AUTH_EMAIL_STORAGE_KEY = "user_email";
@@ -58,53 +58,53 @@ const LEGACY_AUTH_EMAIL_STORAGE_KEY = "rtr-email";
 const MARKET_CACHE_KEY = "rtr-market-prices-v1";
 const MARKET_CACHE_LIMIT = 100;
 const BUILD_TIMESTAMP = process.env.NEXT_PUBLIC_BUILD_TIMESTAMP ?? "development";
-// 1. Hardcode your official RTR token stats permanently at position #1
-  const RTR_TOKEN_DETAILS = {
-    address: "0x1259d32d0E3dD7D28E8C96c1410712AFeeecF633",
-    chainId: 8453,
-    name: "RTR Network Token",
-    symbol: "RTR",
-    decimals: 18,
-    logoURI: "/logo.png", 
-    priceUSD: 0.075, 
-    change24h: 3.42, 
-    totalSupply: "10,000,000",
-    circulatingSupply: "2,000,000",
-    marketCap: 150000
-  };
+const RTR_TOKEN_DETAILS = {
+  address: "0x1259d32d0E3dD7D28E8C96c1410712AFeeecF633",
+  chainId: 8453,
+  name: "RTR Network Token",
+  symbol: "RTR",
+  decimals: 18,
+  logoURI: "/logo.png",
+  priceUSD: 0.075,
+  change24h: 3.42,
+  totalSupply: "10,000,000",
+  circulatingSupply: "2,000,000",
+  marketCap: 150000,
+} as const;
+const RTR_MARKET_ASSET: MarketAsset = {
+  id: RTR_TOKEN_DETAILS.address,
+  address: RTR_TOKEN_DETAILS.address,
+  name: RTR_TOKEN_DETAILS.name,
+  symbol: RTR_TOKEN_DETAILS.symbol,
+  decimals: RTR_TOKEN_DETAILS.decimals,
+  price: RTR_TOKEN_DETAILS.priceUSD,
+  change: RTR_TOKEN_DETAILS.change24h,
+  sparkline: [],
+  totalSupply: RTR_TOKEN_DETAILS.totalSupply,
+  circulatingSupply: RTR_TOKEN_DETAILS.circulatingSupply,
+};
 
-  const [tokens, setTokens] = React.useState<any[]>([RTR_TOKEN_DETAILS]);
-  const [selectedToken, setSelectedToken] = React.useState<any>(RTR_TOKEN_DETAILS);
-  const [searchQuery, setSearchQuery] = React.useState('');
-  const [loading, setLoading] = React.useState(true);
+interface OneInchRegistryToken {
+  address: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  logoURI: string;
+}
 
-  // 2. Fetch directly from 1inch on-chain registry for Base Mainnet
-  React.useEffect(() => {
-    async function loadBaseMarketRegistry() {
-      try {
-        setLoading(true);
-        
-        // Fetching live from 1inch API for Chain 8453 (Base)
-        const res = await fetch('https://1inch.io');
-        const data = await res.json();
-        const onChainTokens: any[] = Object.values(data);
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 
-        // Filter out any invalid items or duplicates of your own token
-        const verifiedEcosystem = onChainTokens.filter(
-          t => t.symbol && t.logoURI && t.symbol !== 'RTR'
-        );
-
-        // Combine lists together: Your authentic RTR Token stays locked at #1
-        setTokens([RTR_TOKEN_DETAILS, ...verifiedEcosystem]);
-      } catch (err) {
-        console.error("Error setting up market view:", err);
-        setTokens([RTR_TOKEN_DETAILS]);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadBaseMarketRegistry();
-  }, []);
+function isOneInchRegistryToken(value: unknown): value is OneInchRegistryToken {
+  return isRecord(value)
+    && typeof value.address === "string"
+    && typeof value.symbol === "string"
+    && typeof value.name === "string"
+    && typeof value.decimals === "number"
+    && Number.isInteger(value.decimals)
+    && typeof value.logoURI === "string";
+}
 
 function readStoredEmail() {
   if (typeof window === "undefined") return "";
@@ -1291,42 +1291,67 @@ function AuthOverlay() {
 function MarketView({ market }: { market: MarketAsset[] }) {
   const [query, setQuery] = useState("");
   const [selectedAsset, setSelectedAsset] = useState<MarketAsset | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [allTokens, setAllTokens] = useState<MarketAsset[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [allTokens, setAllTokens] = useState<MarketAsset[]>([RTR_MARKET_ASSET]);
   const [visibleCount, setVisibleCount] = useState(50);
   const [searchResults, setSearchResults] = useState<MarketAsset[] | null>(null);
   const { open } = useAppKit();
 
-  // Fetch tokens from 1inch API
   useEffect(() => {
-    const fetchTokens = async () => {
-      setLoading(true);
+    const controller = new AbortController();
+    const loadBaseMarketRegistry = async () => {
       try {
-        const response = await fetch('https://api.1inch.io/v5.0/8453/tokens');
-        const data = await response.json();
-        const tokens = Object.values(data.tokens).map((token: any) => ({
-          id: token.address,
-          symbol: token.symbol,
-          name: token.name,
-          price: null, // Will be fetched separately
-          change: null,
-          sparkline: [],
-          address: token.address,
-          decimals: token.decimals,
-          totalSupply: null,
-          circulatingSupply: null
-        }));
-        setAllTokens(tokens);
+        const response = await fetch("https://tokens.1inch.io/v1.2/8453", {
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error(`1inch token registry request failed: ${response.status}`);
+        }
+
+        const registry: unknown = await response.json();
+        if (!isRecord(registry)) {
+          throw new Error("1inch returned an invalid Base token registry.");
+        }
+
+        const verifiedEcosystem = Object.values(registry)
+          .filter(isOneInchRegistryToken)
+          .filter((token) =>
+            isAddress(token.address) &&
+            token.symbol.trim() !== "" &&
+            token.logoURI.trim() !== "" &&
+            token.symbol.toUpperCase() !== RTR_TOKEN_DETAILS.symbol,
+          )
+          .map((token): MarketAsset => ({
+            id: token.address,
+            address: token.address,
+            symbol: token.symbol,
+            name: token.name,
+            decimals: token.decimals,
+            logoURI: token.logoURI,
+            price: null,
+            change: null,
+            sparkline: [],
+            totalSupply: null,
+            circulatingSupply: null,
+          }));
+
+        if (!controller.signal.aborted) {
+          setAllTokens([RTR_MARKET_ASSET, ...verifiedEcosystem]);
+        }
       } catch (error) {
-        console.error('Failed to fetch tokens from 1inch:', error);
-        // Fallback to cached market data
-        setAllTokens(market);
+        if (controller.signal.aborted) return;
+        console.error("Error setting up market view:", error);
+        setAllTokens([
+          RTR_MARKET_ASSET,
+          ...market.filter((asset) => asset.symbol.toUpperCase() !== RTR_TOKEN_DETAILS.symbol),
+        ]);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
 
-    fetchTokens();
+    void loadBaseMarketRegistry();
+    return () => controller.abort();
   }, [market]);
 
   // Search filter with async debounce
