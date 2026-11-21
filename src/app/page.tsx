@@ -1396,29 +1396,6 @@ function MarketView({ market }: { market: MarketAsset[] }) {
   const otherTokens = displayTokens.filter((t) => t.symbol !== "RTR");
   const sortedTokens = [rtrToken, ...otherTokens];
 
-  const renderAsset = (asset: MarketAsset, index: number) => (
-    <div 
-      className={`market-row${asset.symbol === "RTR" ? " market-row-pinned" : ""}`} 
-      key={asset.id ?? asset.symbol}
-      onClick={() => setSelectedAsset(asset)}
-    >
-      <span className="market-rank">{index + 1}</span>
-      <span className="market-asset-icon">
-        <div className="token-logo">{asset.symbol.slice(0, 1)}</div>
-      </span>
-      <span className="market-asset-name">
-        {asset.symbol === "RTR" && <span className="featured-badge">Featured Node Asset</span>}
-        <strong>{asset.symbol}</strong>
-        <small>{asset.name}</small>
-      </span>
-      <span>{formatMarketPrice(asset)}</span>
-      <span className={asset.change !== null && asset.change >= 0 ? "market-up" : "market-down"}>
-        {asset.change === null ? "--" : `${asset.change >= 0 ? "+" : ""}${asset.change.toFixed(2)}%`}
-      </span>
-      <MarketSparkline values={asset.sparkline ?? []} positive={asset.change === null || asset.change >= 0} />
-    </div>
-  );
-
   return <div className="market-view">
     <div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and real-time movement across the RTR ecosystem.</p></div>
     <section className="onramp-banner" aria-label="Buy crypto">
@@ -1427,18 +1404,81 @@ function MarketView({ market }: { market: MarketAsset[] }) {
       <p className="onramp-disclaimer">Secure processing powered safely by Coinbase Onramp. Quick identity check or log-in may be required for first-time fiat processing.</p>
     </section>
     <label className="market-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search market assets</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by symbol or name" /></label>
-    <div className="market-table" aria-label="Base ecosystem market monitor">
-      <div className="market-row market-header"><span>#</span><span>Asset</span><span>Spot price</span><span>Live Change</span><span>Trend</span></div>
-      {loading ? (
-        <div className="market-loading">Loading assets...</div>
-      ) : (
-        <>
-          {sortedTokens.map((asset, index) => renderAsset(asset, index))}
-          {visibleCount < allTokens.length && !searchResults && (
-            <button className="load-more-button" onClick={loadMore}>Load More Assets</button>
-          )}
-        </>
-      )}
+    <div className="w-full bg-[#0d1527]/60 border border-slate-800/80 rounded-2xl overflow-hidden shadow-xl mt-4" aria-label="Base ecosystem market monitor">
+      <div className="grid grid-cols-12 gap-2 px-5 py-4 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800/80 bg-[#0d1527]">
+        <div className="col-span-2 text-left"># TREND</div>
+        <div className="col-span-4 text-left">ASSET</div>
+        <div className="col-span-3 text-right">SPOT PRICE</div>
+        <div className="col-span-3 text-right">LIVE CHANGE</div>
+      </div>
+      <div className="divide-y divide-slate-800/40 max-h-[500px] overflow-y-auto custom-scrollbar">
+        {loading ? (
+          <div className="px-5 py-8 text-center text-sm text-slate-400">Loading assets...</div>
+        ) : (
+          <>
+            {sortedTokens.map((asset, index) => {
+              const isRTR = asset.symbol === "RTR";
+              const isSelected = selectedAsset?.symbol === asset.symbol;
+              const changeIsPositive = (asset.change ?? 0) >= 0;
+
+              return (
+                <div
+                  key={asset.address || index}
+                  onClick={() => setSelectedAsset(asset)}
+                  className={`grid grid-cols-12 gap-2 px-5 py-4 items-center text-xs cursor-pointer transition-all duration-150 ${
+                    isSelected ? "bg-blue-500/5 border-l-2 border-blue-500" : "hover:bg-[#121c33]/50"
+                  }`}
+                >
+                  <div className="col-span-2 flex items-center gap-2 min-w-0">
+                    <span className="font-bold text-slate-500 font-mono">{index + 1}</span>
+                    {isRTR && (
+                      <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded-[4px] text-[9px] font-extrabold uppercase tracking-wide">
+                        Featured
+                      </span>
+                    )}
+                  </div>
+                  <div className="col-span-4 flex items-center gap-3 min-w-0">
+                    <div className="w-7 h-7 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
+                      <img
+                        src={asset.logoURI || "/logo.png"}
+                        alt={asset.name}
+                        className="w-full h-full object-cover"
+                        onError={(event) => {
+                          if (!event.currentTarget.src.endsWith("/logo.png")) {
+                            event.currentTarget.src = "/logo.png";
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="min-w-0 truncate">
+                      <span className="font-bold block text-slate-100 tracking-wide uppercase font-mono">{asset.symbol}</span>
+                      <span className="text-[10px] text-slate-400 block font-medium truncate">{asset.name}</span>
+                    </div>
+                  </div>
+                  <div className="col-span-3 text-right font-bold text-slate-200 font-mono">
+                    {formatMarketPrice(asset)}
+                  </div>
+                  <div className={`col-span-3 text-right font-bold font-mono ${
+                    changeIsPositive ? "text-emerald-400" : "text-rose-400"
+                  }`}>
+                    {asset.change !== null ? (
+                      <>
+                        {changeIsPositive ? "▲ +" : "▼ "}
+                        {Math.abs(asset.change).toFixed(2)}%
+                      </>
+                    ) : (
+                      <span className="text-slate-600">--</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {visibleCount < allTokens.length && !searchResults && (
+              <button className="load-more-button w-full" onClick={loadMore}>Load More Assets</button>
+            )}
+          </>
+        )}
+      </div>
     </div>
     {selectedAsset && (
       <div className="market-detail-drawer" onClick={() => setSelectedAsset(null)}>
