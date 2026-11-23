@@ -24,6 +24,8 @@ type GeckoToken = {
     volume_usd?: { h24?: unknown };
     market_cap_usd?: unknown;
     fdv_usd?: unknown;
+    total_supply?: unknown;
+    circulating_supply?: unknown;
   };
 };
 
@@ -131,6 +133,8 @@ export async function GET(request: Request) {
       volume: numericValue(pair?.volume?.h24) ?? numericValue(fallback?.volume_usd?.h24),
       marketCap: numericValue(pair?.marketCap) ?? numericValue(fallback?.market_cap_usd),
       fdv: numericValue(pair?.fdv) ?? numericValue(fallback?.fdv_usd),
+      totalSupply: numericValue(fallback?.total_supply),
+      circulatingSupply: numericValue(fallback?.circulating_supply),
       pairAddress,
     };
     return [address, Object.values(values).some((value) => value !== null && value !== undefined) ? values : null];

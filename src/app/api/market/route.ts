@@ -14,6 +14,9 @@ type CoinGeckoAsset = {
   current_price?: number;
   price_change_percentage_24h?: number;
   total_volume?: number;
+  market_cap?: number;
+  circulating_supply?: number;
+  total_supply?: number;
   sparkline_in_7d?: { price?: number[] };
 };
 
@@ -43,6 +46,9 @@ export async function GET() {
         price: typeof asset?.current_price === "number" ? asset.current_price : null,
         change: typeof asset?.price_change_percentage_24h === "number" ? asset.price_change_percentage_24h : null,
         volume: typeof asset?.total_volume === "number" ? asset.total_volume : null,
+        marketCap: typeof asset?.market_cap === "number" ? asset.market_cap : null,
+        circulatingSupply: typeof asset?.circulating_supply === "number" ? String(asset.circulating_supply) : null,
+        totalSupply: typeof asset?.total_supply === "number" ? String(asset.total_supply) : null,
         sparkline: asset?.sparkline_in_7d?.price ?? [],
       };
     });
