@@ -22,6 +22,7 @@ import {
   LayoutDashboard,
   LockKeyhole,
   LogOut,
+  BarChart3,
   Search,
   ShieldCheck,
   Sparkles,
@@ -31,7 +32,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { Area, AreaChart, Line, LineChart, ResponsiveContainer } from "recharts";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { usePathname, useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -50,7 +51,9 @@ import CustomActivityLedger from '@/components/CustomActivityLedger';
 type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "portfolio";
 type Activation = { tier: string; activated_at: string; expires_at: string };
 type Profile = { full_name?: string | null; avatar_url: string | null; balance: number | string | null };
-type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null; sparkline?: number[]; address?: string; logoURI?: string; totalSupply?: string | null; circulatingSupply?: string | null; decimals?: number };
+type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null; marketCap?: number | null; fdv?: number | null; pairAddress?: string; sparkline?: number[]; address?: string; logoURI?: string; totalSupply?: string | null; circulatingSupply?: string | null; decimals?: number };
+type MarketHistoryPoint = { timestamp: number; price: number };
+type MarketTimeframe = "1h" | "24h" | "7d" | "30d" | "1y";
 const supabase = createClient();
 const rtrTokenAbi = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
 const AUTH_EMAIL_STORAGE_KEY = "user_email";
@@ -80,6 +83,9 @@ const RTR_MARKET_ASSET: MarketAsset = {
   price: RTR_TOKEN_DETAILS.priceUSD,
   change: RTR_TOKEN_DETAILS.change24h,
   sparkline: [],
+  marketCap: RTR_TOKEN_DETAILS.marketCap,
+  fdv: RTR_TOKEN_DETAILS.priceUSD * Number(RTR_TOKEN_DETAILS.totalSupply.replaceAll(",", "")),
+  logoURI: RTR_TOKEN_DETAILS.logoURI,
   totalSupply: RTR_TOKEN_DETAILS.totalSupply,
   circulatingSupply: RTR_TOKEN_DETAILS.circulatingSupply,
 };
@@ -1295,7 +1301,25 @@ function MarketView({ market }: { market: MarketAsset[] }) {
   const [allTokens, setAllTokens] = useState<MarketAsset[]>([RTR_MARKET_ASSET]);
   const [visibleCount, setVisibleCount] = useState(50);
   const [searchResults, setSearchResults] = useState<MarketAsset[] | null>(null);
+  const [comparedAddresses, setComparedAddresses] = useState<string[]>([]);
+  const [timeframe, setTimeframe] = useState<MarketTimeframe>("24h");
+  const [quoteRefreshTick, setQuoteRefreshTick] = useState(0);
+  const [chartState, setChartState] = useState<{
+    key: string;
+    points: MarketHistoryPoint[];
+    loading: boolean;
+    error: string | null;
+  }>({ key: "", points: [], loading: false, error: null });
+  const requestedQuoteAddresses = useRef(new Set<string>());
   const { open } = useAppKit();
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      requestedQuoteAddresses.current.clear();
+      setQuoteRefreshTick((current) => current + 1);
+    }, 30_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1381,28 +1405,145 @@ function MarketView({ market }: { market: MarketAsset[] }) {
 
   // Display tokens
   const displayTokens = searchResults ?? allTokens.slice(0, visibleCount);
+  const quoteRequestKey = [...new Set(displayTokens
+    .filter((token) => token.symbol.toUpperCase() !== RTR_TOKEN_DETAILS.symbol && token.address && isAddress(token.address))
+    .map((token) => token.address!.toLowerCase())
+  )].join(",");
 
-  // Always keep RTR at position #1
-  const rtrToken = allTokens.find((t) => t.symbol === "RTR") || { 
-    symbol: "RTR", 
-    name: "RTR Network", 
-    price: null, 
-    change: null, 
-    sparkline: [],
-    address: "0x0000000000000000000000000000000000000000",
-    totalSupply: "1,000,000,000",
-    circulatingSupply: "500,000,000"
-  };
-  const otherTokens = displayTokens.filter((t) => t.symbol !== "RTR");
-  const sortedTokens = [rtrToken, ...otherTokens];
+  useEffect(() => {
+    if (!quoteRequestKey) return;
+    const addresses = quoteRequestKey.split(",").filter((address) => !requestedQuoteAddresses.current.has(address));
+    if (addresses.length === 0) return;
+    addresses.forEach((address) => requestedQuoteAddresses.current.add(address));
+    const controller = new AbortController();
+
+    const loadTokenQuotes = async () => {
+      const quotes = new Map<string, {
+        price: number | null;
+        change: number | null;
+        volume: number | null;
+        marketCap: number | null;
+        fdv: number | null;
+        pairAddress: string | undefined;
+      }>();
+
+      try {
+        const batches: string[][] = [];
+        for (let index = 0; index < addresses.length; index += 30) {
+          batches.push(addresses.slice(index, index + 30));
+        }
+
+        await Promise.all(batches.map(async (batch) => {
+          const response = await fetch(
+            `/api/market/token-data?addresses=${batch.join(",")}`,
+            { signal: controller.signal },
+          );
+          if (!response.ok) throw new Error(`Token quote request failed: ${response.status}`);
+          const payload: unknown = await response.json();
+          if (!isRecord(payload)) throw new Error("Token quote response was invalid.");
+
+          for (const address of batch) {
+            const quote = payload[address];
+            if (!isRecord(quote)) continue;
+            const numericField = (field: string) =>
+              typeof quote[field] === "number" && Number.isFinite(quote[field]) ? quote[field] as number : null;
+            quotes.set(address, {
+              price: numericField("price"),
+              change: numericField("change"),
+              volume: numericField("volume"),
+              marketCap: numericField("marketCap"),
+              fdv: numericField("fdv"),
+              pairAddress: typeof quote.pairAddress === "string" ? quote.pairAddress : undefined,
+            });
+          }
+        }));
+
+        if (controller.signal.aborted) return;
+        setAllTokens((previous) => previous.map((token) => {
+          const quote = token.address ? quotes.get(token.address.toLowerCase()) : undefined;
+          return quote ? { ...token, ...quote } : token;
+        }));
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("Unable to load live Base token quotes:", error);
+        }
+      }
+    };
+
+    void loadTokenQuotes();
+    return () => controller.abort();
+  }, [quoteRefreshTick, quoteRequestKey]);
+
+  const activeSelectedAsset = selectedAsset
+    ? allTokens.find((token) => token.address?.toLowerCase() === selectedAsset.address?.toLowerCase()) ?? selectedAsset
+    : null;
+  const sortedTokens = [
+    RTR_MARKET_ASSET,
+    ...displayTokens.filter((token) => token.symbol.toUpperCase() !== RTR_TOKEN_DETAILS.symbol),
+  ];
+  const chartKey = activeSelectedAsset?.pairAddress
+    ? `${activeSelectedAsset.pairAddress}:${timeframe}`
+    : "";
+  const comparedAssets = comparedAddresses
+    .map((address) => allTokens.find((token) => token.address?.toLowerCase() === address))
+    .filter((token): token is MarketAsset => Boolean(token));
+
+  useEffect(() => {
+    if (!chartKey || !activeSelectedAsset?.pairAddress) return;
+    const controller = new AbortController();
+    let active = true;
+
+    const loadHistory = async () => {
+      setChartState({ key: chartKey, points: [], loading: true, error: null });
+      try {
+        const response = await fetch(
+          `/api/market/token-history?pair=${activeSelectedAsset.pairAddress}&timeframe=${timeframe}`,
+          { signal: controller.signal },
+        );
+        if (!response.ok) throw new Error("Price history is unavailable.");
+        const payload: unknown = await response.json();
+        const rawPoints = isRecord(payload) && Array.isArray(payload.points) ? payload.points : null;
+        if (!rawPoints) throw new Error("Price history response was invalid.");
+
+        const points = rawPoints.flatMap((point) => {
+          if (!isRecord(point) || typeof point.timestamp !== "number" || typeof point.price !== "number") return [];
+          return Number.isFinite(point.timestamp) && Number.isFinite(point.price)
+            ? [{ timestamp: point.timestamp, price: point.price }]
+            : [];
+        });
+        if (active) setChartState({ key: chartKey, points, loading: false, error: null });
+      } catch (error) {
+        if (active && !controller.signal.aborted) {
+          setChartState({
+            key: chartKey,
+            points: [],
+            loading: false,
+            error: error instanceof Error ? error.message : "Price history is unavailable.",
+          });
+        }
+      }
+    };
+
+    void loadHistory();
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [activeSelectedAsset?.pairAddress, chartKey, timeframe]);
+
+  const isCompared = Boolean(activeSelectedAsset?.address && comparedAddresses.includes(activeSelectedAsset.address.toLowerCase()));
+  const chartData = chartState.key === chartKey ? chartState.points : [];
+  const chartLoading = Boolean(chartKey && chartState.key !== chartKey) || (chartState.key === chartKey && chartState.loading);
+  const chartError = chartState.key === chartKey ? chartState.error : null;
+  const formatUsdStat = (value: number | null | undefined) => value === null || value === undefined
+    ? "—"
+    : `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+  const formatDetailedPrice = (value: number | null) => value === null
+    ? "—"
+    : `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 8 })}`;
 
   return <div className="market-view">
     <div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and real-time movement across the RTR ecosystem.</p></div>
-    <section className="onramp-banner" aria-label="Buy crypto">
-      <div className="onramp-banner-heading"><span className="eyebrow">FUND YOUR BASE WALLET</span><h3>Move from fiat to onchain.</h3></div>
-      <button className="onramp-fund-card">Buy Crypto with Card / Bank</button>
-      <p className="onramp-disclaimer">Secure processing powered safely by Coinbase Onramp. Quick identity check or log-in may be required for first-time fiat processing.</p>
-    </section>
     <label className="market-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search market assets</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by symbol or name" /></label>
     <div className="w-full bg-[#0d1527]/60 border border-slate-800/80 rounded-2xl overflow-hidden shadow-xl mt-4" aria-label="Base ecosystem market monitor">
       <div className="grid grid-cols-12 gap-2 px-5 py-4 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800/80 bg-[#0d1527]">
@@ -1417,20 +1558,31 @@ function MarketView({ market }: { market: MarketAsset[] }) {
         ) : (
           <>
             {sortedTokens.map((asset, index) => {
-              const isRTR = asset.symbol === "RTR";
-              const isSelected = selectedAsset?.symbol === asset.symbol;
+              const isRTR = asset.symbol.toUpperCase() === RTR_TOKEN_DETAILS.symbol;
+              const isSelected = activeSelectedAsset?.address?.toLowerCase() === asset.address?.toLowerCase();
               const changeIsPositive = (asset.change ?? 0) >= 0;
 
               return (
                 <div
                   key={asset.address || index}
                   onClick={() => setSelectedAsset(asset)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") setSelectedAsset(asset);
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`View ${asset.name} (${asset.symbol}) details`}
                   className={`grid grid-cols-12 gap-2 px-5 py-4 items-center text-xs cursor-pointer transition-all duration-150 ${
                     isSelected ? "bg-blue-500/5 border-l-2 border-blue-500" : "hover:bg-[#121c33]/50"
                   }`}
                 >
                   <div className="col-span-2 flex items-center gap-2 min-w-0">
                     <span className="font-bold text-slate-500 font-mono">{index + 1}</span>
+                    {asset.change !== null && (
+                      asset.change >= 0
+                        ? <TrendingUp size={14} className="shrink-0 text-emerald-400" aria-label="Trending up" />
+                        : <ArrowDown size={14} className="shrink-0 text-rose-400" aria-label="Trending down" />
+                    )}
                     {isRTR && (
                       <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded-[4px] text-[9px] font-extrabold uppercase tracking-wide">
                         Featured
@@ -1438,7 +1590,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
                     )}
                   </div>
                   <div className="col-span-4 flex items-center gap-3 min-w-0">
-                    <div className="w-7 h-7 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
+                    <div className="w-9 h-9 rounded-full bg-slate-900 border-2 border-slate-700 flex items-center justify-center shrink-0 overflow-hidden shadow-lg shadow-black/20">
                       <img
                         src={asset.logoURI || "/logo.png"}
                         alt={asset.name}
@@ -1480,49 +1632,173 @@ function MarketView({ market }: { market: MarketAsset[] }) {
         )}
       </div>
     </div>
-    {selectedAsset && (
-      <div className="market-detail-drawer" onClick={() => setSelectedAsset(null)}>
-        <div className="drawer-content" onClick={(e) => e.stopPropagation()}>
-          <button className="drawer-close" onClick={() => setSelectedAsset(null)}><X size={20} /></button>
-          <div className="drawer-header">
-            <div className="drawer-logo">{selectedAsset.symbol.slice(0, 1)}</div>
-            <div>
-              <h2>{selectedAsset.name}</h2>
-              <span className="drawer-symbol">{selectedAsset.symbol}</span>
+    {activeSelectedAsset && (
+      <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/75 p-0 backdrop-blur-sm sm:items-center sm:p-5" onClick={() => setSelectedAsset(null)}>
+        <section
+          aria-label={`${activeSelectedAsset.name} asset details`}
+          aria-modal="true"
+          className="max-h-[94vh] w-full max-w-3xl overflow-y-auto rounded-t-3xl border border-slate-700/80 bg-[#0b1220] p-5 text-slate-100 shadow-2xl sm:rounded-3xl sm:p-7"
+          onClick={(event) => event.stopPropagation()}
+          role="dialog"
+        >
+          <div className="mb-6 flex items-start justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="h-14 w-14 shrink-0 overflow-hidden rounded-full border-2 border-slate-600 bg-slate-900">
+                <img
+                  src={activeSelectedAsset.logoURI || "/logo.png"}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  onError={(event) => {
+                    if (!event.currentTarget.src.endsWith("/logo.png")) event.currentTarget.src = "/logo.png";
+                  }}
+                />
+              </div>
+              <div className="min-w-0">
+                <span className="text-xs font-bold uppercase tracking-[0.18em] text-blue-300">Base asset</span>
+                <h2 className="truncate text-xl font-bold text-white sm:text-2xl">{activeSelectedAsset.name}</h2>
+                <span className="font-mono text-sm font-semibold text-slate-400">{activeSelectedAsset.symbol}</span>
+              </div>
+            </div>
+            <button type="button" className="rounded-xl border border-slate-700 p-2 text-slate-300 hover:bg-slate-800" onClick={() => setSelectedAsset(null)} aria-label="Close asset details">
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="mb-6 flex flex-wrap items-end gap-x-4 gap-y-2">
+            <strong className="font-mono text-3xl font-bold tracking-tight text-white sm:text-4xl">{formatDetailedPrice(activeSelectedAsset.price)}</strong>
+            <span className={`mb-1 rounded-lg px-2.5 py-1 text-sm font-bold ${
+              (activeSelectedAsset.change ?? 0) >= 0
+                ? "bg-emerald-500/10 text-emerald-400"
+                : "bg-rose-500/10 text-rose-400"
+            }`}>
+              {activeSelectedAsset.change === null
+                ? "24h change unavailable"
+                : `${activeSelectedAsset.change >= 0 ? "+" : ""}${activeSelectedAsset.change.toFixed(2)}% (24h)`}
+            </span>
+          </div>
+
+          <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-slate-800 bg-[#101a2d] p-4">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Market Cap</span>
+              <strong className="mt-2 block font-mono text-lg text-white">{formatUsdStat(activeSelectedAsset.marketCap)}</strong>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-[#101a2d] p-4">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">24h Trading Volume</span>
+              <strong className="mt-2 block font-mono text-lg text-white">{formatUsdStat(activeSelectedAsset.volume)}</strong>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-[#101a2d] p-4">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Fully Diluted Valuation</span>
+              <strong className="mt-2 block font-mono text-lg text-white">{formatUsdStat(activeSelectedAsset.fdv)}</strong>
             </div>
           </div>
-          <div className="drawer-metrics">
-            <div className="metric">
-              <span>Total Supply</span>
-              <strong>{selectedAsset.totalSupply || "—"}</strong>
-            </div>
-            <div className="metric">
-              <span>Circulating Supply</span>
-              <strong>{selectedAsset.circulatingSupply || "—"}</strong>
-            </div>
-            <div className="metric">
-              <span>Contract Address</span>
-              <strong className="contract-address">{selectedAsset.address || "—"}</strong>
+
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-200"><BarChart3 size={16} className="text-blue-300" /> Price performance</div>
+            <div className="flex gap-1 rounded-xl border border-slate-800 bg-[#101a2d] p-1" aria-label="Chart timeframe">
+              {(["1h", "24h", "7d", "30d", "1y"] as const).map((period) => (
+                <button
+                  key={period}
+                  type="button"
+                  aria-pressed={timeframe === period}
+                  onClick={() => setTimeframe(period)}
+                  className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${
+                    timeframe === period ? "bg-blue-500 text-white" : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {period}
+                </button>
+              ))}
             </div>
           </div>
-          <button 
-            className="drawer-swap-button"
-            onClick={() => {
-              setSelectedAsset(null);
-              open({ view: 'Swap' });
-            }}
-          >
-            [ SWAP THIS ASSET IN WALLET ]
-          </button>
-        </div>
+
+          <div className="mb-6 h-56 rounded-2xl border border-slate-800 bg-[#101a2d]/70 p-3">
+            {chartLoading ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-400">Loading price history...</div>
+            ) : chartKey && chartData.length > 1 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                  <defs>
+                    <linearGradient id="market-detail-gradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke="#243149" strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="timestamp"
+                    tickFormatter={(value: number) => new Date(value * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                    tick={{ fill: "#94a3b8", fontSize: 10 }}
+                    axisLine={false}
+                    tickLine={false}
+                    minTickGap={24}
+                  />
+                  <YAxis
+                    domain={["auto", "auto"]}
+                    tickFormatter={(value: number) => `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 })}`}
+                    tick={{ fill: "#94a3b8", fontSize: 10 }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={72}
+                  />
+                  <Tooltip
+                    contentStyle={{ background: "#0b1220", border: "1px solid #334155", borderRadius: 12 }}
+                    labelFormatter={(value) => new Date(Number(value) * 1000).toLocaleString()}
+                    formatter={(value) => [formatDetailedPrice(typeof value === "number" ? value : Number(value)), "Price"]}
+                  />
+                  <Area type="monotone" dataKey="price" stroke="#60a5fa" strokeWidth={2} fill="url(#market-detail-gradient)" isAnimationActive={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-2 px-5 text-center text-sm text-slate-400">
+                <span>{chartError ?? (chartKey ? "Price history is not available for this asset yet." : "A live trading pair is not available for this asset.")}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              disabled={!activeSelectedAsset.address || !isAddress(activeSelectedAsset.address)}
+              className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-blue-950/40 transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => {
+                if (!activeSelectedAsset.address || !isAddress(activeSelectedAsset.address)) return;
+                const tokenAddress = getAddress(activeSelectedAsset.address);
+                setSelectedAsset(null);
+                open({ view: "Swap", arguments: { fromToken: tokenAddress } });
+              }}
+            >
+              <RefreshCw size={17} /> Swap Asset
+            </button>
+            <button
+              type="button"
+              className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-600 bg-[#101a2d] px-5 py-3 text-sm font-bold text-slate-100 transition-colors hover:border-blue-400 hover:bg-[#16243d]"
+              onClick={() => {
+                const address = activeSelectedAsset.address?.toLowerCase();
+                if (!address) return;
+                setComparedAddresses((current) => current.includes(address)
+                  ? current.filter((item) => item !== address)
+                  : current.length < 4 ? [...current, address] : current);
+              }}
+            >
+              <BarChart3 size={17} /> {isCompared ? "Remove from Compare" : "Compare"}
+            </button>
+          </div>
+          {comparedAssets.length > 0 && (
+            <div className="mt-4 rounded-xl border border-slate-800 bg-[#101a2d] p-3">
+              <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Comparison watchlist · up to 4 assets</div>
+              <div className="flex flex-wrap gap-2">
+                {comparedAssets.map((asset) => (
+                  <span key={asset.address} className="rounded-lg border border-slate-700 bg-[#0b1220] px-2.5 py-1.5 text-xs font-semibold text-slate-200">
+                    {asset.symbol} <span className="ml-1 font-mono text-slate-400">{formatDetailedPrice(asset.price)}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
       </div>
     )}
   </div>;
-}
-
-function MarketSparkline({ values, positive }: { values: number[]; positive: boolean }) {
-  if (values.length < 2) return <span className="market-sparkline-empty" aria-label="Trend unavailable" />;
-  return <span className="market-sparkline" aria-label="Seven-day price trend"><ResponsiveContainer width="100%" height="100%"><LineChart data={values.map((value, index) => ({ index, value }))} margin={{ top: 2, right: 1, bottom: 2, left: 1 }}><Line type="monotone" dataKey="value" stroke={positive ? "#69d5e8" : "#ff9f81"} strokeWidth={1.5} dot={false} isAnimationActive={false} /></LineChart></ResponsiveContainer></span>;
 }
 
 function PlaceholderView({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) { return <div className="placeholder-view"><div className="placeholder-icon">{icon}</div><span className="eyebrow">COMING ONLINE</span><h2>{title}</h2><p>{text}</p><button className="primary-button">View protocol status <ArrowUpRight size={16} /></button></div>; }
