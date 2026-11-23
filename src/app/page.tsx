@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
+  ArrowLeft,
   ArrowUpRight,
   ArrowDown,
   ArrowUp,
@@ -87,6 +88,8 @@ const RTR_TOKEN_DETAILS = {
   marketCap: 150000,
 } as const;
 const BASE_WETH_ADDRESS = "0x4200000000000000000000000000000000000006";
+const BASE_USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+const BASE_USDT_ADDRESS = "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2";
 const RTR_MARKET_ASSET: MarketAsset = {
   id: RTR_TOKEN_DETAILS.address,
   address: RTR_TOKEN_DETAILS.address,
@@ -137,6 +140,43 @@ function isOneInchRegistryToken(value: unknown): value is OneInchRegistryToken {
     && typeof value.decimals === "number"
     && Number.isInteger(value.decimals)
     && typeof value.logoURI === "string";
+}
+
+function buildCoreMarketAssets(
+  registryTokens: OneInchRegistryToken[],
+  market: MarketAsset[],
+  quoteCache: Map<string, MarketQuote>,
+): MarketAsset[] {
+  const registryByAddress = new Map(registryTokens.map((token) => [token.address.toLowerCase(), token]));
+  const coreAssets = [
+    { address: BASE_WETH_ADDRESS, symbol: "ETH", name: "Ethereum", decimals: 18 },
+    { address: BASE_USDC_ADDRESS, symbol: "USDC", name: "USD Coin", decimals: 6 },
+    { address: BASE_USDT_ADDRESS, symbol: "USDT", name: "Tether USD", decimals: 6 },
+  ];
+
+  return coreAssets.map((coreAsset): MarketAsset => {
+    const address = coreAsset.address.toLowerCase();
+    const metadata = registryByAddress.get(address);
+    const cachedQuote = quoteCache.get(address);
+    const marketAsset = market.find((asset) => asset.symbol.toUpperCase() === coreAsset.symbol);
+    return {
+      id: coreAsset.address,
+      address: coreAsset.address,
+      symbol: coreAsset.symbol,
+      name: coreAsset.name,
+      decimals: metadata?.decimals ?? coreAsset.decimals,
+      logoURI: metadata?.logoURI ?? "",
+      price: cachedQuote?.price ?? marketAsset?.price ?? null,
+      change: cachedQuote?.change ?? marketAsset?.change ?? null,
+      volume: cachedQuote?.volume ?? marketAsset?.volume ?? null,
+      marketCap: cachedQuote?.marketCap ?? marketAsset?.marketCap ?? null,
+      fdv: cachedQuote?.fdv ?? null,
+      pairAddress: cachedQuote?.pairAddress,
+      sparkline: [],
+      totalSupply: cachedQuote?.totalSupply ?? marketAsset?.totalSupply ?? null,
+      circulatingSupply: cachedQuote?.circulatingSupply ?? marketAsset?.circulatingSupply ?? null,
+    };
+  });
 }
 
 function readStoredEmail() {
@@ -1425,58 +1465,14 @@ function MarketView({ market }: { market: MarketAsset[] }) {
           throw new Error("1inch returned an invalid Base token registry.");
         }
 
-        const verifiedEcosystem = Object.values(registry)
+        const registryTokens = Object.values(registry)
           .filter(isOneInchRegistryToken)
           .filter((token) =>
             isAddress(token.address) &&
             token.symbol.trim() !== "" &&
-            token.logoURI.trim() !== "" &&
-            token.symbol.toUpperCase() !== RTR_TOKEN_DETAILS.symbol &&
-            token.address.toLowerCase() !== RTR_TOKEN_DETAILS.address.toLowerCase(),
-          )
-          .map((token): MarketAsset => {
-            const cachedQuote = quoteCache.current.get(token.address.toLowerCase());
-            const isWrappedNativeEth = token.symbol.toUpperCase() === "WETH";
-            const coreMarketAsset = market.find((asset) =>
-              asset.symbol.toUpperCase() === token.symbol.toUpperCase()
-              || (isWrappedNativeEth && asset.symbol.toUpperCase() === "ETH"),
-            );
-            return {
-              id: token.address,
-              address: token.address,
-              symbol: isWrappedNativeEth ? "ETH" : token.symbol,
-              name: isWrappedNativeEth ? "Ethereum" : token.name,
-              decimals: token.decimals,
-              logoURI: token.logoURI,
-              price: cachedQuote?.price ?? coreMarketAsset?.price ?? null,
-              change: cachedQuote?.change ?? coreMarketAsset?.change ?? null,
-              volume: cachedQuote?.volume ?? coreMarketAsset?.volume ?? null,
-              marketCap: cachedQuote?.marketCap ?? coreMarketAsset?.marketCap ?? null,
-              fdv: cachedQuote?.fdv ?? null,
-              pairAddress: cachedQuote?.pairAddress,
-              sparkline: [],
-              totalSupply: cachedQuote?.totalSupply ?? coreMarketAsset?.totalSupply ?? null,
-              circulatingSupply: cachedQuote?.circulatingSupply ?? coreMarketAsset?.circulatingSupply ?? null,
-            };
-          });
-        if (!verifiedEcosystem.some((asset) => asset.address?.toLowerCase() === BASE_WETH_ADDRESS.toLowerCase())) {
-          const ethereum = market.find((asset) => asset.symbol.toUpperCase() === "ETH");
-          verifiedEcosystem.unshift({
-            id: BASE_WETH_ADDRESS,
-            address: BASE_WETH_ADDRESS,
-            symbol: "ETH",
-            name: "Ethereum",
-            decimals: 18,
-            price: ethereum?.price ?? null,
-            change: ethereum?.change ?? null,
-            volume: ethereum?.volume ?? null,
-            marketCap: ethereum?.marketCap ?? null,
-            totalSupply: ethereum?.totalSupply ?? null,
-            circulatingSupply: ethereum?.circulatingSupply ?? null,
-            logoURI: "",
-            sparkline: [],
-          });
-        }
+            token.logoURI.trim() !== "",
+          );
+        const verifiedEcosystem = buildCoreMarketAssets(registryTokens, market, quoteCache.current);
 
         if (!controller.signal.aborted) {
           setAllTokens([RTR_MARKET_ASSET, ...verifiedEcosystem]);
@@ -1486,7 +1482,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
         console.error("Error setting up market view:", error);
         setAllTokens([
           RTR_MARKET_ASSET,
-          ...market.filter((asset) => asset.symbol.toUpperCase() !== RTR_TOKEN_DETAILS.symbol),
+          ...buildCoreMarketAssets([], market, quoteCache.current),
         ]);
       } finally {
         if (!controller.signal.aborted) setLoading(false);
@@ -1863,6 +1859,14 @@ function MarketView({ market }: { market: MarketAsset[] }) {
         >
           <div className="mb-6 flex items-start justify-between gap-4">
             <div className="flex min-w-0 items-center gap-4">
+              <button
+                type="button"
+                className="rounded-xl border border-slate-700 p-2 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+                onClick={closeAssetDrawer}
+                aria-label="Back to market list"
+              >
+                <ArrowLeft size={20} />
+              </button>
               <MarketTokenLogo asset={activeSelectedAsset} large />
               <div className="min-w-0">
                 <span className="text-xs font-bold uppercase tracking-[0.18em] text-blue-300">Base asset</span>
@@ -1980,20 +1984,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
             )}
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <button
-              type="button"
-              disabled={!activeSelectedAsset.address || !isAddress(activeSelectedAsset.address)}
-              className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-blue-950/40 transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-              onClick={() => {
-                if (!activeSelectedAsset.address || !isAddress(activeSelectedAsset.address)) return;
-                const tokenAddress = getAddress(activeSelectedAsset.address);
-                closeAssetDrawer();
-                open({ view: "Swap", arguments: { fromToken: tokenAddress } });
-              }}
-            >
-              <RefreshCw size={17} /> Swap Asset
-            </button>
+          <div className="grid grid-cols-1 gap-3">
             <button
               type="button"
               className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-600 bg-[#101a2d] px-5 py-3 text-sm font-bold text-slate-100 transition-colors hover:border-blue-400 hover:bg-[#16243d]"
