@@ -1385,6 +1385,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
   }>({ key: "", points: [], loading: false, error: null });
   const requestedQuoteAddresses = useRef(new Set<string>());
   const quoteCache = useRef(new Map<string, MarketQuote>());
+  const drawerHistoryEntry = useRef(false);
   const { open } = useAppKit();
 
   useEffect(() => {
@@ -1628,6 +1629,52 @@ function MarketView({ market }: { market: MarketAsset[] }) {
   const isQuoteLoading = (asset: MarketAsset) =>
     Boolean(asset.address && quoteLoadingAddresses.includes(asset.address.toLowerCase()));
   const selectedQuoteLoading = activeSelectedAsset ? isQuoteLoading(activeSelectedAsset) : false;
+  const isAssetDrawerOpen = activeSelectedAsset !== null;
+  const marketGridStyle = { gridTemplateColumns: "repeat(12, minmax(0, 1fr))" };
+
+  useEffect(() => {
+    if (!isAssetDrawerOpen) return;
+
+    const historyState = window.history.state;
+    if (!isRecord(historyState) || historyState.rtrMarketAssetDrawer !== true) {
+      window.history.pushState(
+        { ...(isRecord(historyState) ? historyState : {}), rtrMarketAssetDrawer: true },
+        "",
+        window.location.href,
+      );
+    }
+    drawerHistoryEntry.current = true;
+
+    const handlePopState = () => {
+      drawerHistoryEntry.current = false;
+      setSelectedAsset(null);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (drawerHistoryEntry.current) {
+        drawerHistoryEntry.current = false;
+        window.history.back();
+      } else {
+        setSelectedAsset(null);
+      }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isAssetDrawerOpen]);
+
+  const closeAssetDrawer = () => {
+    if (drawerHistoryEntry.current) {
+      drawerHistoryEntry.current = false;
+      window.history.back();
+      return;
+    }
+    setSelectedAsset(null);
+  };
 
   useEffect(() => {
     if (!chartKey || !activeSelectedAsset?.pairAddress) return;
@@ -1700,7 +1747,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
     <div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and real-time movement across the RTR ecosystem.</p></div>
     <label className="market-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search market assets</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by symbol or name" /></label>
     <div className="w-full bg-[#0d1527]/60 border border-slate-800/80 rounded-2xl overflow-hidden shadow-xl mt-4" aria-label="Base ecosystem market monitor">
-      <div className="grid grid-cols-12 gap-2 px-5 py-4 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800/80 bg-[#0d1527]" style={{ gridTemplateColumns: "repeat(12, minmax(0, 1fr))" }}>
+      <div className="grid grid-cols-12 gap-2 px-5 py-4 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800/80 bg-[#0d1527]" style={marketGridStyle}>
         <div className="col-span-2 text-left"># TREND</div>
         <div className="col-span-4 text-left">ASSET</div>
         <div className="col-span-3 text-right">SPOT PRICE</div>
@@ -1730,7 +1777,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
                   className={`grid grid-cols-12 gap-2 px-5 py-4 items-center text-xs cursor-pointer transition-all duration-150 ${
                     isSelected ? "bg-blue-500/5 border-l-2 border-blue-500" : "hover:bg-[#121c33]/50"
                   }`}
-                  style={{ gridTemplateColumns: "repeat(12, minmax(0, 1fr))" }}
+                  style={marketGridStyle}
                 >
                   <div className="col-span-2 flex items-center gap-2 min-w-0">
                     <span className="font-bold text-slate-500 font-mono">{index + 1}</span>
@@ -1749,7 +1796,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
                     <MarketTokenLogo asset={asset} />
                     <div className="min-w-0 truncate">
                       <span className="font-bold block text-slate-100 tracking-wide uppercase font-mono">{asset.symbol}</span>
-                      <span className="text-[10px] text-slate-400 block font-medium truncate">{asset.name}</span>
+                      {!isRTR && <span className="text-[10px] text-slate-400 block font-medium truncate">{asset.name}</span>}
                     </div>
                   </div>
                   <div className="col-span-3 text-right font-bold text-slate-200 font-mono">
@@ -1780,7 +1827,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
       </div>
     </div>
     {activeSelectedAsset && (
-      <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/75 p-0 backdrop-blur-sm sm:items-center sm:p-5" onClick={() => setSelectedAsset(null)}>
+      <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/75 p-0 backdrop-blur-sm sm:items-center sm:p-5" onClick={closeAssetDrawer}>
         <section
           aria-label={`${activeSelectedAsset.name} asset details`}
           aria-modal="true"
@@ -1797,7 +1844,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
                 <span className="font-mono text-sm font-semibold text-slate-400">{activeSelectedAsset.symbol}</span>
               </div>
             </div>
-            <button type="button" className="rounded-xl border border-slate-700 p-2 text-slate-300 hover:bg-slate-800" onClick={() => setSelectedAsset(null)} aria-label="Close asset details">
+            <button type="button" className="rounded-xl border border-slate-700 p-2 text-slate-300 hover:bg-slate-800" onClick={closeAssetDrawer} aria-label="Close asset details">
               <X size={20} />
             </button>
           </div>
@@ -1911,7 +1958,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
               onClick={() => {
                 if (!activeSelectedAsset.address || !isAddress(activeSelectedAsset.address)) return;
                 const tokenAddress = getAddress(activeSelectedAsset.address);
-                setSelectedAsset(null);
+                closeAssetDrawer();
                 open({ view: "Swap", arguments: { fromToken: tokenAddress } });
               }}
             >
