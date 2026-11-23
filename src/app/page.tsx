@@ -52,6 +52,14 @@ type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "portfoli
 type Activation = { tier: string; activated_at: string; expires_at: string };
 type Profile = { full_name?: string | null; avatar_url: string | null; balance: number | string | null };
 type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null; marketCap?: number | null; fdv?: number | null; pairAddress?: string; sparkline?: number[]; address?: string; logoURI?: string; totalSupply?: string | null; circulatingSupply?: string | null; decimals?: number };
+type MarketQuote = {
+  price: number | null;
+  change: number | null;
+  volume: number | null;
+  marketCap: number | null;
+  fdv: number | null;
+  pairAddress?: string;
+};
 type MarketHistoryPoint = { timestamp: number; price: number };
 type MarketTimeframe = "1h" | "24h" | "7d" | "30d" | "1y";
 const supabase = createClient();
@@ -59,6 +67,7 @@ const rtrTokenAbi = [{ name: "balanceOf", type: "function", stateMutability: "vi
 const AUTH_EMAIL_STORAGE_KEY = "user_email";
 const LEGACY_AUTH_EMAIL_STORAGE_KEY = "rtr-email";
 const MARKET_CACHE_KEY = "rtr-market-prices-v1";
+const MARKET_QUOTE_CACHE_KEY = "rtr-base-token-quotes-v1";
 const MARKET_CACHE_LIMIT = 100;
 const BUILD_TIMESTAMP = process.env.NEXT_PUBLIC_BUILD_TIMESTAMP ?? "development";
 const RTR_TOKEN_DETAILS = {
@@ -100,6 +109,18 @@ interface OneInchRegistryToken {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isMarketQuote(value: unknown): value is MarketQuote {
+  if (!isRecord(value)) return false;
+  const numericOrNull = (field: string) =>
+    value[field] === null || (typeof value[field] === "number" && Number.isFinite(value[field]));
+  return numericOrNull("price")
+    && numericOrNull("change")
+    && numericOrNull("volume")
+    && numericOrNull("marketCap")
+    && numericOrNull("fdv")
+    && (value.pairAddress === undefined || typeof value.pairAddress === "string");
 }
 
 function isOneInchRegistryToken(value: unknown): value is OneInchRegistryToken {
@@ -214,9 +235,55 @@ function formatTime(seconds: number) {
 }
 
 function formatMarketPrice(asset: MarketAsset) {
-  if (asset.price === null) return "--";
+  if (asset.price === null) return "Unavailable";
   const stablecoin = asset.symbol === "USDT" || asset.symbol === "USDC";
   return `$${asset.price.toLocaleString(undefined, { minimumFractionDigits: stablecoin ? 4 : 0, maximumFractionDigits: stablecoin ? 4 : 4 })}`;
+}
+
+function getMarketTokenLogo(asset: MarketAsset) {
+  if (asset.address?.toLowerCase() === RTR_TOKEN_DETAILS.address.toLowerCase()) {
+    return RTR_TOKEN_DETAILS.logoURI;
+  }
+
+  const logoURI = asset.logoURI?.trim();
+  if (!logoURI || logoURI === RTR_TOKEN_DETAILS.logoURI) return null;
+  if (logoURI.startsWith("ipfs://")) {
+    return `https://ipfs.io/ipfs/${logoURI.slice("ipfs://".length)}`;
+  }
+  if (/^https?:\/\//i.test(logoURI)) return logoURI;
+  return null;
+}
+
+function MarketTokenLogo({ asset, large = false }: { asset: MarketAsset; large?: boolean }) {
+  const [failed, setFailed] = useState(false);
+  const logo = getMarketTokenLogo(asset);
+  const isRTR = asset.address?.toLowerCase() === RTR_TOKEN_DETAILS.address.toLowerCase();
+  const sizeClass = large ? "h-14 w-14" : "h-9 w-9";
+
+  if (!logo || failed) {
+    return (
+      <div
+        aria-label={`${asset.symbol} token placeholder`}
+        className={`${sizeClass} flex shrink-0 items-center justify-center overflow-hidden rounded-full border-2 ${
+          isRTR ? "border-emerald-500/60 bg-emerald-950/60 text-emerald-300" : "border-slate-600 bg-slate-800 text-slate-300"
+        }`}
+        role="img"
+      >
+        <span className={`${large ? "text-lg" : "text-xs"} font-bold`}>{asset.symbol.slice(0, 1).toUpperCase()}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${sizeClass} shrink-0 overflow-hidden rounded-full border-2 border-slate-600 bg-slate-900`}>
+      <img
+        src={logo}
+        alt={`${asset.symbol} logo`}
+        className="h-full w-full object-cover"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  );
 }
 
 function displayNameFromUser(user: User | null) {
@@ -1302,6 +1369,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
   const [visibleCount, setVisibleCount] = useState(50);
   const [searchResults, setSearchResults] = useState<MarketAsset[] | null>(null);
   const [comparedAddresses, setComparedAddresses] = useState<string[]>([]);
+  const [quoteLoadingAddresses, setQuoteLoadingAddresses] = useState<string[]>([]);
   const [timeframe, setTimeframe] = useState<MarketTimeframe>("24h");
   const [quoteRefreshTick, setQuoteRefreshTick] = useState(0);
   const [chartState, setChartState] = useState<{
@@ -1311,7 +1379,20 @@ function MarketView({ market }: { market: MarketAsset[] }) {
     error: string | null;
   }>({ key: "", points: [], loading: false, error: null });
   const requestedQuoteAddresses = useRef(new Set<string>());
+  const quoteCache = useRef(new Map<string, MarketQuote>());
   const { open } = useAppKit();
+
+  useEffect(() => {
+    try {
+      const cached: unknown = JSON.parse(window.localStorage.getItem(MARKET_QUOTE_CACHE_KEY) ?? "null");
+      if (!isRecord(cached)) return;
+      for (const [address, value] of Object.entries(cached)) {
+        if (isAddress(address) && isMarketQuote(value)) quoteCache.current.set(address.toLowerCase(), value);
+      }
+    } catch {
+      // The persisted quote cache is optional; live market data remains authoritative.
+    }
+  }, []);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -1345,19 +1426,26 @@ function MarketView({ market }: { market: MarketAsset[] }) {
             token.logoURI.trim() !== "" &&
             token.symbol.toUpperCase() !== RTR_TOKEN_DETAILS.symbol,
           )
-          .map((token): MarketAsset => ({
-            id: token.address,
-            address: token.address,
-            symbol: token.symbol,
-            name: token.name,
-            decimals: token.decimals,
-            logoURI: token.logoURI,
-            price: null,
-            change: null,
-            sparkline: [],
-            totalSupply: null,
-            circulatingSupply: null,
-          }));
+          .map((token): MarketAsset => {
+            const cachedQuote = quoteCache.current.get(token.address.toLowerCase());
+            return {
+              id: token.address,
+              address: token.address,
+              symbol: token.symbol,
+              name: token.name,
+              decimals: token.decimals,
+              logoURI: token.logoURI,
+              price: cachedQuote?.price ?? null,
+              change: cachedQuote?.change ?? null,
+              volume: cachedQuote?.volume ?? null,
+              marketCap: cachedQuote?.marketCap ?? null,
+              fdv: cachedQuote?.fdv ?? null,
+              pairAddress: cachedQuote?.pairAddress,
+              sparkline: [],
+              totalSupply: null,
+              circulatingSupply: null,
+            };
+          });
 
         if (!controller.signal.aborted) {
           setAllTokens([RTR_MARKET_ASSET, ...verifiedEcosystem]);
@@ -1415,6 +1503,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
     const addresses = quoteRequestKey.split(",").filter((address) => !requestedQuoteAddresses.current.has(address));
     if (addresses.length === 0) return;
     addresses.forEach((address) => requestedQuoteAddresses.current.add(address));
+    setQuoteLoadingAddresses((current) => [...new Set([...current, ...addresses])]);
     const controller = new AbortController();
 
     const loadTokenQuotes = async () => {
@@ -1460,13 +1549,36 @@ function MarketView({ market }: { market: MarketAsset[] }) {
 
         if (controller.signal.aborted) return;
         setAllTokens((previous) => previous.map((token) => {
-          const quote = token.address ? quotes.get(token.address.toLowerCase()) : undefined;
-          return quote ? { ...token, ...quote } : token;
+          const address = token.address?.toLowerCase();
+          const quote = address ? quotes.get(address) : undefined;
+          if (!address || !quote) return token;
+
+          const cachedQuote = quoteCache.current.get(address);
+          const mergedQuote = {
+            price: quote.price ?? cachedQuote?.price ?? token.price,
+            change: quote.change ?? cachedQuote?.change ?? token.change,
+            volume: quote.volume ?? cachedQuote?.volume ?? token.volume ?? null,
+            marketCap: quote.marketCap ?? cachedQuote?.marketCap ?? token.marketCap ?? null,
+            fdv: quote.fdv ?? cachedQuote?.fdv ?? token.fdv ?? null,
+            pairAddress: quote.pairAddress ?? cachedQuote?.pairAddress ?? token.pairAddress,
+          };
+          quoteCache.current.set(address, mergedQuote);
+          return { ...token, ...mergedQuote };
         }));
+        try {
+          window.localStorage.setItem(
+            MARKET_QUOTE_CACHE_KEY,
+            JSON.stringify(Object.fromEntries(quoteCache.current)),
+          );
+        } catch {
+          // A full or disabled storage area does not block the live quote update.
+        }
       } catch (error) {
         if (!controller.signal.aborted) {
           console.error("Unable to load live Base token quotes:", error);
         }
+      } finally {
+        setQuoteLoadingAddresses((current) => current.filter((address) => !addresses.includes(address)));
       }
     };
 
@@ -1487,6 +1599,9 @@ function MarketView({ market }: { market: MarketAsset[] }) {
   const comparedAssets = comparedAddresses
     .map((address) => allTokens.find((token) => token.address?.toLowerCase() === address))
     .filter((token): token is MarketAsset => Boolean(token));
+  const isQuoteLoading = (asset: MarketAsset) =>
+    Boolean(asset.address && quoteLoadingAddresses.includes(asset.address.toLowerCase()));
+  const selectedQuoteLoading = activeSelectedAsset ? isQuoteLoading(activeSelectedAsset) : false;
 
   useEffect(() => {
     if (!chartKey || !activeSelectedAsset?.pairAddress) return;
@@ -1536,17 +1651,22 @@ function MarketView({ market }: { market: MarketAsset[] }) {
   const chartLoading = Boolean(chartKey && chartState.key !== chartKey) || (chartState.key === chartKey && chartState.loading);
   const chartError = chartState.key === chartKey ? chartState.error : null;
   const formatUsdStat = (value: number | null | undefined) => value === null || value === undefined
-    ? "—"
+    ? null
     : `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
   const formatDetailedPrice = (value: number | null) => value === null
-    ? "—"
+    ? "Price unavailable"
     : `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 8 })}`;
+  const selectedStats = activeSelectedAsset ? [
+    { label: "Market Cap", value: formatUsdStat(activeSelectedAsset.marketCap) },
+    { label: "24h Trading Volume", value: formatUsdStat(activeSelectedAsset.volume) },
+    { label: "Fully Diluted Valuation", value: formatUsdStat(activeSelectedAsset.fdv) },
+  ].filter((stat) => stat.value !== null || selectedQuoteLoading) : [];
 
   return <div className="market-view">
     <div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and real-time movement across the RTR ecosystem.</p></div>
     <label className="market-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search market assets</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by symbol or name" /></label>
     <div className="w-full bg-[#0d1527]/60 border border-slate-800/80 rounded-2xl overflow-hidden shadow-xl mt-4" aria-label="Base ecosystem market monitor">
-      <div className="grid grid-cols-12 gap-2 px-5 py-4 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800/80 bg-[#0d1527]">
+      <div className="grid grid-cols-12 gap-2 px-5 py-4 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800/80 bg-[#0d1527]" style={{ gridTemplateColumns: "repeat(12, minmax(0, 1fr))" }}>
         <div className="col-span-2 text-left"># TREND</div>
         <div className="col-span-4 text-left">ASSET</div>
         <div className="col-span-3 text-right">SPOT PRICE</div>
@@ -1575,6 +1695,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
                   className={`grid grid-cols-12 gap-2 px-5 py-4 items-center text-xs cursor-pointer transition-all duration-150 ${
                     isSelected ? "bg-blue-500/5 border-l-2 border-blue-500" : "hover:bg-[#121c33]/50"
                   }`}
+                  style={{ gridTemplateColumns: "repeat(12, minmax(0, 1fr))" }}
                 >
                   <div className="col-span-2 flex items-center gap-2 min-w-0">
                     <span className="font-bold text-slate-500 font-mono">{index + 1}</span>
@@ -1590,25 +1711,16 @@ function MarketView({ market }: { market: MarketAsset[] }) {
                     )}
                   </div>
                   <div className="col-span-4 flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-full bg-slate-900 border-2 border-slate-700 flex items-center justify-center shrink-0 overflow-hidden shadow-lg shadow-black/20">
-                      <img
-                        src={asset.logoURI || "/logo.png"}
-                        alt={asset.name}
-                        className="w-full h-full object-cover"
-                        onError={(event) => {
-                          if (!event.currentTarget.src.endsWith("/logo.png")) {
-                            event.currentTarget.src = "/logo.png";
-                          }
-                        }}
-                      />
-                    </div>
+                    <MarketTokenLogo asset={asset} />
                     <div className="min-w-0 truncate">
                       <span className="font-bold block text-slate-100 tracking-wide uppercase font-mono">{asset.symbol}</span>
                       <span className="text-[10px] text-slate-400 block font-medium truncate">{asset.name}</span>
                     </div>
                   </div>
                   <div className="col-span-3 text-right font-bold text-slate-200 font-mono">
-                    {formatMarketPrice(asset)}
+                    {asset.price === null
+                      ? isQuoteLoading(asset) ? "Loading..." : "Unavailable"
+                      : formatMarketPrice(asset)}
                   </div>
                   <div className={`col-span-3 text-right font-bold font-mono ${
                     changeIsPositive ? "text-emerald-400" : "text-rose-400"
@@ -1619,7 +1731,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
                         {Math.abs(asset.change).toFixed(2)}%
                       </>
                     ) : (
-                      <span className="text-slate-600">--</span>
+                      <span className="text-slate-500">{isQuoteLoading(asset) ? "Loading..." : "Unavailable"}</span>
                     )}
                   </div>
                 </div>
@@ -1643,16 +1755,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
         >
           <div className="mb-6 flex items-start justify-between gap-4">
             <div className="flex min-w-0 items-center gap-4">
-              <div className="h-14 w-14 shrink-0 overflow-hidden rounded-full border-2 border-slate-600 bg-slate-900">
-                <img
-                  src={activeSelectedAsset.logoURI || "/logo.png"}
-                  alt=""
-                  className="h-full w-full object-cover"
-                  onError={(event) => {
-                    if (!event.currentTarget.src.endsWith("/logo.png")) event.currentTarget.src = "/logo.png";
-                  }}
-                />
-              </div>
+              <MarketTokenLogo asset={activeSelectedAsset} large />
               <div className="min-w-0">
                 <span className="text-xs font-bold uppercase tracking-[0.18em] text-blue-300">Base asset</span>
                 <h2 className="truncate text-xl font-bold text-white sm:text-2xl">{activeSelectedAsset.name}</h2>
@@ -1665,32 +1768,32 @@ function MarketView({ market }: { market: MarketAsset[] }) {
           </div>
 
           <div className="mb-6 flex flex-wrap items-end gap-x-4 gap-y-2">
-            <strong className="font-mono text-3xl font-bold tracking-tight text-white sm:text-4xl">{formatDetailedPrice(activeSelectedAsset.price)}</strong>
+            <strong className="font-mono text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              {activeSelectedAsset.price === null && selectedQuoteLoading ? "Data loading..." : formatDetailedPrice(activeSelectedAsset.price)}
+            </strong>
             <span className={`mb-1 rounded-lg px-2.5 py-1 text-sm font-bold ${
               (activeSelectedAsset.change ?? 0) >= 0
                 ? "bg-emerald-500/10 text-emerald-400"
                 : "bg-rose-500/10 text-rose-400"
             }`}>
               {activeSelectedAsset.change === null
-                ? "24h change unavailable"
+                ? selectedQuoteLoading ? "Loading 24h change..." : "24h change unavailable"
                 : `${activeSelectedAsset.change >= 0 ? "+" : ""}${activeSelectedAsset.change.toFixed(2)}% (24h)`}
             </span>
           </div>
 
-          <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-slate-800 bg-[#101a2d] p-4">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Market Cap</span>
-              <strong className="mt-2 block font-mono text-lg text-white">{formatUsdStat(activeSelectedAsset.marketCap)}</strong>
+          {(selectedStats.length > 0 || selectedQuoteLoading) && (
+            <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {selectedStats.map((stat) => (
+                <div key={stat.label} className="rounded-2xl border border-slate-800 bg-[#101a2d] p-4">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">{stat.label}</span>
+                  <strong className="mt-2 block font-mono text-lg text-white">
+                    {stat.value ?? "Data loading..."}
+                  </strong>
+                </div>
+              ))}
             </div>
-            <div className="rounded-2xl border border-slate-800 bg-[#101a2d] p-4">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">24h Trading Volume</span>
-              <strong className="mt-2 block font-mono text-lg text-white">{formatUsdStat(activeSelectedAsset.volume)}</strong>
-            </div>
-            <div className="rounded-2xl border border-slate-800 bg-[#101a2d] p-4">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Fully Diluted Valuation</span>
-              <strong className="mt-2 block font-mono text-lg text-white">{formatUsdStat(activeSelectedAsset.fdv)}</strong>
-            </div>
-          </div>
+          )}
 
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-200"><BarChart3 size={16} className="text-blue-300" /> Price performance</div>
@@ -1712,7 +1815,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
           </div>
 
           <div className="mb-6 h-56 rounded-2xl border border-slate-800 bg-[#101a2d]/70 p-3">
-            {chartLoading ? (
+            {chartLoading || selectedQuoteLoading && !chartKey ? (
               <div className="flex h-full items-center justify-center text-sm text-slate-400">Loading price history...</div>
             ) : chartKey && chartData.length > 1 ? (
               <ResponsiveContainer width="100%" height="100%">
