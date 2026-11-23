@@ -397,7 +397,7 @@ button { font: inherit; }
 }
 .balance-card, .wallet-card, .portfolio-value-card, .portfolio-trend-section, .onramp-banner, .auth-panel, .tier-card { padding: 24px; }
 .tier-card { width: 100%; max-width: 450px; margin: 0 auto; box-sizing: border-box; background: #0B1329; border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 16px; backdrop-filter: none; -webkit-backdrop-filter: none; will-change: transform, opacity; transform: translateZ(0); content-visibility: auto; contain-intrinsic-size: 100% 340px; }
-.tier-card.featured { background: #0B1329; border: 2px solid rgba(45, 212, 191, 0.8); box-shadow: 0 0 24px rgba(45, 212, 191, 0.14), 0 8px 32px rgba(0, 0, 0, 0.3); }
+.tier-card.featured { background: #0B1329; border: 1px solid rgba(148, 163, 184, 0.2); box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); }
 .upgrades-content-scroll { background-color: #090D16; }
 .tier-list { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; will-change: transform; transform: translate3d(0, 0, 0); backface-visibility: hidden; }
 .portfolio-holding-row { border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 18px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
@@ -427,9 +427,6 @@ button { font: inherit; }
 .tier-button:hover, .collect-button:hover, .primary-button:hover, .secondary-button:hover, .portfolio-action:hover:not(:disabled), .settings-row:hover { color: #FFFFFF; background: rgba(0, 184, 123, 0.25); border-color: rgba(0, 184, 123, 0.5); box-shadow: 0 0 17px rgba(0, 184, 123, 0.2); }
 .tier-button { color: #FFFFFF; background: #2563EB; border-color: #2563EB; }
 .tier-button:hover { color: #FFFFFF; background: #1D4ED8; border-color: #1D4ED8; box-shadow: 0 0 18px rgba(37, 99, 235, 0.35); }
-.tier-card.featured .tier-button { color: #042F2E; background: #2DD4BF; border-color: #2DD4BF; }
-.tier-card.featured .tier-button:hover { color: #042F2E; background: #5EEAD4; border-color: #5EEAD4; box-shadow: 0 0 18px rgba(45, 212, 191, 0.35); }
-.tier-card.featured .tier-button svg { color: #042F2E; filter: none; }
 .tier-button svg, .collect-button svg, .portfolio-action svg, .secondary-button svg { color: #FFFFFF; stroke-width: 1.5; filter: drop-shadow(0 0 4px rgba(0, 184, 123, 0.4)); }
 .tier-button .pulse { flex: 0 0 auto; }
 .portfolio-action { min-height: 54px; border-radius: 999px; background: rgba(0, 184, 123, 0.15); }
