@@ -26,6 +26,7 @@ type GeckoToken = {
     fdv_usd?: unknown;
     total_supply?: unknown;
     circulating_supply?: unknown;
+    decimals?: unknown;
   };
 };
 
@@ -40,6 +41,19 @@ function numericValue(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+function tokenAmountFromRaw(value: unknown, decimals: number | null): string | null {
+  if (typeof value !== "string" || decimals === null || decimals < 0 || decimals > 255) return null;
+  const raw = value.trim().replace(/\.0+$/, "");
+  if (!/^\d+$/.test(raw)) return null;
+
+  const padded = raw.padStart(decimals + 1, "0");
+  const whole = padded.slice(0, padded.length - decimals) || "0";
+  const fraction = decimals > 0
+    ? padded.slice(-decimals).replace(/0+$/, "")
+    : "";
+  return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
 function isDexPair(value: unknown): value is DexPair {
@@ -64,6 +78,16 @@ export async function GET(request: Request) {
   }
 
   const requestedAddresses = new Map(addresses.map((address) => [address.toLowerCase(), address]));
+  const requestedDecimals = new Map<string, number>();
+  (new URL(request.url).searchParams.get("decimals") ?? "")
+    .split(",")
+    .forEach((value, index) => {
+      const address = addresses[index]?.toLowerCase();
+      const decimals = Number(value);
+      if (address && Number.isInteger(decimals) && decimals >= 0 && decimals <= 255) {
+        requestedDecimals.set(address, decimals);
+      }
+    });
 
   const bestPairs = new Map<string, DexPair>();
   try {
@@ -109,7 +133,12 @@ export async function GET(request: Request) {
       },
     );
     if (response.ok) {
-      const payload: unknown = await response.json();
+      const body = await response.text();
+      const bodyWithExactSupplies = body.replace(
+        /("(?:total_supply|circulating_supply)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
+        '$1"$2"',
+      );
+      const payload: unknown = JSON.parse(bodyWithExactSupplies);
       if (isRecord(payload) && Array.isArray(payload.data)) {
         for (const item of payload.data.filter(isGeckoToken)) {
           const address = item.attributes?.address;
@@ -127,14 +156,16 @@ export async function GET(request: Request) {
     const pair = bestPairs.get(address);
     const fallback = geckoTokens.get(address)?.attributes;
     const pairAddress = typeof pair?.pairAddress === "string" ? pair.pairAddress : undefined;
+    const tokenDecimals = requestedDecimals.get(address)
+      ?? numericValue(fallback?.decimals);
     const values = {
       price: numericValue(pair?.priceUsd) ?? numericValue(fallback?.price_usd),
       change: numericValue(pair?.priceChange?.h24) ?? numericValue(fallback?.price_change_percentage?.h24),
       volume: numericValue(pair?.volume?.h24) ?? numericValue(fallback?.volume_usd?.h24),
       marketCap: numericValue(pair?.marketCap) ?? numericValue(fallback?.market_cap_usd),
       fdv: numericValue(pair?.fdv) ?? numericValue(fallback?.fdv_usd),
-      totalSupply: numericValue(fallback?.total_supply),
-      circulatingSupply: numericValue(fallback?.circulating_supply),
+      totalSupply: tokenAmountFromRaw(fallback?.total_supply, tokenDecimals),
+      circulatingSupply: tokenAmountFromRaw(fallback?.circulating_supply, tokenDecimals),
       pairAddress,
     };
     return [address, Object.values(values).some((value) => value !== null && value !== undefined) ? values : null];

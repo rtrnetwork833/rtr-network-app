@@ -71,7 +71,7 @@ const totalSupplyAbi = [{ name: "totalSupply", type: "function", stateMutability
 const AUTH_EMAIL_STORAGE_KEY = "user_email";
 const LEGACY_AUTH_EMAIL_STORAGE_KEY = "rtr-email";
 const MARKET_CACHE_KEY = "rtr-market-prices-v1";
-const MARKET_QUOTE_CACHE_KEY = "rtr-base-token-quotes-v1";
+const MARKET_QUOTE_CACHE_KEY = "rtr-base-token-quotes-v2";
 const MARKET_CACHE_LIMIT = 100;
 const BUILD_TIMESTAMP = process.env.NEXT_PUBLIC_BUILD_TIMESTAMP ?? "development";
 const RTR_TOKEN_DETAILS = {
@@ -111,7 +111,7 @@ interface OneInchRegistryToken {
   symbol: string;
   name: string;
   decimals: number;
-  logoURI: string;
+  logoURI?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -139,7 +139,7 @@ function isOneInchRegistryToken(value: unknown): value is OneInchRegistryToken {
     && typeof value.name === "string"
     && typeof value.decimals === "number"
     && Number.isInteger(value.decimals)
-    && typeof value.logoURI === "string";
+    && (value.logoURI === undefined || typeof value.logoURI === "string");
 }
 
 function buildCoreMarketAssets(
@@ -177,6 +177,47 @@ function buildCoreMarketAssets(
       circulatingSupply: cachedQuote?.circulatingSupply ?? marketAsset?.circulatingSupply ?? null,
     };
   });
+}
+
+function buildMarketAssets(
+  registryTokens: OneInchRegistryToken[],
+  market: MarketAsset[],
+  quoteCache: Map<string, MarketQuote>,
+): MarketAsset[] {
+  const coreAssets = buildCoreMarketAssets(registryTokens, market, quoteCache);
+  const coreAddresses = new Set(coreAssets.map((asset) => asset.address?.toLowerCase()));
+  const assetsByAddress = new Map<string, MarketAsset>();
+
+  for (const token of registryTokens) {
+    const address = token.address.toLowerCase();
+    if (
+      !isAddress(token.address) ||
+      address === RTR_TOKEN_DETAILS.address.toLowerCase() ||
+      token.symbol.toUpperCase() === RTR_TOKEN_DETAILS.symbol ||
+      coreAddresses.has(address)
+    ) continue;
+
+    const cachedQuote = quoteCache.get(address);
+    assetsByAddress.set(address, {
+      id: token.address,
+      address: token.address,
+      symbol: token.symbol,
+      name: token.name,
+      decimals: token.decimals,
+      logoURI: token.logoURI,
+      price: cachedQuote?.price ?? null,
+      change: cachedQuote?.change ?? null,
+      volume: cachedQuote?.volume ?? null,
+      marketCap: cachedQuote?.marketCap ?? null,
+      fdv: cachedQuote?.fdv ?? null,
+      pairAddress: cachedQuote?.pairAddress,
+      sparkline: [],
+      totalSupply: cachedQuote?.totalSupply ?? null,
+      circulatingSupply: cachedQuote?.circulatingSupply ?? null,
+    });
+  }
+
+  return [...coreAssets, ...assetsByAddress.values()];
 }
 
 function readStoredEmail() {
@@ -1470,9 +1511,10 @@ function MarketView({ market }: { market: MarketAsset[] }) {
           .filter((token) =>
             isAddress(token.address) &&
             token.symbol.trim() !== "" &&
-            token.logoURI.trim() !== "",
+            token.decimals >= 0 &&
+            token.decimals <= 255,
           );
-        const verifiedEcosystem = buildCoreMarketAssets(registryTokens, market, quoteCache.current);
+        const verifiedEcosystem = buildMarketAssets(registryTokens, market, quoteCache.current);
 
         if (!controller.signal.aborted) {
           setAllTokens([RTR_MARKET_ASSET, ...verifiedEcosystem]);
@@ -1520,10 +1562,15 @@ function MarketView({ market }: { market: MarketAsset[] }) {
 
   // Display tokens
   const displayTokens = searchResults ?? allTokens.slice(0, visibleCount);
-  const quoteRequestKey = [...new Set(displayTokens
+  const quoteRequestAssets = displayTokens
     .filter((token) => token.symbol.toUpperCase() !== RTR_TOKEN_DETAILS.symbol && token.address && isAddress(token.address))
-    .map((token) => token.address!.toLowerCase())
-  )].join(",");
+    .filter((token, index, assets) => assets.findIndex((asset) =>
+      asset.address?.toLowerCase() === token.address?.toLowerCase()
+    ) === index);
+  const quoteRequestKey = [...new Set(quoteRequestAssets.map((token) => token.address!.toLowerCase()))].join(",");
+  const quoteRequestDecimalKey = quoteRequestAssets
+    .map((token) => `${token.address!.toLowerCase()}:${token.decimals ?? 18}`)
+    .join(",");
 
   useEffect(() => {
     if (!quoteRequestKey) return;
@@ -1542,9 +1589,15 @@ function MarketView({ market }: { market: MarketAsset[] }) {
           batches.push(addresses.slice(index, index + 30));
         }
 
+        const decimalByAddress = new Map(quoteRequestDecimalKey.split(",").filter(Boolean).map((entry) => {
+          const [address, decimals] = entry.split(":");
+          return [address, decimals] as const;
+        }));
+
         await Promise.all(batches.map(async (batch) => {
+          const decimals = batch.map((address) => decimalByAddress.get(address) ?? "18").join(",");
           const response = await fetch(
-            `/api/market/token-data?addresses=${batch.join(",")}`,
+            `/api/market/token-data?addresses=${batch.join(",")}&decimals=${decimals}`,
             { signal: controller.signal },
           );
           if (!response.ok) throw new Error(`Token quote request failed: ${response.status}`);
@@ -1562,8 +1615,8 @@ function MarketView({ market }: { market: MarketAsset[] }) {
               volume: numericField("volume"),
               marketCap: numericField("marketCap"),
               fdv: numericField("fdv"),
-              totalSupply: numericField("totalSupply")?.toLocaleString() ?? null,
-              circulatingSupply: numericField("circulatingSupply")?.toLocaleString() ?? null,
+              totalSupply: typeof quote.totalSupply === "string" ? quote.totalSupply : null,
+              circulatingSupply: typeof quote.circulatingSupply === "string" ? quote.circulatingSupply : null,
               pairAddress: typeof quote.pairAddress === "string" ? quote.pairAddress : undefined,
             });
           }
@@ -1608,7 +1661,7 @@ function MarketView({ market }: { market: MarketAsset[] }) {
 
     void loadTokenQuotes();
     return () => controller.abort();
-  }, [quoteRefreshTick, quoteRequestKey]);
+  }, [quoteRefreshTick, quoteRequestKey, quoteRequestDecimalKey]);
 
   const activeSelectedAsset = selectedAsset
     ? allTokens.find((token) => token.address?.toLowerCase() === selectedAsset.address?.toLowerCase()) ?? selectedAsset
@@ -1742,16 +1795,34 @@ function MarketView({ market }: { market: MarketAsset[] }) {
     : `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
   const formatSupply = (value: string | null | undefined) => {
     if (typeof value !== "string" || value.trim() === "") return null;
-    const numeric = Number(value.replaceAll(",", ""));
-    return Number.isFinite(numeric)
-      ? numeric.toLocaleString(undefined, { maximumFractionDigits: 6 })
-      : value;
+    const match = value.replaceAll(",", "").match(/^(\d+)(?:\.(\d+))?$/);
+    if (!match) return value;
+
+    let whole = match[1].replace(/^0+(?=\d)/, "");
+    const fraction = match[2] ?? "";
+    let hundredths = Number(fraction.padEnd(2, "0").slice(0, 2));
+    if (Number(fraction[2] ?? "0") >= 5) hundredths += 1;
+    if (hundredths === 100) {
+      hundredths = 0;
+      const digits = whole.split("");
+      let carry = true;
+      for (let index = digits.length - 1; index >= 0 && carry; index -= 1) {
+        const digit = Number(digits[index]) + 1;
+        digits[index] = String(digit % 10);
+        carry = digit === 10;
+      }
+      whole = `${carry ? "1" : ""}${digits.join("")}`;
+    }
+
+    const groupedWhole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    const formattedFraction = String(hundredths).padStart(2, "0").replace(/0+$/, "");
+    return formattedFraction ? `${groupedWhole}.${formattedFraction}` : groupedWhole;
   };
   const onchainSupplyValue = activeSelectedAsset && typeof selectedOnchainSupply.data === "bigint"
     ? formatUnits(selectedOnchainSupply.data, activeSelectedAsset.decimals ?? 18)
     : null;
-  const circulatingSupply = formatSupply(activeSelectedAsset?.circulatingSupply) ?? onchainSupplyValue;
-  const totalSupply = formatSupply(activeSelectedAsset?.totalSupply) ?? onchainSupplyValue;
+  const circulatingSupply = formatSupply(activeSelectedAsset?.circulatingSupply);
+  const totalSupply = onchainSupplyValue ?? formatSupply(activeSelectedAsset?.totalSupply);
   const supplyFallbackLabel = selectedOnchainSupply.isPending
     ? "Syncing On-Chain..."
     : selectedOnchainSupply.isError ? "Supply unavailable" : "Syncing On-Chain...";
