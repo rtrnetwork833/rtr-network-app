@@ -18,7 +18,7 @@ Fiat withdrawal checkout requires server-only `MELD_SECRET_KEY` and `MELD_PUBLIC
 
 The token converter uses the token list and wallet execution provided by Reown AppKit. Its native swap view handles quote review, approvals, and transaction execution using the connected wallet.
 
-Before testing activations, run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. It creates the `booster_activations` table and row-level security policies. The free node is persisted for 24 hours; every paid tier is persisted for 30 days, with the countdown derived from the database `expires_at` timestamp after refresh.
+Before testing activations, run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. It creates the `booster_activations` table and row-level security policies. Each purchase creates a separate node instance, including repeat purchases of the same tier. The free node is persisted for 24 hours and paid tiers for 30 days; countdowns and live RTR accrual use each instance's database activation and expiration timestamps.
 
 ## Getting Started
 

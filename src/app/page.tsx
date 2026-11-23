@@ -50,7 +50,7 @@ import CustomDepositModal from '@/components/CustomDepositModal';
 import CustomActivityLedger from '@/components/CustomActivityLedger';
 
 type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "portfolio";
-type Activation = { tier: string; activated_at: string; expires_at: string };
+type Activation = { id: string; tier: string; activated_at: string; expires_at: string };
 type Profile = { full_name?: string | null; avatar_url: string | null; balance: number | string | null };
 type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null; marketCap?: number | null; fdv?: number | null; pairAddress?: string; sparkline?: number[]; address?: string; logoURI?: string; totalSupply?: string | null; circulatingSupply?: string | null; decimals?: number };
 type MarketQuote = {
@@ -330,6 +330,21 @@ function formatRemainingTime(seconds: number, tier: string) {
   return `${Math.max(1, Math.ceil(seconds / 60))}m remaining`;
 }
 
+function calculateAccruedTokens(activations: Activation[], balanceLoadedAt: number | null, now: number) {
+  if (balanceLoadedAt === null) return 0;
+  return activations.reduce((total, activation) => {
+    const activatedAt = Date.parse(activation.activated_at);
+    const expiresAt = Date.parse(activation.expires_at);
+    const earningPerDay = Number(tiers.find(([tierName]) => tierName === activation.tier)?.[2]);
+    if (!Number.isFinite(activatedAt) || !Number.isFinite(expiresAt) || !Number.isFinite(earningPerDay)) return total;
+
+    const accrualStart = Math.max(balanceLoadedAt, activatedAt);
+    const accrualEnd = Math.min(now, expiresAt);
+    if (accrualEnd <= accrualStart) return total;
+    return total + ((accrualEnd - accrualStart) / 1000) * (earningPerDay / 86400);
+  }, 0);
+}
+
 function formatMarketPrice(asset: MarketAsset) {
   if (typeof asset.price !== "number" || !Number.isFinite(asset.price)) return "—";
   const stablecoin = asset.symbol === "USDT" || asset.symbol === "USDC";
@@ -406,6 +421,7 @@ export default function Home() {
   const [avatar, setAvatar] = useState<string | null>(null);
   const [activations, setActivations] = useState<Activation[]>([]);
   const [balance, setBalance] = useState<number | null>(null);
+  const [balanceLoadedAt, setBalanceLoadedAt] = useState<number | null>(null);
   const [marketCacheReady, setMarketCacheReady] = useState(false);
   const [email, setEmail] = useState("");
   const marketQuery = useQuery({
@@ -591,11 +607,13 @@ export default function Home() {
           setAvatar(data?.avatar_url?.trim() || null);
           const nextBalance = Number(data?.balance ?? 0);
           setBalance(Number.isFinite(nextBalance) ? nextBalance : 0);
+          setBalanceLoadedAt(Date.now());
           setProfileLoading(false);
         }
       } catch {
         if (!cancelled) {
           setBalance(null);
+          setBalanceLoadedAt(Date.now());
           setProfileLoading(false);
         }
       }
@@ -629,7 +647,7 @@ export default function Home() {
     }
     const activated = body.activation;
     setActivations((current) =>
-      [activated, ...current.filter((item) => item.tier !== activated.tier)]
+      [activated, ...current]
         .sort((left, right) => Date.parse(right.activated_at) - Date.parse(left.activated_at)),
     );
     return true;
@@ -667,6 +685,7 @@ export default function Home() {
     setAvatar(null);
     setActivations([]);
     setBalance(0);
+    setBalanceLoadedAt(Date.now());
 
     // Save email for login memory
     if (typeof window !== 'undefined' && email) {
@@ -719,7 +738,7 @@ export default function Home() {
 
       <section className={`content-scroll${view === "upgrades" ? " upgrades-content-scroll" : ""}`}>
         {error && <div className="error-banner" role="alert">{error}</div>}
-        {view === "dashboard" && <Dashboard balance={balance} balanceLoading={profileLoading} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} tokenPrice={market.find((asset) => asset.symbol.toUpperCase() === RTR_TOKEN_DETAILS.symbol)?.price ?? null} activations={activations} />}
+        {view === "dashboard" && <Dashboard balance={balance} balanceLoadedAt={balanceLoadedAt} balanceLoading={profileLoading} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} tokenPrice={market.find((asset) => asset.symbol.toUpperCase() === RTR_TOKEN_DETAILS.symbol)?.price ?? null} activations={activations} />}
         {view === "upgrades" && <Upgrades onPurchase={purchase} />}
         {view === "market" && <MarketView market={market} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
@@ -747,7 +766,7 @@ export default function Home() {
   );
 }
 
-function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, tokenPrice, activations }: { balance: number | null; balanceLoading: boolean; isBalanceHidden: boolean; onToggleBalance: () => void; tokenPrice: number | null; activations: Activation[] }) {
+function Dashboard({ balance, balanceLoadedAt, balanceLoading, isBalanceHidden, onToggleBalance, tokenPrice, activations }: { balance: number | null; balanceLoadedAt: number | null; balanceLoading: boolean; isBalanceHidden: boolean; onToggleBalance: () => void; tokenPrice: number | null; activations: Activation[] }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -768,14 +787,15 @@ function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, 
     ? cycleSecondsForTier(currentActivation.tier) ?? FREE_CYCLE_SECONDS
     : FREE_CYCLE_SECONDS;
   const progress = Math.min(100, (remaining / cycleSeconds) * 100);
-  const displayBalance = balanceLoading ? "Loading..." : isBalanceHidden ? "••••••" : (balance ?? 0).toFixed(4);
+  const liveBalance = (balance ?? 0) + calculateAccruedTokens(activations, balanceLoadedAt, now);
+  const displayBalance = balanceLoading ? "Loading..." : isBalanceHidden ? "••••••" : liveBalance.toFixed(4);
   const displayFiatBalance = balanceLoading
     ? "Loading..."
     : isBalanceHidden
       ? "••••••"
       : tokenPrice === null
         ? "$—"
-        : `$${((balance ?? 0) * tokenPrice).toFixed(2)}`;
+        : `$${(liveBalance * tokenPrice).toFixed(2)}`;
 
   return <div className="dashboard-view">
     <div className="balance-card"><div><div className="balance-label"><span className="eyebrow">TOTAL ACCRUED</span><button className="balance-toggle" type="button" onClick={onToggleBalance} aria-label={isBalanceHidden ? "Show balance" : "Hide balance"}>{isBalanceHidden ? <EyeOff size={16} /> : <Eye size={16} />}</button></div><strong>{displayBalance} <small>RTR</small></strong><span className="balance-fiat">{displayFiatBalance}</span></div><div className="balance-icon"><Zap size={21} /></div></div>
@@ -789,7 +809,7 @@ function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, 
             const earningPower = tiers.find(([tierName]) => tierName === activation.tier)?.[2];
             const nodeRemaining = Math.max(0, Math.floor((Date.parse(activation.expires_at) - now) / 1000));
             return (
-              <div className="active-node-row" key={activation.tier}>
+              <div className="active-node-row" key={activation.id}>
                 <span className="active-node-name"><span className="active-node-dot" />{activation.tier}</span>
                 <span className="active-node-remaining">{formatRemainingTime(nodeRemaining, activation.tier)}</span>
                 <span className="active-node-earning">{earningPower ? `+${earningPower} RTR/day` : "Rate unavailable"}</span>

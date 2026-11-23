@@ -20,8 +20,8 @@ export async function POST(request: Request) {
   const expiresAt = new Date(activatedAt.getTime() + cycleSecondsForTier(body.tier)! * 1000);
   const { data, error } = await supabase
     .from("booster_activations")
-    .upsert({ user_id: user.id, tier: body.tier, activated_at: activatedAt.toISOString(), expires_at: expiresAt.toISOString() }, { onConflict: "user_id,tier" })
-    .select("tier, activated_at, expires_at")
+    .insert({ user_id: user.id, tier: body.tier, activated_at: activatedAt.toISOString(), expires_at: expiresAt.toISOString() })
+    .select("id, tier, activated_at, expires_at")
     .single();
 
   if (error) {
@@ -38,14 +38,14 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("booster_activations")
-    .select("tier, activated_at, expires_at")
+    .select("id, tier, activated_at, expires_at")
     .eq("user_id", user.id)
     .gt("expires_at", new Date().toISOString())
     .order("activated_at", { ascending: false });
 
   if (error) {
     if (isMissingActivationTable(error)) return NextResponse.json({ activations: [], standard: true });
-    return NextResponse.json({ error: "Unable to load the node activation." }, { status: 500 });
+    return NextResponse.json({ error: "Unable to load active mining nodes." }, { status: 500 });
   }
   return NextResponse.json({ activations: data ?? [] });
 }
