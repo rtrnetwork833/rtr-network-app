@@ -725,7 +725,7 @@ export default function Home() {
         </section>
       )}
 
-      <section className="content-scroll">
+      <section className={`content-scroll${view === "upgrades" ? " upgrades-content-scroll" : ""}`}>
         {error && <div className="error-banner" role="alert">{error}</div>}
         {view === "dashboard" && <Dashboard balance={balance} balanceLoading={profileLoading} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} active={active} tier={activation?.tier} progress={progress} remaining={remaining} onStart={startCollection} />}
         {view === "upgrades" && <Upgrades onPurchase={purchase} />}
