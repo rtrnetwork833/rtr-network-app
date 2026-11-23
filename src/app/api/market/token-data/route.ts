@@ -68,13 +68,13 @@ export async function GET(request: Request) {
   const bestPairs = new Map<string, DexPair>();
   try {
     const response = await fetch(
-      `https://api.dexscreener.com/tokens/v1/base/${addresses.join(",")}`,
+      `https://api.dexscreener.com/latest/dex/tokens/${addresses.join(",")}`,
       { next: { revalidate: 30 }, signal: AbortSignal.timeout(8000) },
     );
     if (response.ok) {
       const payload: unknown = await response.json();
-      if (Array.isArray(payload)) {
-        for (const value of payload.filter(isDexPair)) {
+      if (isRecord(payload) && Array.isArray(payload.pairs)) {
+        for (const value of payload.pairs.filter(isDexPair)) {
           if (value.chainId !== "base" || typeof value.pairAddress !== "string" || !addressPattern.test(value.pairAddress)) {
             continue;
           }

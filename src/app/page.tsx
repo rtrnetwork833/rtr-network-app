@@ -66,6 +66,7 @@ type MarketHistoryPoint = { timestamp: number; price: number };
 type MarketTimeframe = "1h" | "24h" | "7d" | "30d" | "1y";
 const supabase = createClient();
 const rtrTokenAbi = [{ name: "balanceOf", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }] }] as const;
+const totalSupplyAbi = [{ name: "totalSupply", type: "function", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] }] as const;
 const AUTH_EMAIL_STORAGE_KEY = "user_email";
 const LEGACY_AUTH_EMAIL_STORAGE_KEY = "rtr-email";
 const MARKET_CACHE_KEY = "rtr-market-prices-v1";
@@ -1616,6 +1617,18 @@ function MarketView({ market }: { market: MarketAsset[] }) {
   const activeSelectedAsset = selectedAsset
     ? allTokens.find((token) => token.address?.toLowerCase() === selectedAsset.address?.toLowerCase()) ?? selectedAsset
     : null;
+  const selectedTokenAddress = activeSelectedAsset?.address && isAddress(activeSelectedAsset.address)
+    ? getAddress(activeSelectedAsset.address)
+    : undefined;
+  const selectedOnchainSupply = useReadContract({
+    address: selectedTokenAddress,
+    abi: totalSupplyAbi,
+    functionName: "totalSupply",
+    chainId: base.id,
+    query: {
+      enabled: Boolean(selectedTokenAddress && selectedTokenAddress.toLowerCase() !== RTR_TOKEN_DETAILS.address.toLowerCase()),
+    },
+  });
   const sortedTokens = [
     RTR_MARKET_ASSET,
     ...displayTokens.filter((token) => token.symbol.toUpperCase() !== RTR_TOKEN_DETAILS.symbol),
@@ -1630,7 +1643,12 @@ function MarketView({ market }: { market: MarketAsset[] }) {
     Boolean(asset.address && quoteLoadingAddresses.includes(asset.address.toLowerCase()));
   const selectedQuoteLoading = activeSelectedAsset ? isQuoteLoading(activeSelectedAsset) : false;
   const isAssetDrawerOpen = activeSelectedAsset !== null;
-  const marketGridStyle = { gridTemplateColumns: "repeat(12, minmax(0, 1fr))" };
+  const marketGridStyle = {
+    display: "grid",
+    gridTemplateColumns: "0.8fr 2.5fr 1.5fr 1.2fr",
+    width: "100%",
+    alignItems: "center",
+  } as const;
 
   useEffect(() => {
     if (!isAssetDrawerOpen) return;
@@ -1727,12 +1745,20 @@ function MarketView({ market }: { market: MarketAsset[] }) {
     ? null
     : `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
   const formatSupply = (value: string | null | undefined) => {
-    if (typeof value !== "string" || value.trim() === "") return "N/A";
+    if (typeof value !== "string" || value.trim() === "") return null;
     const numeric = Number(value.replaceAll(",", ""));
     return Number.isFinite(numeric)
       ? numeric.toLocaleString(undefined, { maximumFractionDigits: 6 })
       : value;
   };
+  const onchainSupplyValue = activeSelectedAsset && typeof selectedOnchainSupply.data === "bigint"
+    ? formatUnits(selectedOnchainSupply.data, activeSelectedAsset.decimals ?? 18)
+    : null;
+  const circulatingSupply = formatSupply(activeSelectedAsset?.circulatingSupply) ?? onchainSupplyValue;
+  const totalSupply = formatSupply(activeSelectedAsset?.totalSupply) ?? onchainSupplyValue;
+  const supplyFallbackLabel = selectedOnchainSupply.isPending
+    ? "Syncing On-Chain..."
+    : selectedOnchainSupply.isError ? "Supply unavailable" : "Syncing On-Chain...";
   const formatDetailedPrice = (value: number | null | undefined) => typeof value !== "number" || !Number.isFinite(value)
     ? "Price unavailable"
     : `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 8 })}`;
@@ -1747,11 +1773,11 @@ function MarketView({ market }: { market: MarketAsset[] }) {
     <div className="page-intro"><span className="eyebrow">BASE ECOSYSTEM</span><h2>Market monitor</h2><p>Live spot prices and real-time movement across the RTR ecosystem.</p></div>
     <label className="market-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search market assets</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by symbol or name" /></label>
     <div className="w-full bg-[#0d1527]/60 border border-slate-800/80 rounded-2xl overflow-hidden shadow-xl mt-4" aria-label="Base ecosystem market monitor">
-      <div className="grid grid-cols-12 gap-2 px-5 py-4 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800/80 bg-[#0d1527]" style={marketGridStyle}>
-        <div className="col-span-2 text-left"># TREND</div>
-        <div className="col-span-4 text-left">ASSET</div>
-        <div className="col-span-3 text-right">SPOT PRICE</div>
-        <div className="col-span-3 text-right">LIVE CHANGE</div>
+      <div className="gap-2 px-5 py-4 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800/80 bg-[#0d1527]" style={marketGridStyle}>
+        <div className="text-left"># TREND</div>
+        <div className="text-left">ASSET</div>
+        <div className="text-right">SPOT PRICE</div>
+        <div className="text-right">LIVE CHANGE</div>
       </div>
       <div className="divide-y divide-slate-800/40 max-h-[500px] overflow-y-auto custom-scrollbar">
         {loading ? (
@@ -1774,12 +1800,12 @@ function MarketView({ market }: { market: MarketAsset[] }) {
                   role="button"
                   tabIndex={0}
                   aria-label={`View ${asset.name} (${asset.symbol}) details`}
-                  className={`grid grid-cols-12 gap-2 px-5 py-4 items-center text-xs cursor-pointer transition-all duration-150 ${
+                  className={`gap-2 px-5 py-4 text-xs cursor-pointer transition-all duration-150 ${
                     isSelected ? "bg-blue-500/5 border-l-2 border-blue-500" : "hover:bg-[#121c33]/50"
                   }`}
                   style={marketGridStyle}
                 >
-                  <div className="col-span-2 flex items-center gap-2 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
                     <span className="font-bold text-slate-500 font-mono">{index + 1}</span>
                     {hasChange && (
                       (asset.change ?? 0) >= 0
@@ -1792,19 +1818,19 @@ function MarketView({ market }: { market: MarketAsset[] }) {
                       </span>
                     )}
                   </div>
-                  <div className="col-span-4 flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-3 min-w-0">
                     <MarketTokenLogo asset={asset} />
                     <div className="min-w-0 truncate">
                       <span className="font-bold block text-slate-100 tracking-wide uppercase font-mono">{asset.symbol}</span>
                       {!isRTR && <span className="text-[10px] text-slate-400 block font-medium truncate">{asset.name}</span>}
                     </div>
                   </div>
-                  <div className="col-span-3 text-right font-bold text-slate-200 font-mono">
+                  <div className="text-right font-bold text-slate-200 font-mono">
                     {typeof asset.price !== "number" || !Number.isFinite(asset.price)
                       ? isQuoteLoading(asset) ? "Loading..." : "—"
                       : formatMarketPrice(asset)}
                   </div>
-                  <div className={`col-span-3 text-right font-bold font-mono ${
+                  <div className={`text-right font-bold font-mono ${
                     changeIsPositive ? "text-emerald-400" : "text-rose-400"
                   }`}>
                     {hasChange ? (
@@ -1879,11 +1905,15 @@ function MarketView({ market }: { market: MarketAsset[] }) {
           <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-slate-800 bg-[#101a2d] p-4">
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Circulating Supply</span>
-              <strong className="mt-2 block font-mono text-lg text-white">{formatSupply(activeSelectedAsset.circulatingSupply)}</strong>
+              <strong className="mt-2 block font-mono text-lg text-white">
+                {formatSupply(circulatingSupply) ?? supplyFallbackLabel}
+              </strong>
             </div>
             <div className="rounded-2xl border border-slate-800 bg-[#101a2d] p-4">
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total Supply</span>
-              <strong className="mt-2 block font-mono text-lg text-white">{formatSupply(activeSelectedAsset.totalSupply)}</strong>
+              <strong className="mt-2 block font-mono text-lg text-white">
+                {formatSupply(totalSupply) ?? supplyFallbackLabel}
+              </strong>
             </div>
           </div>
 
