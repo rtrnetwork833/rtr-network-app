@@ -40,13 +40,12 @@ export async function GET() {
     .from("booster_activations")
     .select("tier, activated_at, expires_at")
     .eq("user_id", user.id)
-    .order("activated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .gt("expires_at", new Date().toISOString())
+    .order("activated_at", { ascending: false });
 
   if (error) {
-    if (isMissingActivationTable(error)) return NextResponse.json({ activation: null, standard: true });
+    if (isMissingActivationTable(error)) return NextResponse.json({ activations: [], standard: true });
     return NextResponse.json({ error: "Unable to load the node activation." }, { status: 500 });
   }
-  return NextResponse.json({ activation: data });
+  return NextResponse.json({ activations: data ?? [] });
 }

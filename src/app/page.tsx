@@ -37,7 +37,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { usePathname, useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { cycleSecondsForTier, FREE_CYCLE_SECONDS } from "@/lib/mining";
+import { cycleSecondsForTier, FREE_CYCLE_SECONDS, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/client";
 import { useBalance, useReadContract } from 'wagmi';
 import { formatUnits, getAddress, isAddress, type Address } from 'viem';
@@ -321,6 +321,15 @@ function formatTime(seconds: number) {
   return `${days}d ${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m ${String(secs).padStart(2, "0")}s`;
 }
 
+function formatRemainingTime(seconds: number, tier: string) {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  if (tier !== FREE_TIER && days > 0) return `${days}d ${hours}h remaining`;
+  const totalHours = Math.floor(seconds / 3600);
+  if (totalHours > 0) return `${totalHours}h remaining`;
+  return `${Math.max(1, Math.ceil(seconds / 60))}m remaining`;
+}
+
 function formatMarketPrice(asset: MarketAsset) {
   if (typeof asset.price !== "number" || !Number.isFinite(asset.price)) return "—";
   const stablecoin = asset.symbol === "USDT" || asset.symbol === "USDC";
@@ -395,9 +404,7 @@ export default function Home() {
   const [navigationReady, setNavigationReady] = useState(false);
   const [depositStorageReady, setDepositStorageReady] = useState(false);
   const [avatar, setAvatar] = useState<string | null>(null);
-  const [active, setActive] = useState(false);
-  const [activation, setActivation] = useState<Activation | null>(null);
-  const [remaining, setRemaining] = useState(0);
+  const [activations, setActivations] = useState<Activation[]>([]);
   const [balance, setBalance] = useState<number | null>(null);
   const [marketCacheReady, setMarketCacheReady] = useState(false);
   const [email, setEmail] = useState("");
@@ -489,11 +496,15 @@ export default function Home() {
   async function loadActivation() {
     try {
       const response = await fetchWithTimeout("/api/mining/activate");
-      if (!response.ok) return;
-      const body = await response.json() as { activation: Activation | null };
-      setActivation(body.activation);
-    } catch {
-      setActivation(null);
+      if (!response.ok) {
+        setError("Unable to load your active mining nodes.");
+        return;
+      }
+      const body = await response.json() as { activations?: Activation[] };
+      setActivations(Array.isArray(body.activations) ? body.activations : []);
+    } catch (loadError: unknown) {
+      console.error("Failed to load active mining nodes:", loadError);
+      setError("Unable to load your active mining nodes.");
     }
   }
 
@@ -559,8 +570,7 @@ export default function Home() {
       setAuthLoading(false);
       if (sessionUser) void loadActivation();
       else {
-        setActivation(null);
-        setActive(false);
+        setActivations([]);
       }
     });
     return () => {
@@ -594,23 +604,6 @@ export default function Home() {
     return () => { cancelled = true; };
   }, [user]);
 
-  useEffect(() => {
-    if (!activation) return;
-    const updateRemaining = () => {
-      const seconds = Math.max(0, Math.floor((new Date(activation.expires_at).getTime() - Date.now()) / 1000));
-      setRemaining(seconds);
-      setActive(seconds > 0);
-    };
-    updateRemaining();
-    const timer = window.setInterval(() => {
-      updateRemaining();
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [activation]);
-
-  const cycleSeconds = activation ? cycleSecondsForTier(activation.tier) ?? FREE_CYCLE_SECONDS : FREE_CYCLE_SECONDS;
-  const progress = useMemo(() => (remaining / cycleSeconds) * 100, [cycleSeconds, remaining]);
-
   async function activateTier(tier: string) {
     setError(null);
     let response: Response;
@@ -623,18 +616,22 @@ export default function Home() {
       });
       body = await response.json() as { activation?: Activation; error?: string; standard?: boolean };
     } catch {
-      setActivation(null);
+      setError("Unable to activate this node. Please try again.");
       return false;
     }
     if (body.standard) {
-      setActivation(null);
+      setActivations([]);
       return false;
     }
     if (!response.ok || !body.activation) {
       setError(body.error ?? "Unable to activate this tier.");
       return false;
     }
-    setActivation(body.activation);
+    const activated = body.activation;
+    setActivations((current) =>
+      [activated, ...current.filter((item) => item.tier !== activated.tier)]
+        .sort((left, right) => Date.parse(right.activated_at) - Date.parse(left.activated_at)),
+    );
     return true;
   }
 
@@ -668,8 +665,7 @@ export default function Home() {
     setUser(null);
     setProfileName(null);
     setAvatar(null);
-    setActivation(null);
-    setActive(false);
+    setActivations([]);
     setBalance(0);
 
     // Save email for login memory
@@ -723,7 +719,7 @@ export default function Home() {
 
       <section className={`content-scroll${view === "upgrades" ? " upgrades-content-scroll" : ""}`}>
         {error && <div className="error-banner" role="alert">{error}</div>}
-        {view === "dashboard" && <Dashboard balance={balance} balanceLoading={profileLoading} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} active={active} tier={activation?.tier} progress={progress} remaining={remaining} />}
+        {view === "dashboard" && <Dashboard balance={balance} balanceLoading={profileLoading} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} tokenPrice={market.find((asset) => asset.symbol.toUpperCase() === RTR_TOKEN_DETAILS.symbol)?.price ?? null} activations={activations} />}
         {view === "upgrades" && <Upgrades onPurchase={purchase} />}
         {view === "market" && <MarketView market={market} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
@@ -751,12 +747,58 @@ export default function Home() {
   );
 }
 
-function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, active, tier, progress, remaining }: { balance: number | null; balanceLoading: boolean; isBalanceHidden: boolean; onToggleBalance: () => void; active: boolean; tier?: string; progress: number; remaining: number }) {
-  const displayBalance = balanceLoading ? "Loading..." : isBalanceHidden ? "••••••" : `$${(balance ?? 0).toFixed(4)}`;
+function Dashboard({ balance, balanceLoading, isBalanceHidden, onToggleBalance, tokenPrice, activations }: { balance: number | null; balanceLoading: boolean; isBalanceHidden: boolean; onToggleBalance: () => void; tokenPrice: number | null; activations: Activation[] }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const activeActivations = useMemo(
+    () => activations
+      .filter((activation) => Date.parse(activation.expires_at) > now)
+      .sort((left, right) => Date.parse(right.activated_at) - Date.parse(left.activated_at)),
+    [activations, now],
+  );
+  const currentActivation = activeActivations[0];
+  const remaining = currentActivation
+    ? Math.max(0, Math.floor((Date.parse(currentActivation.expires_at) - now) / 1000))
+    : 0;
+  const cycleSeconds = currentActivation
+    ? cycleSecondsForTier(currentActivation.tier) ?? FREE_CYCLE_SECONDS
+    : FREE_CYCLE_SECONDS;
+  const progress = Math.min(100, (remaining / cycleSeconds) * 100);
+  const displayBalance = balanceLoading ? "Loading..." : isBalanceHidden ? "••••••" : (balance ?? 0).toFixed(4);
+  const displayFiatBalance = balanceLoading
+    ? "Loading..."
+    : isBalanceHidden
+      ? "••••••"
+      : tokenPrice === null
+        ? "$—"
+        : `$${((balance ?? 0) * tokenPrice).toFixed(2)}`;
+
   return <div className="dashboard-view">
-    <div className="balance-card"><div><div className="balance-label"><span className="eyebrow">TOTAL ACCRUED</span><button className="balance-toggle" type="button" onClick={onToggleBalance} aria-label={isBalanceHidden ? "Show balance" : "Hide balance"}>{isBalanceHidden ? <EyeOff size={16} /> : <Eye size={16} />}</button></div><strong>{displayBalance} <small>RTR</small></strong><span className="delta"><ArrowUpRight size={14} /> {isBalanceHidden ? "•••••• / day" : "+0.16 RTR / day"}</span></div><div className="balance-icon"><Zap size={21} /></div></div>
-    <div className="section-heading"><div><span className="eyebrow">ACTIVE NODE</span><h2>{tier ?? "Collection protocol"}</h2></div>{active && <span className="live-dot">LIVE</span>}</div>
-    <div className="ring-wrap"><div className="progress-ring" style={{ "--progress": `${progress * 3.6}deg` } as React.CSSProperties}><div className="ring-inner"><Sparkles size={17} /><strong>{formatTime(remaining)}</strong><span>{active ? "Accumulating" : "Ready to collect"}</span></div></div></div>
+    <div className="balance-card"><div><div className="balance-label"><span className="eyebrow">TOTAL ACCRUED</span><button className="balance-toggle" type="button" onClick={onToggleBalance} aria-label={isBalanceHidden ? "Show balance" : "Hide balance"}>{isBalanceHidden ? <EyeOff size={16} /> : <Eye size={16} />}</button></div><strong>{displayBalance} <small>RTR</small></strong><span className="balance-fiat">{displayFiatBalance}</span></div><div className="balance-icon"><Zap size={21} /></div></div>
+    <div className="section-heading"><div><span className="eyebrow">ACTIVE NODE</span><h2>{currentActivation?.tier ?? "Collection protocol"}</h2></div>{currentActivation && <span className="live-dot">LIVE</span>}</div>
+    <div className="ring-wrap"><div className="progress-ring" style={{ "--progress": `${progress * 3.6}deg` } as React.CSSProperties}><div className="ring-inner"><Sparkles size={17} /><strong>{formatTime(remaining)}</strong><span>{currentActivation ? "Accumulating" : "Ready to collect"}</span></div></div></div>
+    <section className="active-nodes-panel" aria-label="Active mining nodes">
+      <h3>ACTIVE MINING NODES</h3>
+      {activeActivations.length > 0 ? (
+        <div className="active-node-list">
+          {activeActivations.map((activation) => {
+            const earningPower = tiers.find(([tierName]) => tierName === activation.tier)?.[2];
+            const nodeRemaining = Math.max(0, Math.floor((Date.parse(activation.expires_at) - now) / 1000));
+            return (
+              <div className="active-node-row" key={activation.tier}>
+                <span className="active-node-name"><span className="active-node-dot" />{activation.tier}</span>
+                <span className="active-node-remaining">{formatRemainingTime(nodeRemaining, activation.tier)}</span>
+                <span className="active-node-earning">{earningPower ? `+${earningPower} RTR/day` : "Rate unavailable"}</span>
+              </div>
+            );
+          })}
+        </div>
+      ) : <p className="active-nodes-empty">No active mining nodes.</p>}
+    </section>
     <div className="metric-grid"><div><span>Network</span><strong>Base Mainnet</strong></div></div>
   </div>;
 }
