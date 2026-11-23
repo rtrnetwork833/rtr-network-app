@@ -384,10 +384,10 @@ button { font: inherit; }
   -webkit-backdrop-filter: blur(20px);
 }
 .balance-card, .wallet-card, .portfolio-value-card, .portfolio-trend-section, .onramp-banner, .auth-panel, .tier-card { padding: 24px; }
-.tier-card { background: #0B1329; border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 16px; backdrop-filter: none; -webkit-backdrop-filter: none; will-change: transform, opacity; transform: translateZ(0); content-visibility: auto; contain-intrinsic-size: 500px; }
+.tier-card { width: 100%; max-width: 450px; margin: 0 auto; box-sizing: border-box; background: #0B1329; border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 16px; backdrop-filter: none; -webkit-backdrop-filter: none; will-change: transform, opacity; transform: translateZ(0); content-visibility: auto; contain-intrinsic-size: 100% 340px; }
 .tier-card.featured { background: #0B1329; border: 2px solid rgba(45, 212, 191, 0.8); box-shadow: 0 0 24px rgba(45, 212, 191, 0.14), 0 8px 32px rgba(0, 0, 0, 0.3); }
 .upgrades-content-scroll { background-color: #090D16; }
-.tier-list { will-change: transform; transform: translate3d(0, 0, 0); backface-visibility: hidden; }
+.tier-list { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; will-change: transform; transform: translate3d(0, 0, 0); backface-visibility: hidden; }
 .portfolio-holding-row { border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 18px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
 .portfolio-trend-section { padding: 18px 16px 14px; }
 .market-table { overflow: hidden; }
