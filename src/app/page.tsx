@@ -54,8 +54,8 @@ type Activation = { id: string; user_id: string; tier: string; activated_at: str
 type Profile = {
   full_name?: string | null;
   avatar_url: string | null;
-  claimed_balance?: number | string | null;
-  mining_accrued_at?: string | null;
+  total_accrued_balance?: number | string | null;
+  last_balance_update?: string | null;
 };
 type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null; marketCap?: number | null; fdv?: number | null; pairAddress?: string; sparkline?: number[]; address?: string; logoURI?: string; totalSupply?: string | null; circulatingSupply?: string | null; decimals?: number };
 type MarketQuote = {
@@ -633,7 +633,7 @@ export default function Home() {
 
         const { data, error } = await supabase
           .from("profiles")
-          .select("avatar_url, claimed_balance, mining_accrued_at")
+          .select("avatar_url, total_accrued_balance, last_balance_update")
           .eq("id", userId)
           .single<Profile>();
         if (cancelled) return;
@@ -643,9 +643,9 @@ export default function Home() {
             ? "Persistent mining balance columns are missing. Run supabase/schema.sql and try again."
             : error.message);
         }
-        const accruedBalance = Number(data.claimed_balance);
-        const accruedAt = typeof data.mining_accrued_at === "string" ? Date.parse(data.mining_accrued_at) : NaN;
-        if (data.claimed_balance == null || !Number.isFinite(accruedBalance) || !Number.isFinite(accruedAt)) {
+        const accruedBalance = Number(data.total_accrued_balance);
+        const accruedAt = typeof data.last_balance_update === "string" ? Date.parse(data.last_balance_update) : NaN;
+        if (data.total_accrued_balance == null || !Number.isFinite(accruedBalance) || !Number.isFinite(accruedAt)) {
           throw new Error("Persistent mining balance data is unavailable. Run supabase/schema.sql and try again.");
         }
         setBalance(accruedBalance);
