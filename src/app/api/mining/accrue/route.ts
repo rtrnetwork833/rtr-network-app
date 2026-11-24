@@ -20,31 +20,33 @@ export async function POST() {
 
   const { data, error } = await supabase
     .schema("public")
-    .rpc("claim_mining_accrual");
+    .rpc("get_user_accrual_balance", {
+      user_id_param: user.id
+    });
 
   if (error) {
-    console.error("Failed to claim persisted mining accrual:", error);
+    console.error("Failed to fetch user accrual balance:", error);
     const message = isMiningBalanceSchemaError(error.code)
       ? "The profile mining balance columns or accrual RPC are missing. Run supabase/schema.sql and try again."
-      : "Unable to save mining accrual.";
+      : "Unable to fetch mining accrual.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 
-  const claim = Array.isArray(data) ? data[0] : null;
+  const result = Array.isArray(data) ? data[0] : data;
   if (
-    !isRecord(claim)
-    || (typeof claim.claimed_balance !== "number" && typeof claim.claimed_balance !== "string")
-    || typeof claim.accrued_at !== "string"
+    !isRecord(result)
+    || (typeof result.total_accrued_balance !== "number" && typeof result.total_accrued_balance !== "string")
+    || typeof result.last_balance_update !== "string"
   ) {
     console.error("Mining accrual function returned an invalid result:", data);
     return NextResponse.json({ error: "Unable to read the saved mining balance." }, { status: 500 });
   }
 
-  const balance = Number(claim.claimed_balance);
-  if (!Number.isFinite(balance) || !Number.isFinite(Date.parse(claim.accrued_at))) {
-    console.error("Mining accrual function returned invalid balance data:", claim);
+  const balance = Number(result.total_accrued_balance);
+  if (!Number.isFinite(balance) || !Number.isFinite(Date.parse(result.last_balance_update))) {
+    console.error("Mining accrual function returned invalid balance data:", result);
     return NextResponse.json({ error: "Unable to read the saved mining balance." }, { status: 500 });
   }
 
-  return NextResponse.json({ balance, accrued_at: claim.accrued_at });
+  return NextResponse.json({ balance, accrued_at: result.last_balance_update });
 }
