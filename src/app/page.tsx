@@ -50,7 +50,7 @@ import CustomDepositModal from '@/components/CustomDepositModal';
 import CustomActivityLedger from '@/components/CustomActivityLedger';
 
 type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "portfolio";
-type Activation = { id: string; tier: string; activated_at: string; expires_at: string };
+type Activation = { id: string; user_id: string; tier: string; activated_at: string; expires_at: string };
 type Profile = { full_name?: string | null; avatar_url: string | null; balance: number | string | null };
 type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null; marketCap?: number | null; fdv?: number | null; pairAddress?: string; sparkline?: number[]; address?: string; logoURI?: string; totalSupply?: string | null; circulatingSupply?: string | null; decimals?: number };
 type MarketQuote = {
@@ -74,6 +74,7 @@ const MARKET_CACHE_KEY = "rtr-market-prices-v1";
 const MARKET_QUOTE_CACHE_KEY = "rtr-base-token-quotes-v2";
 const MARKET_CACHE_LIMIT = 100;
 const BUILD_TIMESTAMP = process.env.NEXT_PUBLIC_BUILD_TIMESTAMP ?? "development";
+const RTR_PRICE_USD = 0.075;
 const RTR_TOKEN_DETAILS = {
   address: "0x1259d32d0E3dD7D28E8C96c1410712AFeeecF633",
   chainId: 8453,
@@ -81,7 +82,7 @@ const RTR_TOKEN_DETAILS = {
   symbol: "RTR",
   decimals: 18,
   logoURI: "/logo.png",
-  priceUSD: 0.075,
+  priceUSD: RTR_PRICE_USD,
   change24h: 3.42,
   totalSupply: "10,000,000",
   circulatingSupply: "2,000,000",
@@ -420,6 +421,8 @@ export default function Home() {
   const [depositStorageReady, setDepositStorageReady] = useState(false);
   const [avatar, setAvatar] = useState<string | null>(null);
   const [activations, setActivations] = useState<Activation[]>([]);
+  const [isFreeActivationPending, setIsFreeActivationPending] = useState(false);
+  const freeActivationPendingRef = useRef(false);
   const [balance, setBalance] = useState<number | null>(null);
   const [balanceLoadedAt, setBalanceLoadedAt] = useState<number | null>(null);
   const [marketCacheReady, setMarketCacheReady] = useState(false);
@@ -509,22 +512,6 @@ export default function Home() {
     if (visibilityReady) window.localStorage.setItem("rtr-balance-visible", String(!isBalanceHidden));
   }, [isBalanceHidden, visibilityReady]);
 
-  async function loadActivation() {
-    try {
-      const response = await fetchWithTimeout("/api/mining/activate");
-      if (!response.ok) {
-        const body = await response.json() as { error?: string };
-        setError(body.error ?? "Unable to load your active mining nodes.");
-        return;
-      }
-      const body = await response.json() as { activations?: Activation[] };
-      setActivations(Array.isArray(body.activations) ? body.activations : []);
-    } catch (loadError: unknown) {
-      console.error("Failed to load active mining nodes:", loadError);
-      setError("Unable to load your active mining nodes.");
-    }
-  }
-
   useEffect(() => {
     let cancelled = false;
     let authEventReceived = false;
@@ -570,7 +557,6 @@ export default function Home() {
       setProfileName(displayNameFromUser(sessionUser));
       setProfileLoading(Boolean(sessionUser));
       setAuthLoading(false);
-      if (sessionUser) void loadActivation();
     }).catch((sessionError: unknown) => {
       if (cancelled || authEventReceived) return;
       console.error("Failed to restore Supabase session:", sessionError);
@@ -585,16 +571,47 @@ export default function Home() {
       setProfileName(displayNameFromUser(sessionUser));
       setProfileLoading(Boolean(sessionUser));
       setAuthLoading(false);
-      if (sessionUser) void loadActivation();
-      else {
-        setActivations([]);
-      }
+      if (!sessionUser) setActivations([]);
     });
     return () => {
       cancelled = true;
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const userId = user.id;
+    let cancelled = false;
+
+    async function loadActiveNodes() {
+      const { data, error: activationsError } = await supabase
+        .schema("public")
+        .from("booster_activations")
+        .select("id, user_id, tier, activated_at, expires_at")
+        .eq("user_id", userId)
+        .gt("expires_at", new Date().toISOString())
+        .order("activated_at", { ascending: false });
+
+      if (cancelled) return;
+      if (activationsError) {
+        console.error("Failed to load public.booster_activations:", activationsError);
+        setError("Unable to load your active mining nodes.");
+        return;
+      }
+      setActivations(data ?? []);
+    }
+
+    void loadActiveNodes().catch((loadError: unknown) => {
+      if (cancelled) return;
+      console.error("Failed to load active mining nodes:", loadError);
+      setError("Unable to load your active mining nodes.");
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -654,6 +671,20 @@ export default function Home() {
   }
 
   async function purchase(tier: (typeof tiers)[number]) {
+    const isFreeTier = tier[0] === FREE_TIER;
+    if (isFreeTier) {
+      if (freeActivationPendingRef.current) return;
+      const activeFreeNode = activations.some(
+        (activation) => activation.tier === FREE_TIER && Date.parse(activation.expires_at) > Date.now(),
+      );
+      if (activeFreeNode) {
+        setError("Your Free Node Booster is already active.");
+        return;
+      }
+      freeActivationPendingRef.current = true;
+      setIsFreeActivationPending(true);
+    }
+
     try {
       if (await activateTier(tier[0])) {
         setView("dashboard");
@@ -661,6 +692,11 @@ export default function Home() {
     } catch (purchaseError: unknown) {
       console.error("Failed to complete the tier purchase:", purchaseError);
       setError("Unable to complete this purchase. Please try again.");
+    } finally {
+      if (isFreeTier) {
+        freeActivationPendingRef.current = false;
+        setIsFreeActivationPending(false);
+      }
     }
   }
 
@@ -743,8 +779,8 @@ export default function Home() {
 
       <section className={`content-scroll${view === "upgrades" ? " upgrades-content-scroll" : ""}`}>
         {error && <div className="error-banner" role="alert">{error}</div>}
-        {view === "dashboard" && <Dashboard balance={balance} balanceLoadedAt={balanceLoadedAt} balanceLoading={profileLoading} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} tokenPrice={market.find((asset) => asset.symbol.toUpperCase() === RTR_TOKEN_DETAILS.symbol)?.price ?? null} activations={activations} />}
-        {view === "upgrades" && <Upgrades onPurchase={purchase} />}
+        {view === "dashboard" && <Dashboard balance={balance} balanceLoadedAt={balanceLoadedAt} balanceLoading={profileLoading} isBalanceHidden={isBalanceHidden} onToggleBalance={() => setIsBalanceHidden((hidden) => !hidden)} activations={activations} />}
+        {view === "upgrades" && <Upgrades onPurchase={purchase} activations={activations} isFreeActivationPending={isFreeActivationPending} />}
         {view === "market" && <MarketView market={market} />}
         {view === "trading" && <PlaceholderView icon={<Activity />} title="Trading desk" text="Execution routing is secured through the RTR relay." />}
         {view === "game" && <PlaceholderView icon={<Gamepad2 />} title="Node quests" text="Complete community missions to unlock bonus points." />}
@@ -771,7 +807,7 @@ export default function Home() {
   );
 }
 
-function Dashboard({ balance, balanceLoadedAt, balanceLoading, isBalanceHidden, onToggleBalance, tokenPrice, activations }: { balance: number | null; balanceLoadedAt: number | null; balanceLoading: boolean; isBalanceHidden: boolean; onToggleBalance: () => void; tokenPrice: number | null; activations: Activation[] }) {
+function Dashboard({ balance, balanceLoadedAt, balanceLoading, isBalanceHidden, onToggleBalance, activations }: { balance: number | null; balanceLoadedAt: number | null; balanceLoading: boolean; isBalanceHidden: boolean; onToggleBalance: () => void; activations: Activation[] }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -798,9 +834,7 @@ function Dashboard({ balance, balanceLoadedAt, balanceLoading, isBalanceHidden, 
     ? "Loading..."
     : isBalanceHidden
       ? "••••••"
-      : tokenPrice === null
-        ? "$—"
-        : `$${(liveBalance * tokenPrice).toFixed(2)}`;
+      : `$${(liveBalance * RTR_PRICE_USD).toFixed(2)}`;
 
   return <div className="dashboard-view">
     <div className="balance-card"><div><div className="balance-label"><span className="eyebrow">TOTAL ACCRUED</span><button className="balance-toggle" type="button" onClick={onToggleBalance} aria-label={isBalanceHidden ? "Show balance" : "Hide balance"}>{isBalanceHidden ? <EyeOff size={16} /> : <Eye size={16} />}</button></div><strong>{displayBalance} <small>RTR</small></strong><span className="balance-fiat">{displayFiatBalance}</span></div><div className="balance-icon"><Zap size={21} /></div></div>
@@ -1067,8 +1101,59 @@ function SplashGate({ exiting }: { exiting: boolean }) {
   return <main className={`app-shell auth-loading${exiting ? " splash-exiting" : ""}`} aria-label="Loading RTR Network"><img className="splash-logo" src="/logo.png" alt="RTR Network shield" /></main>;
 }
 
-function Upgrades({ onPurchase }: { onPurchase: (tier: (typeof tiers)[number]) => void }) {
-  return <div className="upgrades-view"><div className="page-intro"><span className="eyebrow">PROTOCOL STORE</span><h2>Choose your node tier</h2><p>Every paid tier runs for a fixed 30-day cycle and streams allocation directly from the deployment treasury.</p></div><div className="tier-list">{tiers.map((tier, index) => <article className={index === 3 ? "tier-card featured" : "tier-card"} key={tier[0]}><div className="tier-top"><span className="tier-number">0{index + 1}</span>{index === 3 && <span className="featured-label">POPULAR</span>}</div><h3>{tier[0]}</h3><div className="tier-price">{tier[1] === "Free" ? "Free" : `$${tier[1]}`}<small>{tier[1] === "Free" ? "" : " USDC"}</small></div><div className="tier-speed"><Zap size={15} /> {tier[2]} RTR <span>/ day</span></div><div className="tier-details"><span><Globe2 size={14} /> {tier[3]}</span><span><LockKeyhole size={14} /> {tier[4]}</span></div><button className="tier-button" onClick={() => onPurchase(tier)}>{tier[1] === "Free" ? "Activate free node" : "Purchase with USDC"}<ArrowUpRight size={16} /></button></article>)}</div></div>;
+function Upgrades({ onPurchase, activations, isFreeActivationPending }: { onPurchase: (tier: (typeof tiers)[number]) => Promise<void>; activations: Activation[]; isFreeActivationPending: boolean }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const isFreeNodeActive = activations.some(
+    (activation) => activation.tier === FREE_TIER && Date.parse(activation.expires_at) > now,
+  );
+
+  return (
+    <div className="upgrades-view">
+      <div className="page-intro">
+        <span className="eyebrow">PROTOCOL STORE</span>
+        <h2>Choose your node tier</h2>
+        <p>Every paid tier runs for a fixed 30-day cycle and streams allocation directly from the deployment treasury.</p>
+      </div>
+      <div className="tier-list">
+        {tiers.map((tier, index) => {
+          const isFreeTier = tier[0] === FREE_TIER;
+          const freeButtonDisabled = isFreeTier && (isFreeNodeActive || isFreeActivationPending);
+          const buttonLabel = isFreeTier
+            ? isFreeNodeActive ? "Active" : isFreeActivationPending ? "Activating..." : "Activate free node"
+            : "Purchase with USDC";
+
+          return (
+            <article className={index === 3 ? "tier-card featured" : "tier-card"} key={tier[0]}>
+              <div className="tier-top">
+                <span className="tier-number">0{index + 1}</span>
+                {index === 3 && <span className="featured-label">POPULAR</span>}
+              </div>
+              <h3>{tier[0]}</h3>
+              <div className="tier-price">{tier[1] === "Free" ? "Free" : `$${tier[1]}`}<small>{tier[1] === "Free" ? "" : " USDC"}</small></div>
+              <div className="tier-speed"><Zap size={15} /> {tier[2]} RTR <span>/ day</span></div>
+              <div className="tier-details">
+                <span><Globe2 size={14} /> {tier[3]}</span>
+                <span><LockKeyhole size={14} /> {tier[4]}</span>
+              </div>
+              <button
+                className="tier-button"
+                disabled={freeButtonDisabled}
+                onClick={() => void onPurchase(tier)}
+              >
+                {buttonLabel}
+                {!(isFreeTier && isFreeNodeActive) && <ArrowUpRight size={16} />}
+              </button>
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function AccountSettings({ profileName, avatar, onBack, onSignOut }: { profileName: string | null; avatar: string | null; onBack: () => void; onSignOut: () => void }) {

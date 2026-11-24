@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { cycleSecondsForTier } from "@/lib/mining";
+import { cycleSecondsForTier, FREE_TIER } from "@/lib/mining";
 import { createClient } from "@/lib/supabase/server";
 
 function getActivationSchemaError(error: { code?: string }) {
@@ -26,13 +26,35 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 });
 
+  if (body.tier === FREE_TIER) {
+    const { data: activeFreeActivation, error: freeActivationError } = await supabase
+      .schema("public")
+      .from("booster_activations")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("tier", FREE_TIER)
+      .gt("expires_at", new Date().toISOString())
+      .limit(1)
+      .maybeSingle();
+
+    if (freeActivationError) {
+      console.error("Failed to check the active free booster:", freeActivationError);
+      const schemaError = getActivationSchemaError(freeActivationError);
+      if (schemaError) return NextResponse.json({ error: schemaError }, { status: 500 });
+      return NextResponse.json({ error: "Unable to verify your active free booster." }, { status: 500 });
+    }
+    if (activeFreeActivation) {
+      return NextResponse.json({ error: "Your Free Node Booster is already active." }, { status: 409 });
+    }
+  }
+
   const activatedAt = new Date();
   const expiresAt = new Date(activatedAt.getTime() + cycleSecondsForTier(body.tier)! * 1000);
   const { data, error } = await supabase
     .schema("public")
     .from("booster_activations")
     .insert({ id: randomUUID(), user_id: user.id, tier: body.tier, activated_at: activatedAt.toISOString(), expires_at: expiresAt.toISOString() })
-    .select("id, tier, activated_at, expires_at")
+    .select("id, user_id, tier, activated_at, expires_at")
     .single();
 
   if (error) {
@@ -55,7 +77,7 @@ export async function GET() {
   const { data, error } = await supabase
     .schema("public")
     .from("booster_activations")
-    .select("id, tier, activated_at, expires_at")
+    .select("id, user_id, tier, activated_at, expires_at")
     .eq("user_id", user.id)
     .gt("expires_at", new Date().toISOString())
     .order("activated_at", { ascending: false });

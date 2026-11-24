@@ -427,6 +427,7 @@ button { font: inherit; }
 .tier-button:hover, .collect-button:hover, .primary-button:hover, .secondary-button:hover, .portfolio-action:hover:not(:disabled), .settings-row:hover { color: #FFFFFF; background: rgba(0, 184, 123, 0.25); border-color: rgba(0, 184, 123, 0.5); box-shadow: 0 0 17px rgba(0, 184, 123, 0.2); }
 .tier-button { color: #FFFFFF; background: #2563EB; border-color: #2563EB; }
 .tier-button:hover { color: #FFFFFF; background: #1D4ED8; border-color: #1D4ED8; box-shadow: 0 0 18px rgba(37, 99, 235, 0.35); }
+.tier-button:disabled, .tier-button:disabled:hover { cursor: not-allowed; opacity: 0.65; background: #2563EB; border-color: #2563EB; box-shadow: none; }
 .tier-button svg, .collect-button svg, .portfolio-action svg, .secondary-button svg { color: #FFFFFF; stroke-width: 1.5; filter: drop-shadow(0 0 4px rgba(0, 184, 123, 0.4)); }
 .tier-button .pulse { flex: 0 0 auto; }
 .portfolio-action { min-height: 54px; border-radius: 999px; background: rgba(0, 184, 123, 0.15); }
