@@ -513,7 +513,8 @@ export default function Home() {
     try {
       const response = await fetchWithTimeout("/api/mining/activate");
       if (!response.ok) {
-        setError("Unable to load your active mining nodes.");
+        const body = await response.json() as { error?: string };
+        setError(body.error ?? "Unable to load your active mining nodes.");
         return;
       }
       const body = await response.json() as { activations?: Activation[] };

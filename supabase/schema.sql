@@ -17,6 +17,12 @@ CREATE TABLE IF NOT EXISTS public.booster_activations (
 );
 
 ALTER TABLE public.booster_activations
+ADD COLUMN IF NOT EXISTS id UUID DEFAULT gen_random_uuid();
+
+ALTER TABLE public.booster_activations
+ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+
+ALTER TABLE public.booster_activations
 ADD COLUMN IF NOT EXISTS tier TEXT;
 
 ALTER TABLE public.booster_activations
@@ -24,6 +30,16 @@ ADD COLUMN IF NOT EXISTS activated_at TIMESTAMP WITH TIME ZONE;
 
 ALTER TABLE public.booster_activations
 ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE;
+
+UPDATE public.booster_activations
+SET id = gen_random_uuid()
+WHERE id IS NULL;
+
+ALTER TABLE public.booster_activations
+ALTER COLUMN id SET DEFAULT gen_random_uuid();
+
+ALTER TABLE public.booster_activations
+ALTER COLUMN id SET NOT NULL;
 
 DO $$
 DECLARE
