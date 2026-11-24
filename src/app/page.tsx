@@ -51,7 +51,7 @@ import CustomActivityLedger from '@/components/CustomActivityLedger';
 
 type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "portfolio";
 type Activation = { id: string; user_id: string; tier: string; activated_at: string; expires_at: string };
-type Profile = { full_name?: string | null; avatar_url: string | null; balance: number | string | null };
+type Profile = { full_name?: string | null; avatar_url: string | null };
 type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null; marketCap?: number | null; fdv?: number | null; pairAddress?: string; sparkline?: number[]; address?: string; logoURI?: string; totalSupply?: string | null; circulatingSupply?: string | null; decimals?: number };
 type MarketQuote = {
   price: number | null;
@@ -619,21 +619,37 @@ export default function Home() {
     let cancelled = false;
     async function loadProfile() {
       try {
-        const { data, error } = await supabase.from("profiles").select("avatar_url, balance").eq("id", userId).single<Profile>();
-        if (error) throw error;
-        if (!cancelled) {
+        const accrualResponse = await fetchWithTimeout("/api/mining/accrue", { method: "POST" });
+        const accrualResult = await accrualResponse.json() as {
+          balance?: number | string;
+          accrued_at?: string;
+          error?: string;
+        };
+        const accruedBalance = Number(accrualResult.balance);
+        const accruedAt = typeof accrualResult.accrued_at === "string" ? Date.parse(accrualResult.accrued_at) : NaN;
+        if (!accrualResponse.ok || !Number.isFinite(accruedBalance) || !Number.isFinite(accruedAt)) {
+          throw new Error(accrualResult.error ?? "Unable to load your saved mining balance.");
+        }
+        if (cancelled) return;
+        setBalance(accruedBalance);
+        setBalanceLoadedAt(accruedAt);
+
+        const { data, error } = await supabase.from("profiles").select("avatar_url").eq("id", userId).single<Profile>();
+        if (cancelled) return;
+        if (error) {
+          console.error("Failed to load profile avatar:", error);
+          setError("Unable to load your profile details.");
+        } else {
           setAvatar(data?.avatar_url?.trim() || null);
-          const nextBalance = Number(data?.balance ?? 0);
-          setBalance(Number.isFinite(nextBalance) ? nextBalance : 0);
-          setBalanceLoadedAt(Date.now());
-          setProfileLoading(false);
         }
-      } catch {
-        if (!cancelled) {
-          setBalance(null);
-          setBalanceLoadedAt(Date.now());
-          setProfileLoading(false);
-        }
+      } catch (loadError: unknown) {
+        if (cancelled) return;
+        console.error("Failed to load saved mining balance:", loadError);
+        setBalance(null);
+        setBalanceLoadedAt(null);
+        setError(loadError instanceof Error ? loadError.message : "Unable to load your saved mining balance.");
+      } finally {
+        if (!cancelled) setProfileLoading(false);
       }
     }
     void loadProfile();
@@ -829,12 +845,20 @@ function Dashboard({ balance, balanceLoadedAt, balanceLoading, isBalanceHidden, 
     : FREE_CYCLE_SECONDS;
   const progress = Math.min(100, (remaining / cycleSeconds) * 100);
   const liveBalance = (balance ?? 0) + calculateAccruedTokens(activations, balanceLoadedAt, now);
-  const displayBalance = balanceLoading ? "Loading..." : isBalanceHidden ? "••••••" : liveBalance.toFixed(4);
+  const displayBalance = balanceLoading
+    ? "Loading..."
+    : isBalanceHidden
+      ? "••••••"
+      : balance === null
+        ? "—"
+        : liveBalance.toFixed(4);
   const displayFiatBalance = balanceLoading
     ? "Loading..."
     : isBalanceHidden
       ? "••••••"
-      : `$${(liveBalance * RTR_PRICE_USD).toFixed(2)}`;
+      : balance === null
+        ? "$—"
+        : `$${(liveBalance * RTR_PRICE_USD).toFixed(2)}`;
 
   return <div className="dashboard-view">
     <div className="balance-card"><div><div className="balance-label"><span className="eyebrow">TOTAL ACCRUED</span><button className="balance-toggle" type="button" onClick={onToggleBalance} aria-label={isBalanceHidden ? "Show balance" : "Hide balance"}>{isBalanceHidden ? <EyeOff size={16} /> : <Eye size={16} />}</button></div><strong>{displayBalance} <small>RTR</small></strong><span className="balance-fiat">{displayFiatBalance}</span></div><div className="balance-icon"><Zap size={21} /></div></div>
