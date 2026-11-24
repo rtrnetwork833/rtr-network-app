@@ -25,7 +25,7 @@ export async function POST() {
   if (error) {
     console.error("Failed to claim persisted mining accrual:", error);
     const message = isMiningBalanceSchemaError(error.code)
-      ? "The persistent mining balance schema is missing. Run supabase/schema.sql and try again."
+      ? "The profile mining balance columns or accrual RPC are missing. Run supabase/schema.sql and try again."
       : "Unable to save mining accrual.";
     return NextResponse.json({ error: message }, { status: 500 });
   }

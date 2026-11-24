@@ -51,7 +51,12 @@ import CustomActivityLedger from '@/components/CustomActivityLedger';
 
 type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "portfolio";
 type Activation = { id: string; user_id: string; tier: string; activated_at: string; expires_at: string };
-type Profile = { full_name?: string | null; avatar_url: string | null };
+type Profile = {
+  full_name?: string | null;
+  avatar_url: string | null;
+  claimed_balance?: number | string | null;
+  mining_accrued_at?: string | null;
+};
 type MarketAsset = { id?: string; symbol: string; name: string; price: number | null; change: number | null; volume?: number | null; marketCap?: number | null; fdv?: number | null; pairAddress?: string; sparkline?: number[]; address?: string; logoURI?: string; totalSupply?: string | null; circulatingSupply?: string | null; decimals?: number };
 type MarketQuote = {
   price: number | null;
@@ -620,28 +625,32 @@ export default function Home() {
     async function loadProfile() {
       try {
         const accrualResponse = await fetchWithTimeout("/api/mining/accrue", { method: "POST" });
-        const accrualResult = await accrualResponse.json() as {
-          balance?: number | string;
-          accrued_at?: string;
-          error?: string;
-        };
-        const accruedBalance = Number(accrualResult.balance);
-        const accruedAt = typeof accrualResult.accrued_at === "string" ? Date.parse(accrualResult.accrued_at) : NaN;
-        if (!accrualResponse.ok || !Number.isFinite(accruedBalance) || !Number.isFinite(accruedAt)) {
+        if (!accrualResponse.ok) {
+          const accrualResult = await accrualResponse.json() as { error?: string };
           throw new Error(accrualResult.error ?? "Unable to load your saved mining balance.");
         }
         if (cancelled) return;
-        setBalance(accruedBalance);
-        setBalanceLoadedAt(accruedAt);
 
-        const { data, error } = await supabase.from("profiles").select("avatar_url").eq("id", userId).single<Profile>();
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("avatar_url, claimed_balance, mining_accrued_at")
+          .eq("id", userId)
+          .single<Profile>();
         if (cancelled) return;
         if (error) {
-          console.error("Failed to load profile avatar:", error);
-          setError("Unable to load your profile details.");
-        } else {
-          setAvatar(data?.avatar_url?.trim() || null);
+          const schemaMissing = ["42703", "PGRST204"].includes(error.code);
+          throw new Error(schemaMissing
+            ? "Persistent mining balance columns are missing. Run supabase/schema.sql and try again."
+            : error.message);
         }
+        const accruedBalance = Number(data.claimed_balance);
+        const accruedAt = typeof data.mining_accrued_at === "string" ? Date.parse(data.mining_accrued_at) : NaN;
+        if (data.claimed_balance == null || !Number.isFinite(accruedBalance) || !Number.isFinite(accruedAt)) {
+          throw new Error("Persistent mining balance data is unavailable. Run supabase/schema.sql and try again.");
+        }
+        setBalance(accruedBalance);
+        setBalanceLoadedAt(accruedAt);
+        setAvatar(data.avatar_url?.trim() || null);
       } catch (loadError: unknown) {
         if (cancelled) return;
         console.error("Failed to load saved mining balance:", loadError);

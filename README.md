@@ -18,7 +18,7 @@ Fiat withdrawal checkout requires server-only `MELD_SECRET_KEY` and `MELD_PUBLIC
 
 The token converter uses the token list and wallet execution provided by Reown AppKit. Its native swap view handles quote review, approvals, and transaction execution using the connected wallet.
 
-Before testing activations, run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. It creates the `booster_activations` table, the persistent `user_mining_balances` table, the `claim_mining_accrual` RPC, and their row-level security policies. Each purchase creates a separate node instance, including repeat purchases of the same tier. The free node is persisted for 24 hours and paid tiers for 30 days. The dashboard claims elapsed earnings atomically from the database, including earnings up to each node's expiration, then displays a live client-side ticker from the returned checkpoint.
+Before testing activations, run [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor. It adds `claimed_balance` and `mining_accrued_at` to `profiles`, creates the `booster_activations` table and the `claim_mining_accrual` RPC, and migrates existing mining balances into the profile columns. Each purchase creates a separate node instance, including repeat purchases of the same tier. The free node is persisted for 24 hours and paid tiers for 30 days. The dashboard claims elapsed earnings atomically from the database, including earnings up to each node's expiration, then displays a live client-side ticker from the returned checkpoint.
 
 ## Getting Started
 
