@@ -25,7 +25,12 @@ export async function POST(request: Request) {
     .single();
 
   if (error) {
-    if (isMissingActivationTable(error)) return NextResponse.json({ activation: null, standard: true });
+    if (isMissingActivationTable(error)) {
+      return NextResponse.json({ error: "The booster_activations schema is missing. Run supabase/schema.sql and try again." }, { status: 500 });
+    }
+    if (error.code === "23505") {
+      return NextResponse.json({ error: "A database uniqueness rule is preventing this plan from stacking. Run the latest supabase/schema.sql." }, { status: 500 });
+    }
     return NextResponse.json({ error: "Unable to save the node activation." }, { status: 500 });
   }
   return NextResponse.json({ ok: true, activation: data });

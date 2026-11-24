@@ -625,24 +625,23 @@ export default function Home() {
   async function activateTier(tier: string) {
     setError(null);
     let response: Response;
-    let body: { activation?: Activation; error?: string; standard?: boolean };
+    let body: { activation?: Activation; error?: string };
     try {
       response = await fetch("/api/mining/activate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tier }),
       });
-      body = await response.json() as { activation?: Activation; error?: string; standard?: boolean };
-    } catch {
+      body = await response.json() as { activation?: Activation; error?: string };
+    } catch (activationError: unknown) {
+      console.error("Failed to send the tier activation request:", activationError);
       setError("Unable to activate this node. Please try again.");
       return false;
     }
-    if (body.standard) {
-      setActivations([]);
-      return false;
-    }
     if (!response.ok || !body.activation) {
-      setError(body.error ?? "Unable to activate this tier.");
+      const message = body.error ?? "Unable to activate this tier.";
+      console.error("Tier activation API returned an error:", { status: response.status, message });
+      setError(message);
       return false;
     }
     const activated = body.activation;
@@ -654,8 +653,13 @@ export default function Home() {
   }
 
   async function purchase(tier: (typeof tiers)[number]) {
-    if (await activateTier(tier[0])) {
-      setView("dashboard");
+    try {
+      if (await activateTier(tier[0])) {
+        setView("dashboard");
+      }
+    } catch (purchaseError: unknown) {
+      console.error("Failed to complete the tier purchase:", purchaseError);
+      setError("Unable to complete this purchase. Please try again.");
     }
   }
 
