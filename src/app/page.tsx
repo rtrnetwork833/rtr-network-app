@@ -622,6 +622,40 @@ export default function Home() {
     };
   }, [user]);
 
+  // Periodic database autosave to prevent balance data-loss on refresh
+  useEffect(() => {
+    if (!user || balance === null || profileLoading) return;
+    const userId = user.id;
+    
+    const autosaveTimer = window.setInterval(async () => {
+      try {
+        // Calculate current live balance including accrued tokens
+        const nowUTC = Date.now();
+        const balanceLoadedAtUTC = balanceLoadedAt ? Math.floor(balanceLoadedAt / 1000) * 1000 : null;
+        const currentLiveBalance = balance + calculateAccruedTokens(activations, balanceLoadedAtUTC, nowUTC);
+        
+        // Save to database
+        const { error } = await supabase
+          .from('profiles')
+          .update({ 
+            total_accrued_balance: currentLiveBalance,
+            last_balance_update: new Date().toISOString()
+          })
+          .eq('id', userId);
+        
+        if (error) {
+          console.error('Failed to autosave balance:', error);
+        } else {
+          console.log('Balance autosaved successfully:', currentLiveBalance);
+        }
+      } catch (err) {
+        console.error('Error in balance autosave:', err);
+      }
+    }, 15000); // Autosave every 15 seconds
+    
+    return () => window.clearInterval(autosaveTimer);
+  }, [user, balance, balanceLoadedAt, profileLoading, activations]);
+
   useEffect(() => {
     if (!user) return;
     const userId = user.id;
@@ -654,6 +688,7 @@ export default function Home() {
           if (cancelled) return;
         }
         
+        // Force persistent on-load fetch: use database value as unshakeable base
         const accruedBalance = Number(data?.total_accrued_balance ?? 0);
         const accruedAt = typeof data?.last_balance_update === "string" ? Date.parse(data.last_balance_update) : NaN;
         
@@ -666,7 +701,8 @@ export default function Home() {
           setBalance(0);
           setBalanceLoadedAt(Date.now());
         } else {
-          // Set balance to the highest value between database and calculated offline progression
+          // Set balance to database value as unshakeable base
+          // Add calculated offline progression since last_balance_update
           const nowUTC = Date.now();
           const offlineProgression = calculateAccruedTokens(activations, accruedAtUTC, nowUTC);
           const calculatedTotal = accruedBalance + offlineProgression;
