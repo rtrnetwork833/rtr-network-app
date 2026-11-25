@@ -338,14 +338,18 @@ function formatRemainingTime(seconds: number, tier: string) {
 
 function calculateAccruedTokens(activations: Activation[], balanceLoadedAt: number | null, now: number) {
   if (balanceLoadedAt === null) return 0;
+  // Use UTC timestamp for all calculations to prevent timezone issues
+  const balanceLoadedAtUTC = Math.floor(balanceLoadedAt / 1000) * 1000;
+  const nowUTC = Math.floor(now / 1000) * 1000;
+  
   return activations.reduce((total, activation) => {
     const activatedAt = Date.parse(activation.activated_at);
     const expiresAt = Date.parse(activation.expires_at);
     const earningPerDay = Number(tiers.find(([tierName]) => tierName === activation.tier)?.[2]);
     if (!Number.isFinite(activatedAt) || !Number.isFinite(expiresAt) || !Number.isFinite(earningPerDay)) return total;
 
-    const accrualStart = Math.max(balanceLoadedAt, activatedAt);
-    const accrualEnd = Math.min(now, expiresAt);
+    const accrualStart = Math.max(balanceLoadedAtUTC, activatedAt);
+    const accrualEnd = Math.min(nowUTC, expiresAt);
     if (accrualEnd <= accrualStart) return total;
     return total + ((accrualEnd - accrualStart) / 1000) * (earningPerDay / 86400);
   }, 0);
@@ -653,14 +657,23 @@ export default function Home() {
         const accruedBalance = Number(data?.total_accrued_balance ?? 0);
         const accruedAt = typeof data?.last_balance_update === "string" ? Date.parse(data.last_balance_update) : NaN;
         
+        // Use UTC timestamp for consistency
+        const accruedAtUTC = !Number.isFinite(accruedAt) ? Date.now() : Math.floor(accruedAt / 1000) * 1000;
+        
         // Use safe fallback for invalid data
-        if (data?.total_accrued_balance == null || !Number.isFinite(accruedBalance) || !Number.isFinite(accruedAt)) {
+        if (data?.total_accrued_balance == null || !Number.isFinite(accruedBalance) || !Number.isFinite(accruedAtUTC)) {
           console.warn("Invalid balance data, using fallback");
           setBalance(0);
           setBalanceLoadedAt(Date.now());
         } else {
-          setBalance(accruedBalance);
-          setBalanceLoadedAt(accruedAt);
+          // Set balance to the highest value between database and calculated offline progression
+          const nowUTC = Date.now();
+          const offlineProgression = calculateAccruedTokens(activations, accruedAtUTC, nowUTC);
+          const calculatedTotal = accruedBalance + offlineProgression;
+          
+          // Always use the higher value to prevent rollbacks
+          setBalance(Math.max(accruedBalance, calculatedTotal));
+          setBalanceLoadedAt(accruedAtUTC);
         }
         
         setAvatar(data?.avatar_url?.trim() || null);
@@ -849,25 +862,29 @@ export default function Home() {
 function Dashboard({ balance, balanceLoadedAt, balanceLoading, isBalanceHidden, onToggleBalance, activations }: { balance: number | null; balanceLoadedAt: number | null; balanceLoading: boolean; isBalanceHidden: boolean; onToggleBalance: () => void; activations: Activation[] }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
+    // Use UTC timestamp for consistent calculation
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
 
+  const nowUTC = Math.floor(now / 1000) * 1000;
+  const balanceLoadedAtUTC = balanceLoadedAt ? Math.floor(balanceLoadedAt / 1000) * 1000 : null;
+
   const activeActivations = useMemo(
     () => activations
-      .filter((activation) => Date.parse(activation.expires_at) > now)
+      .filter((activation) => Date.parse(activation.expires_at) > nowUTC)
       .sort((left, right) => Date.parse(right.activated_at) - Date.parse(left.activated_at)),
-    [activations, now],
+    [activations, nowUTC],
   );
   const currentActivation = activeActivations[0];
   const remaining = currentActivation
-    ? Math.max(0, Math.floor((Date.parse(currentActivation.expires_at) - now) / 1000))
+    ? Math.max(0, Math.floor((Date.parse(currentActivation.expires_at) - nowUTC) / 1000))
     : 0;
   const cycleSeconds = currentActivation
     ? cycleSecondsForTier(currentActivation.tier) ?? FREE_CYCLE_SECONDS
     : FREE_CYCLE_SECONDS;
   const progress = Math.min(100, (remaining / cycleSeconds) * 100);
-  const liveBalance = (balance ?? 0) + calculateAccruedTokens(activations, balanceLoadedAt, now);
+  const liveBalance = (balance ?? 0) + calculateAccruedTokens(activations, balanceLoadedAtUTC, nowUTC);
   const displayBalance = balanceLoading
     ? "Loading..."
     : isBalanceHidden
