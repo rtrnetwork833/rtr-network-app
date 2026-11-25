@@ -354,20 +354,22 @@ function calculateGlobalEarningSpeedPerSecond(activations: Activation[], now: nu
   }, 0);
 }
 
-function calculateAccruedTokens(activations: Activation[], balanceLoadedAt: number | null, now: number) {
-  if (balanceLoadedAt === null) return 0;
-  // Use UTC timestamp for all calculations to prevent timezone issues
-  const balanceLoadedAtUTC = Math.floor(balanceLoadedAt / 1000) * 1000;
+// Calculate total earnings including offline progression
+function calculateTotalEarnings(baseBalance: number, lastBalanceUpdate: number, activations: Activation[], now: number): number {
   const nowUTC = Math.floor(now / 1000) * 1000;
+  const lastBalanceUpdateUTC = Math.floor(lastBalanceUpdate / 1000) * 1000;
   
   // Calculate global earning speed per second from all active nodes
   const globalEarningSpeedPerSecond = calculateGlobalEarningSpeedPerSecond(activations, nowUTC);
   
   // Calculate seconds elapsed since last balance update
-  const secondsElapsed = (nowUTC - balanceLoadedAtUTC) / 1000;
+  const secondsElapsed = (nowUTC - lastBalanceUpdateUTC) / 1000;
   
-  // Return delta-time progression: Seconds Elapsed * Global Earning Speed Per Second
-  return secondsElapsed * globalEarningSpeedPerSecond;
+  // Offline Earnings = (Current UTC Timestamp - last_balance_update) * Total Earnings Per Second
+  const offlineEarnings = secondsElapsed * globalEarningSpeedPerSecond;
+  
+  // Return total: base balance + offline earnings
+  return baseBalance + offlineEarnings;
 }
 
 function formatMarketPrice(asset: MarketAsset) {
@@ -637,19 +639,18 @@ export default function Home() {
     };
   }, [user]);
 
-  // Periodic database autosave to prevent balance data-loss on refresh
+  // Forced automatic background autosave every 10 seconds
   useEffect(() => {
-    if (!user || balance === null || profileLoading) return;
+    if (!user || balance === null || balanceLoadedAt === null || profileLoading || activations.length === 0) return;
     const userId = user.id;
     
     const autosaveTimer = window.setInterval(async () => {
       try {
-        // Calculate current live balance including accrued tokens
+        // Calculate current live balance using total earnings function
         const nowUTC = Date.now();
-        const balanceLoadedAtUTC = balanceLoadedAt ? Math.floor(balanceLoadedAt / 1000) * 1000 : null;
-        const currentLiveBalance = balance + calculateAccruedTokens(activations, balanceLoadedAtUTC, nowUTC);
+        const currentLiveBalance = calculateTotalEarnings(balance, balanceLoadedAt, activations, nowUTC);
         
-        // Save to database
+        // Absolute write operation to Supabase backend
         const { error } = await supabase
           .from('profiles')
           .update({ 
@@ -666,7 +667,7 @@ export default function Home() {
       } catch (err) {
         console.error('Error in balance autosave:', err);
       }
-    }, 15000); // Autosave every 15 seconds
+    }, 10000); // Autosave every 10 seconds
     
     return () => window.clearInterval(autosaveTimer);
   }, [user, balance, balanceLoadedAt, profileLoading, activations]);
@@ -703,7 +704,7 @@ export default function Home() {
           if (cancelled) return;
         }
         
-        // Force persistent on-load fetch: use database value as unshakeable base
+        // Solid timestamps on load & refresh: query database for total_accrued_balance and last_balance_update
         const accruedBalance = Number(data?.total_accrued_balance ?? 0);
         const accruedAt = typeof data?.last_balance_update === "string" ? Date.parse(data.last_balance_update) : NaN;
         
@@ -716,13 +717,12 @@ export default function Home() {
           setBalance(0);
           setBalanceLoadedAt(Date.now());
         } else {
-          // Initialize with database value as unshakeable base
-          // Add calculated offline progression since last_balance_update
+          // Calculate exact offline progression gap: Offline Earnings = (Current UTC Timestamp - last_balance_update) * Total Earnings Per Second
           const nowUTC = Date.now();
-          const offlineProgression = calculateAccruedTokens(activations, accruedAtUTC, nowUTC);
-          const calculatedTotal = accruedBalance + offlineProgression;
+          const calculatedTotal = calculateTotalEarnings(accruedBalance, accruedAtUTC, activations, nowUTC);
           
-          // Initialize with true combined total - never fall back to lower fraction
+          // Set initial live counter state to exactly total_accrued_balance + Offline Earnings
+          // Never let it reset to 0 or fall backwards
           setBalance(calculatedTotal);
           setBalanceLoadedAt(accruedAtUTC);
         }
@@ -935,7 +935,12 @@ function Dashboard({ balance, balanceLoadedAt, balanceLoading, isBalanceHidden, 
     ? cycleSecondsForTier(currentActivation.tier) ?? FREE_CYCLE_SECONDS
     : FREE_CYCLE_SECONDS;
   const progress = Math.min(100, (remaining / cycleSeconds) * 100);
-  const liveBalance = (balance ?? 0) + calculateAccruedTokens(activations, balanceLoadedAtUTC, nowUTC);
+  
+  // Calculate live balance using total earnings function
+  const liveBalance = balance !== null && balanceLoadedAtUTC !== null
+    ? calculateTotalEarnings(balance, balanceLoadedAtUTC, activations, nowUTC)
+    : (balance ?? 0);
+  
   const displayBalance = balanceLoading
     ? "Loading..."
     : isBalanceHidden
