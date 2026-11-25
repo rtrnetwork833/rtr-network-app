@@ -639,38 +639,11 @@ export default function Home() {
     };
   }, [user]);
 
-  // Forced automatic background autosave every 10 seconds
-  useEffect(() => {
-    if (!user || balance === null || balanceLoadedAt === null || profileLoading || activations.length === 0) return;
-    const userId = user.id;
-    
-    const autosaveTimer = window.setInterval(async () => {
-      try {
-        // Calculate current live balance using total earnings function
-        const nowUTC = Date.now();
-        const currentLiveBalance = calculateTotalEarnings(balance, balanceLoadedAt, activations, nowUTC);
-        
-        // Absolute write operation to Supabase backend
-        const { error } = await supabase
-          .from('profiles')
-          .update({ 
-            total_accrued_balance: currentLiveBalance,
-            last_balance_update: new Date().toISOString()
-          })
-          .eq('id', userId);
-        
-        if (error) {
-          console.error('Failed to autosave balance:', error);
-        } else {
-          console.log('Balance autosaved successfully:', currentLiveBalance);
-        }
-      } catch (err) {
-        console.error('Error in balance autosave:', err);
-      }
-    }, 10000); // Autosave every 10 seconds
-    
-    return () => window.clearInterval(autosaveTimer);
-  }, [user, balance, balanceLoadedAt, profileLoading, activations]);
+  // Global accrual speed aggregator - sum all active node rates
+  const globalSpeedPerSecond = useMemo(() => {
+    const nowUTC = Date.now();
+    return calculateGlobalEarningSpeedPerSecond(activations, nowUTC);
+  }, [activations]);
 
   useEffect(() => {
     if (!user) return;
@@ -678,17 +651,7 @@ export default function Home() {
     let cancelled = false;
     async function loadProfile() {
       try {
-        const accrualResponse = await fetchWithTimeout("/api/mining/accrue", { method: "POST" });
-        if (!accrualResponse.ok) {
-          const accrualResult = await accrualResponse.json() as { error?: string };
-          // Use safe fallback instead of throwing error
-          console.warn("Mining accrual API unavailable:", accrualResult.error);
-          setBalance(0);
-          setBalanceLoadedAt(Date.now());
-          if (cancelled) return;
-        }
-        if (cancelled) return;
-
+        // Fetch total_accrued_balance and last_balance_update from public.profiles
         const { data, error } = await supabase
           .from("profiles")
           .select("avatar_url, total_accrued_balance, last_balance_update")
@@ -697,51 +660,63 @@ export default function Home() {
         if (cancelled) return;
         
         if (error || !data) {
-          // Use safe fallback instead of throwing error
           console.warn("Profile data unavailable, using fallback:", error);
           setBalance(0);
           setBalanceLoadedAt(Date.now());
           if (cancelled) return;
         }
         
-        // Solid timestamps on load & refresh: query database for total_accrued_balance and last_balance_update
+        // Bulletproof on-load calculator
         const accruedBalance = Number(data?.total_accrued_balance ?? 0);
         const accruedAt = typeof data?.last_balance_update === "string" ? Date.parse(data.last_balance_update) : NaN;
         
-        // Use UTC timestamp for consistency
         const accruedAtUTC = !Number.isFinite(accruedAt) ? Date.now() : Math.floor(accruedAt / 1000) * 1000;
         
-        // Use safe fallback for invalid data
         if (data?.total_accrued_balance == null || !Number.isFinite(accruedBalance) || !Number.isFinite(accruedAtUTC)) {
           console.warn("Invalid balance data, using fallback");
           setBalance(0);
           setBalanceLoadedAt(Date.now());
         } else {
-          // Calculate exact offline progression gap: Offline Earnings = (Current UTC Timestamp - last_balance_update) * Total Earnings Per Second
+          // Calculate exact time difference in seconds
           const nowUTC = Date.now();
-          const calculatedTotal = calculateTotalEarnings(accruedBalance, accruedAtUTC, activations, nowUTC);
+          const secondsElapsed = (nowUTC - accruedAtUTC) / 1000;
           
-          // Set initial live counter state to exactly total_accrued_balance + Offline Earnings
-          // Never let it reset to 0 or fall backwards
+          // Compute absolute progression: Earned_While_Away = Seconds_Elapsed * GLOBAL_SPEED_PER_SECOND
+          const earnedWhileAway = secondsElapsed * globalSpeedPerSecond;
+          const calculatedTotal = accruedBalance + earnedWhileAway;
+          
+          // Instantly write newly calculated total back to database
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({ 
+              total_accrued_balance: calculatedTotal,
+              last_balance_update: new Date().toISOString()
+            })
+            .eq('id', userId);
+          
+          if (updateError) {
+            console.error('Failed to update balance on load:', updateError);
+          }
+          
+          // Use this stable total as starting state for frontend ticker
           setBalance(calculatedTotal);
-          setBalanceLoadedAt(accruedAtUTC);
+          setBalanceLoadedAt(nowUTC);
         }
         
         setAvatar(data?.avatar_url?.trim() || null);
       } catch (loadError: unknown) {
         if (cancelled) return;
         console.error("Failed to load saved mining balance:", loadError);
-        // Use safe fallback instead of throwing error
         setBalance(0);
         setBalanceLoadedAt(Date.now());
-        setError(null); // Clear any error state
+        setError(null);
       } finally {
         if (!cancelled) setProfileLoading(false);
       }
     }
     void loadProfile();
     return () => { cancelled = true; };
-  }, [user]);
+  }, [user, globalSpeedPerSecond, activations]);
 
   async function activateTier(tier: string) {
     setError(null);
@@ -912,11 +887,30 @@ export default function Home() {
 
 function Dashboard({ balance, balanceLoadedAt, balanceLoading, isBalanceHidden, onToggleBalance, activations }: { balance: number | null; balanceLoadedAt: number | null; balanceLoading: boolean; isBalanceHidden: boolean; onToggleBalance: () => void; activations: Activation[] }) {
   const [now, setNow] = useState(() => Date.now());
+  const [visualBalance, setVisualBalance] = useState(balance ?? 0);
+  
+  // Frontend UI ticker only - visual animation, no database saves
   useEffect(() => {
-    // Use UTC timestamp for consistent calculation
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+  
+  // Animate visual balance upward using global speed per second
+  useEffect(() => {
+    if (balance === null) return;
+    const speedPerSecond = calculateGlobalEarningSpeedPerSecond(activations, Date.now());
+    const visualTimer = window.setInterval(() => {
+      setVisualBalance((prev) => prev + speedPerSecond);
+    }, 1000);
+    return () => window.clearInterval(visualTimer);
+  }, [balance, activations]);
+  
+  // Reset visual balance when balance changes from server
+  useEffect(() => {
+    if (balance !== null) {
+      setVisualBalance(balance);
+    }
+  }, [balance]);
 
   const nowUTC = Math.floor(now / 1000) * 1000;
   const balanceLoadedAtUTC = balanceLoadedAt ? Math.floor(balanceLoadedAt / 1000) * 1000 : null;
@@ -936,21 +930,17 @@ function Dashboard({ balance, balanceLoadedAt, balanceLoading, isBalanceHidden, 
     : FREE_CYCLE_SECONDS;
   const progress = Math.min(100, (remaining / cycleSeconds) * 100);
   
-  // Calculate live balance using total earnings function
-  const liveBalance = balance !== null && balanceLoadedAtUTC !== null
-    ? calculateTotalEarnings(balance, balanceLoadedAtUTC, activations, nowUTC)
-    : (balance ?? 0);
-  
+  // Use visual balance for display - frontend UI ticker only
   const displayBalance = balanceLoading
     ? "Loading..."
     : isBalanceHidden
       ? "••••••"
-      : liveBalance.toFixed(4);
+      : visualBalance.toFixed(4);
   const displayFiatBalance = balanceLoading
     ? "Loading..."
     : isBalanceHidden
       ? "••••••"
-      : `$${(liveBalance * RTR_PRICE_USD).toFixed(2)}`;
+      : `$${(visualBalance * 0.075).toFixed(2)}`;
 
   return <div className="dashboard-view">
     <div className="balance-card"><div><div className="balance-label"><span className="eyebrow">TOTAL ACCRUED</span><button className="balance-toggle" type="button" onClick={onToggleBalance} aria-label={isBalanceHidden ? "Show balance" : "Hide balance"}>{isBalanceHidden ? <EyeOff size={16} /> : <Eye size={16} />}</button></div><strong>{displayBalance} <small>RTR</small></strong><span className="balance-fiat">{displayFiatBalance}</span></div><div className="balance-icon"><Zap size={21} /></div></div>
