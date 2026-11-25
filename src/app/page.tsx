@@ -336,23 +336,38 @@ function formatRemainingTime(seconds: number, tier: string) {
   return `${Math.max(1, Math.ceil(seconds / 60))}m remaining`;
 }
 
+// Calculate global earning speed per second from all active nodes
+function calculateGlobalEarningSpeedPerSecond(activations: Activation[], now: number): number {
+  const nowUTC = Math.floor(now / 1000) * 1000;
+  
+  return activations.reduce((totalSpeed, activation) => {
+    const expiresAt = Date.parse(activation.expires_at);
+    const earningPerDay = Number(tiers.find(([tierName]) => tierName === activation.tier)?.[2]);
+    
+    // Only count activations that are currently active
+    if (!Number.isFinite(expiresAt) || !Number.isFinite(earningPerDay) || expiresAt <= nowUTC) {
+      return totalSpeed;
+    }
+    
+    // Sum up RTR/day rates and convert to per-second rate
+    return totalSpeed + (earningPerDay / 86400);
+  }, 0);
+}
+
 function calculateAccruedTokens(activations: Activation[], balanceLoadedAt: number | null, now: number) {
   if (balanceLoadedAt === null) return 0;
   // Use UTC timestamp for all calculations to prevent timezone issues
   const balanceLoadedAtUTC = Math.floor(balanceLoadedAt / 1000) * 1000;
   const nowUTC = Math.floor(now / 1000) * 1000;
   
-  return activations.reduce((total, activation) => {
-    const activatedAt = Date.parse(activation.activated_at);
-    const expiresAt = Date.parse(activation.expires_at);
-    const earningPerDay = Number(tiers.find(([tierName]) => tierName === activation.tier)?.[2]);
-    if (!Number.isFinite(activatedAt) || !Number.isFinite(expiresAt) || !Number.isFinite(earningPerDay)) return total;
-
-    const accrualStart = Math.max(balanceLoadedAtUTC, activatedAt);
-    const accrualEnd = Math.min(nowUTC, expiresAt);
-    if (accrualEnd <= accrualStart) return total;
-    return total + ((accrualEnd - accrualStart) / 1000) * (earningPerDay / 86400);
-  }, 0);
+  // Calculate global earning speed per second from all active nodes
+  const globalEarningSpeedPerSecond = calculateGlobalEarningSpeedPerSecond(activations, nowUTC);
+  
+  // Calculate seconds elapsed since last balance update
+  const secondsElapsed = (nowUTC - balanceLoadedAtUTC) / 1000;
+  
+  // Return delta-time progression: Seconds Elapsed * Global Earning Speed Per Second
+  return secondsElapsed * globalEarningSpeedPerSecond;
 }
 
 function formatMarketPrice(asset: MarketAsset) {
@@ -701,14 +716,14 @@ export default function Home() {
           setBalance(0);
           setBalanceLoadedAt(Date.now());
         } else {
-          // Set balance to database value as unshakeable base
+          // Initialize with database value as unshakeable base
           // Add calculated offline progression since last_balance_update
           const nowUTC = Date.now();
           const offlineProgression = calculateAccruedTokens(activations, accruedAtUTC, nowUTC);
           const calculatedTotal = accruedBalance + offlineProgression;
           
-          // Always use the higher value to prevent rollbacks
-          setBalance(Math.max(accruedBalance, calculatedTotal));
+          // Initialize with true combined total - never fall back to lower fraction
+          setBalance(calculatedTotal);
           setBalanceLoadedAt(accruedAtUTC);
         }
         
