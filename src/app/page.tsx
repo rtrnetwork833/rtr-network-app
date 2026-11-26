@@ -514,7 +514,27 @@ export default function Home() {
     // Close the overlay whenever the active app tab changes.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setShowDepositModal(false);
-  }, [view]);
+    
+    // Save balance when user transitions away from dashboard
+    if (previousView.current === "dashboard" && user && balance !== null && balanceLoadedAt !== null) {
+      const nowUTC = Date.now();
+      const currentLiveBalance = calculateTotalEarnings(balance, balanceLoadedAt, activations, nowUTC);
+      supabase
+        .from('profiles')
+        .update({ 
+          total_accrued_balance: currentLiveBalance,
+          last_balance_update: new Date().toISOString()
+        })
+        .eq('id', user.id)
+        .then(({ error }) => {
+          if (error) {
+            console.error('Failed to save balance on tab change:', error);
+          } else {
+            console.log('Balance saved on tab change:', currentLiveBalance);
+          }
+        });
+    }
+  }, [view, user, balance, balanceLoadedAt, activations]);
 
   useEffect(() => {
     if (!depositStorageReady) return;
@@ -645,75 +665,99 @@ export default function Home() {
     return calculateGlobalEarningSpeedPerSecond(activations, nowUTC);
   }, [activations]);
 
+  // Safe 30-second interval save for database persistence
+  useEffect(() => {
+    if (!user || balance === null || balanceLoadedAt === null || profileLoading || activations.length === 0) return;
+    const userId = user.id;
+    
+    const safeSaveTimer = window.setInterval(async () => {
+      try {
+        const nowUTC = Date.now();
+        const currentLiveBalance = calculateTotalEarnings(balance, balanceLoadedAt, activations, nowUTC);
+        
+        const { error } = await supabase
+          .from('profiles')
+          .update({ 
+            total_accrued_balance: currentLiveBalance,
+            last_balance_update: new Date().toISOString()
+          })
+          .eq('id', userId);
+        
+        if (error) {
+          console.error('Failed to save balance:', error);
+        } else {
+          console.log('Balance saved successfully:', currentLiveBalance);
+        }
+      } catch (err) {
+        console.error('Error in balance save:', err);
+      }
+    }, 30000); // Safe 30-second interval
+    
+    return () => window.clearInterval(safeSaveTimer);
+  }, [user, balance, balanceLoadedAt, profileLoading, activations]);
+
   useEffect(() => {
     if (!user) return;
     const userId = user.id;
     let cancelled = false;
-    async function loadProfile() {
-      try {
-        // Fetch total_accrued_balance and last_balance_update from public.profiles
-        const { data, error } = await supabase
+async function loadProfile() {
+    try {
+      // 1. Fetch data directly from profiles table
+      const { data, error: fetchError } = await supabase
+        .from("profiles")
+        .select("avatar_url, total_accrued_balance, last_balance_update")
+        .eq("id", userId)
+        .single();
+
+      if (fetchError) throw fetchError;
+      if (cancelled) return;
+
+      if (data) {
+        // 2. Define global mining speed: 668.14 RTR/day
+        const totalDailyRtr = 668.14;
+        const speedPerSecond = totalDailyRtr / 86400; // 0.0077331 RTR/sec
+
+        const nowUTC = new Date();
+        // Use last_balance_update timestamp, fallback to current time if missing
+        const lastUpdate = data.last_balance_update 
+          ? new Date(data.last_balance_update) 
+          : new Date();
+
+        // 3. Compute accurate background earnings since user was last active
+        const secondsElapsed = Math.max(0, (nowUTC.getTime() - lastUpdate.getTime()) / 1000);
+        const earnedWhileAway = secondsElapsed * speedPerSecond;
+        const newDatabaseBalance = Number(data.total_accrued_balance || 0) + earnedWhileAway;
+
+        // 4. Update database balance and lock down current execution timestamp
+        const { error: updateError } = await supabase
           .from("profiles")
-          .select("avatar_url, total_accrued_balance, last_balance_update")
-          .eq("id", userId)
-          .single<Profile>();
-        if (cancelled) return;
-        
-        if (error || !data) {
-          console.warn("Profile data unavailable, using fallback:", error);
-          setBalance(0);
-          setBalanceLoadedAt(Date.now());
-          if (cancelled) return;
+          .update({
+            total_accrued_balance: newDatabaseBalance,
+            last_balance_update: nowUTC.toISOString()
+          })
+          .eq("id", userId);
+
+        if (updateError) {
+          console.error("Failed to update balance on load:", updateError);
         }
-        
-        // Bulletproof on-load calculator
-        const accruedBalance = Number(data?.total_accrued_balance ?? 0);
-        const accruedAt = typeof data?.last_balance_update === "string" ? Date.parse(data.last_balance_update) : NaN;
-        
-        const accruedAtUTC = !Number.isFinite(accruedAt) ? Date.now() : Math.floor(accruedAt / 1000) * 1000;
-        
-        if (data?.total_accrued_balance == null || !Number.isFinite(accruedBalance) || !Number.isFinite(accruedAtUTC)) {
-          console.warn("Invalid balance data, using fallback");
-          setBalance(0);
-          setBalanceLoadedAt(Date.now());
-        } else {
-          // Calculate exact time difference in seconds
-          const nowUTC = Date.now();
-          const secondsElapsed = (nowUTC - accruedAtUTC) / 1000;
-          
-          // Compute absolute progression: Earned_While_Away = Seconds_Elapsed * GLOBAL_SPEED_PER_SECOND
-          const earnedWhileAway = secondsElapsed * globalSpeedPerSecond;
-          const calculatedTotal = accruedBalance + earnedWhileAway;
-          
-          // Instantly write newly calculated total back to database
-          const { error: updateError } = await supabase
-            .from('profiles')
-            .update({ 
-              total_accrued_balance: calculatedTotal,
-              last_balance_update: new Date().toISOString()
-            })
-            .eq('id', userId);
-          
-          if (updateError) {
-            console.error('Failed to update balance on load:', updateError);
-          }
-          
-          // Use this stable total as starting state for frontend ticker
-          setBalance(calculatedTotal);
+
+        // 5. Safely apply state updates to the user interface
+        if (!cancelled) {
+          setBalance(newDatabaseBalance);
           setBalanceLoadedAt(nowUTC);
+          setAvatar(data.avatar_url?.trim() || null);
         }
-        
-        setAvatar(data?.avatar_url?.trim() || null);
-      } catch (loadError: unknown) {
-        if (cancelled) return;
-        console.error("Failed to load saved mining balance:", loadError);
-        setBalance(0);
-        setBalanceLoadedAt(Date.now());
-        setError(null);
-      } finally {
-        if (!cancelled) setProfileLoading(false);
       }
+    } catch (loaderError) {
+      console.error("Failed to load saved mining balance:", loaderError);
+      if (!cancelled) {
+        setBalance(0);
+        setBalanceLoadedAt(new Date());
+      }
+    } finally {
+      if (!cancelled) setProfileLoading(false);
     }
+  }
     void loadProfile();
     return () => { cancelled = true; };
   }, [user, globalSpeedPerSecond, activations]);
@@ -896,6 +940,7 @@ function Dashboard({ balance, balanceLoadedAt, balanceLoading, isBalanceHidden, 
   }, []);
   
   // Animate visual balance upward using global speed per second
+  // Frontend interval timer ONLY to animate numbers going up continuously on blue card for visual feedback
   useEffect(() => {
     if (balance === null) return;
     const speedPerSecond = calculateGlobalEarningSpeedPerSecond(activations, Date.now());
