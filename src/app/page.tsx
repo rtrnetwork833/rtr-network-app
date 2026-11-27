@@ -514,27 +514,7 @@ export default function Home() {
     // Close the overlay whenever the active app tab changes.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setShowDepositModal(false);
-    
-    // Save balance when user transitions away from dashboard
-    if (previousView.current === "dashboard" && user && balance !== null && balanceLoadedAt !== null) {
-      const nowUTC = Date.now();
-      const currentLiveBalance = calculateTotalEarnings(balance, balanceLoadedAt, activations, nowUTC);
-      supabase
-        .from('profiles')
-        .update({ 
-          total_accrued_balance: currentLiveBalance,
-          last_balance_update: new Date().toISOString()
-        })
-        .eq('id', user.id)
-        .then(({ error }) => {
-          if (error) {
-            console.error('Failed to save balance on tab change:', error);
-          } else {
-            console.log('Balance saved on tab change:', currentLiveBalance);
-          }
-        });
-    }
-  }, [view, user, balance, balanceLoadedAt, activations]);
+  }, [view]);
 
   useEffect(() => {
     if (!depositStorageReady) return;
@@ -665,94 +645,49 @@ export default function Home() {
     return calculateGlobalEarningSpeedPerSecond(activations, nowUTC);
   }, [activations]);
 
-  // Safe 30-second interval save for database persistence
-  useEffect(() => {
-    if (!user || balance === null || balanceLoadedAt === null || profileLoading || activations.length === 0) return;
-    const userId = user.id;
-    
-    const safeSaveTimer = window.setInterval(async () => {
-      try {
-        const nowUTC = Date.now();
-        const currentLiveBalance = calculateTotalEarnings(balance, balanceLoadedAt, activations, nowUTC);
-        
-        const { error } = await supabase
-          .from('profiles')
-          .update({ 
-            total_accrued_balance: currentLiveBalance,
-            last_balance_update: new Date().toISOString()
-          })
-          .eq('id', userId);
-        
-        if (error) {
-          console.error('Failed to save balance:', error);
-        } else {
-          console.log('Balance saved successfully:', currentLiveBalance);
-        }
-      } catch (err) {
-        console.error('Error in balance save:', err);
-      }
-    }, 30000); // Safe 30-second interval
-    
-    return () => window.clearInterval(safeSaveTimer);
-  }, [user, balance, balanceLoadedAt, profileLoading, activations]);
-
   useEffect(() => {
     if (!user) return;
     const userId = user.id;
     let cancelled = false;
     async function loadProfile() {
       try {
-        // 1. Fetch data directly from profiles table
-        const { data, error: fetchError } = await supabase
+        // 1. Fetch avatar from profiles table
+        const { data: profileData, error: fetchError } = await supabase
           .from("profiles")
-          .select("avatar_url, total_accrued_balance, last_balance_update")
+          .select("avatar_url")
           .eq("id", userId)
           .single();
 
         if (fetchError) throw fetchError;
         if (cancelled) return;
 
-        if (data) {
-          // 2. Define global mining speed: 668.14 RTR/day
-          const totalDailyRtr = 668.14;
-          const speedPerSecond = totalDailyRtr / 86400; // 0.0077331 RTR/sec
+        // 2. Call server-side RPC balance calculation engine
+        const { data: serverBalance, error: rpcError } = await supabase
+          .rpc('get_accurate_user_balance', { target_user_id: userId });
 
-          const nowUTC = new Date();
-          // Use last_balance_update timestamp, fallback to current time if missing
-          const lastUpdate = data.last_balance_update 
-            ? new Date(data.last_balance_update) 
-            : new Date();
-
-          // 3. Compute accurate background earnings since user was last active
-          const secondsElapsed = Math.max(0, (nowUTC.getTime() - lastUpdate.getTime()) / 1000);
-          const earnedWhileAway = secondsElapsed * speedPerSecond;
-          const newDatabaseBalance = Number(data.total_accrued_balance || 0) + earnedWhileAway;
-
-          // 4. Update database balance and lock down current execution timestamp
-          const { error: updateError } = await supabase
-            .from("profiles")
-            .update({
-              total_accrued_balance: newDatabaseBalance,
-              last_balance_update: nowUTC.toISOString()
-            })
-            .eq("id", userId);
-
-          if (updateError) {
-            console.error("Failed to update balance on load:", updateError);
-          }
-
-          // 5. Safely apply state updates to the user interface
+        if (rpcError) {
+          console.error("RPC balance calculation failed:", rpcError);
+          // Fallback to 0 if RPC fails
           if (!cancelled) {
-            setBalance(newDatabaseBalance);
-            setBalanceLoadedAt(nowUTC.getTime()); // Fix: pass millisecond timestamp, not Date object
-            setAvatar(data.avatar_url?.trim() || null);
+            setBalance(0);
+            setBalanceLoadedAt(Date.now());
+            setAvatar(profileData?.avatar_url?.trim() || null);
           }
+          return;
         }
+
+        if (cancelled) return;
+
+        // 3. Set serverBalance value directly into application state
+        setBalance(Number(serverBalance) || 0);
+        setBalanceLoadedAt(Date.now()); // Record loading timestamp in milliseconds
+        setAvatar(profileData?.avatar_url?.trim() || null);
+
       } catch (loaderError) {
         console.error("Failed to load saved mining balance:", loaderError);
         if (!cancelled) {
           setBalance(0);
-          setBalanceLoadedAt(Date.now()); // Fix: pass millisecond timestamp, not Date object
+          setBalanceLoadedAt(Date.now()); // Numeric timestamp for TypeScript
         }
       } finally {
         if (!cancelled) setProfileLoading(false);
@@ -760,7 +695,7 @@ export default function Home() {
     }
     void loadProfile();
     return () => { cancelled = true; };
-  }, [user, globalSpeedPerSecond, activations]);
+  }, [user]);
 
   async function activateTier(tier: string) {
     setError(null);
@@ -939,16 +874,20 @@ function Dashboard({ balance, balanceLoadedAt, balanceLoading, isBalanceHidden, 
     return () => window.clearInterval(timer);
   }, []);
   
-  // Animate visual balance upward using global speed per second
+  // Calculate speedPerSecond from active nodes for visual ticker
+  const speedPerSecond = useMemo(() => {
+    return calculateGlobalEarningSpeedPerSecond(activations, Date.now());
+  }, [activations]);
+  
+  // Animate visual balance upward using speedPerSecond
   // Frontend interval timer ONLY to animate numbers going up continuously on blue card for visual feedback
   useEffect(() => {
     if (balance === null) return;
-    const speedPerSecond = calculateGlobalEarningSpeedPerSecond(activations, Date.now());
     const visualTimer = window.setInterval(() => {
       setVisualBalance((prev) => prev + speedPerSecond);
     }, 1000);
     return () => window.clearInterval(visualTimer);
-  }, [balance, activations]);
+  }, [balance, speedPerSecond]);
   
   // Reset visual balance when balance changes from server
   useEffect(() => {
@@ -958,7 +897,6 @@ function Dashboard({ balance, balanceLoadedAt, balanceLoading, isBalanceHidden, 
   }, [balance]);
 
   const nowUTC = Math.floor(now / 1000) * 1000;
-  const balanceLoadedAtUTC = balanceLoadedAt ? Math.floor(balanceLoadedAt / 1000) * 1000 : null;
 
   const activeActivations = useMemo(
     () => activations
