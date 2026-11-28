@@ -336,40 +336,56 @@ function formatRemainingTime(seconds: number, tier: string) {
   return `${Math.max(1, Math.ceil(seconds / 60))}m remaining`;
 }
 
-// Calculate global earning speed per second from all active nodes
 function calculateGlobalEarningSpeedPerSecond(activations: Activation[], now: number): number {
-  const nowUTC = Math.floor(now / 1000) * 1000;
+  if (!activations || !Array.isArray(activations)) return 0;
   
-  return activations.reduce((totalSpeed, activation) => {
-    const expiresAt = Date.parse(activation.expires_at);
-    const earningPerDay = Number(tiers.find(([tierName]) => tierName === activation.tier)?.[2]);
-    
-    // Only count activations that are currently active
-    if (!Number.isFinite(expiresAt) || !Number.isFinite(earningPerDay) || expiresAt <= nowUTC) {
-      return totalSpeed;
-    }
-    
-    // Sum up RTR/day rates and convert to per-second rate
-    return totalSpeed + (earningPerDay / 86400);
-  }, 0);
-}
+  const nowUTC = Math.floor(now / 1000) * 1000;
+  let totalDailyYield = 0;
+  
+  // Clean mapping that matches tiers perfectly regardless of capitalization mismatches
+  const TIER_MAP: Record<string, number> = {
+    "free node booster": 0.16,
+    "starter utility boost": 0.66,
+    "silver protocol license": 1.66,
+    "gold protocol license": 3.33,
+    "premium platform booster": 6.66,
+    "advanced network tier": 16.66,
+    "master infrastructure pass": 25.00,
+    "regional allocation access": 50.00,
+    "continental system license": 116.66,
+    "global system core": 166.66,
+    "sovereign genesis license": 333.33
+  };
 
-// Calculate total earnings including offline progression
-function calculateTotalEarnings(baseBalance: number, lastBalanceUpdate: number, activations: Activation[], now: number): number {
-  const nowUTC = Math.floor(now / 1000) * 1000;
-  const lastBalanceUpdateUTC = Math.floor(lastBalanceUpdate / 1000) * 1000;
-  
-  // Calculate global earning speed per second from all active nodes
-  const globalEarningSpeedPerSecond = calculateGlobalEarningSpeedPerSecond(activations, nowUTC);
-  
-  // Calculate seconds elapsed since last balance update
-  const secondsElapsed = (nowUTC - lastBalanceUpdateUTC) / 1000;
-  
-  // Offline Earnings = (Current UTC Timestamp - last_balance_update) * Total Earnings Per Second
-  const offlineEarnings = secondsElapsed * globalEarningSpeedPerSecond;
-  
-  // Return total: base balance + offline earnings
-  return baseBalance + offlineEarnings;
+  activations.forEach(activation => {
+    const expiresAt = Date.parse(activation.expires_at);
+    
+    // Only process if the node contract is currently running and active
+    if (activation.status === 'active' && (!Number.isFinite(expiresAt) || expiresAt > nowUTC)) {
+      const nameKey = String(activation.tier || '').toLowerCase().trim();
+      totalDailyYield += TIER_MAP[nameKey] || 0;
+    }
+  });
+
+  return totalDailyYield / 86400;
+}
+// Calculate total earnings by syncing directly with the secure server calculation engine
+async function calculateTotalEarnings(baseBalance: number, lastBalanceUpdate: number, activations: Activation[], now: number, currentUserId: string): Promise<number> {
+  try {
+    if (!currentUserId) return baseBalance;
+
+    // Call the server RPC to fetch the true real-time balance
+    const { data: serverBalance, error } = await supabase
+      .rpc('get_accurate_user_balance', { target_user_id: currentUserId });
+
+    if (error) throw error;
+    
+    // Return the absolute server total as the single source of truth
+    return Number(serverBalance) || baseBalance;
+  } catch (err) {
+    console.error("Failed server-side balance sync:", err);
+    return baseBalance; // Secure fallback if network is interrupted
+  }
 }
 
 function formatMarketPrice(asset: MarketAsset) {
@@ -646,6 +662,40 @@ export default function Home() {
     return calculateGlobalEarningSpeedPerSecond(activations, nowUTC);
   }, [activations]);
 
+  const balanceRef = useRef(balance);
+  const balanceLoadedAtRef = useRef(balanceLoadedAt);
+  const activationsRef = useRef(activations);
+
+  useEffect(() => {
+    balanceRef.current = balance;
+    balanceLoadedAtRef.current = balanceLoadedAt;
+    activationsRef.current = activations;
+  });
+
+  // Frontend ticker: accrues visually each second via functional state updates
+  // and re-anchors to the server RPC balance engine every 60 ticks.
+  useEffect(() => {
+    if (!user || profileLoading) return;
+    const userId = user.id;
+    let ticks = 0;
+    const intervalId = window.setInterval(() => {
+      setBalance((prev) => (prev ?? 0) + globalSpeedPerSecond);
+      ticks += 1;
+      if (ticks % 60 !== 0) return;
+      void calculateTotalEarnings(
+        balanceRef.current ?? 0,
+        balanceLoadedAtRef.current ?? Date.now(),
+        activationsRef.current,
+        Date.now(),
+        userId,
+      ).then((syncedBalance) => {
+        setBalance(syncedBalance);
+        setBalanceLoadedAt(Date.now());
+      });
+    }, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [user, profileLoading, globalSpeedPerSecond]);
+
   useEffect(() => {
     if (!user) return;
     const userId = user.id;
@@ -867,35 +917,12 @@ export default function Home() {
 
 function Dashboard({ balance, balanceLoadedAt, balanceLoading, isBalanceHidden, onToggleBalance, activations }: { balance: number | null; balanceLoadedAt: number | null; balanceLoading: boolean; isBalanceHidden: boolean; onToggleBalance: () => void; activations: Activation[] }) {
   const [now, setNow] = useState(() => Date.now());
-  const [visualBalance, setVisualBalance] = useState(balance ?? 0);
-  
+
   // Frontend UI ticker only - visual animation, no database saves
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-  
-  // Calculate speedPerSecond from active nodes for visual ticker
-  const speedPerSecond = useMemo(() => {
-    return calculateGlobalEarningSpeedPerSecond(activations, Date.now());
-  }, [activations]);
-  
-  // Animate visual balance upward using speedPerSecond
-  // Frontend interval timer ONLY to animate numbers going up continuously on blue card for visual feedback
-  useEffect(() => {
-    if (balance === null) return;
-    const visualTimer = window.setInterval(() => {
-      setVisualBalance((prev) => prev + speedPerSecond);
-    }, 1000);
-    return () => window.clearInterval(visualTimer);
-  }, [balance, speedPerSecond]);
-  
-  // Reset visual balance when balance changes from server
-  useEffect(() => {
-    if (balance !== null) {
-      setVisualBalance(balance);
-    }
-  }, [balance]);
 
   const nowUTC = Math.floor(now / 1000) * 1000;
 
@@ -914,17 +941,17 @@ function Dashboard({ balance, balanceLoadedAt, balanceLoading, isBalanceHidden, 
     : FREE_CYCLE_SECONDS;
   const progress = Math.min(100, (remaining / cycleSeconds) * 100);
   
-  // Use visual balance for display - frontend UI ticker only
+  // Display the ticking balance - frontend UI ticker only
   const displayBalance = balanceLoading
     ? "Loading..."
     : isBalanceHidden
       ? "••••••"
-      : visualBalance.toFixed(4);
+      : (balance ?? 0).toFixed(4);
   const displayFiatBalance = balanceLoading
     ? "Loading..."
     : isBalanceHidden
       ? "••••••"
-      : `$${(visualBalance * 0.075).toFixed(2)}`;
+      : `$${((balance ?? 0) * 0.075).toFixed(2)}`;
 
   return <div className="dashboard-view">
     <div className="balance-card"><div><div className="balance-label"><span className="eyebrow">TOTAL ACCRUED</span><button className="balance-toggle" type="button" onClick={onToggleBalance} aria-label={isBalanceHidden ? "Show balance" : "Hide balance"}>{isBalanceHidden ? <EyeOff size={16} /> : <Eye size={16} />}</button></div><strong>{displayBalance} <small>RTR</small></strong><span className="balance-fiat">{displayFiatBalance}</span></div><div className="balance-icon"><Zap size={21} /></div></div>
