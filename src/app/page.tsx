@@ -616,7 +616,7 @@ export default function Home() {
         .from("booster_activations")
         .select("id, user_id, tier, activated_at, expires_at, status")
         .eq("user_id", userId)
-        .in("status", ["active", "pending"])
+        .eq("status", "active")
         .gt("expires_at", new Date().toISOString())
         .order("activated_at", { ascending: false });
 
