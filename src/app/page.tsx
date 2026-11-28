@@ -50,7 +50,7 @@ import CustomDepositModal from '@/components/CustomDepositModal';
 import CustomActivityLedger from '@/components/CustomActivityLedger';
 
 type View = "dashboard" | "upgrades" | "market" | "trading" | "game" | "portfolio";
-type Activation = { id: string; user_id: string; tier: string; activated_at: string; expires_at: string };
+type Activation = { id: string; user_id: string; tier: string; activated_at: string; expires_at: string; status?: string };
 type Profile = {
   full_name?: string | null;
   avatar_url: string | null;
@@ -614,8 +614,9 @@ export default function Home() {
       const { data, error: activationsError } = await supabase
         .schema("public")
         .from("booster_activations")
-        .select("id, user_id, tier, activated_at, expires_at")
+        .select("id, user_id, tier, activated_at, expires_at, status")
         .eq("user_id", userId)
+        .in("status", ["active", "pending"])
         .gt("expires_at", new Date().toISOString())
         .order("activated_at", { ascending: false });
 
